@@ -439,20 +439,487 @@ function walletTag(address: string, walletName?: string): string {
 	return `${address.slice(0, 5)}…${address.slice(-5)}`;
 }
 
-/* ================= Route ================= */
+/* ================= Liquidity detection (CLMM + CPMM/fungible LP) ================= */
 
-interface Body {
-	address?: string;
-	walletName?: string;
-	fromISO?: string;
-	toISO?: string;
-	includeNFT?: boolean;
-	dustMode?: DustMode;
-	dustThreshold?: string | number;
-	dustInterval?: DustInterval;
-	useOslo?: boolean; // <-- honor timezone toggle
-	overrides?: OverridesPayload;
+type LiquidityKind =
+	| "clmm-add"
+	| "clmm-remove"
+	| "cpmm-add"
+	| "cpmm-remove"
+	| "amm-add"
+	| "amm-remove";
+
+type LiquidityDetection = {
+	kind: LiquidityKind;
+	protocol: "RAYDIUM" | "ORCA" | "METEORA" | "SABER" | "UNKNOWN";
+	note: "LIQUIDITY ADD" | "LIQUIDITY REMOVE";
+	outs?: Array<{ sym: string; amount: number | string }>;
+	ins?: Array<{ sym: string; amount: number | string }>;
+	nft?: { symbol: string; amountText: string } | null; // CLMM position NFT if present
+};
+
+function isLikelyNFT(t: TokenTransferPlus): boolean {
+	if (t.tokenStandard === "nft" || (t as any).isNFT) return true;
+	const raw = t.rawTokenAmount?.tokenAmount ?? String(t.tokenAmount ?? "");
+	const dec =
+		typeof t.rawTokenAmount?.decimals === "number"
+			? (t.rawTokenAmount!.decimals as number)
+			: t.decimals;
+	// Position NFTs are often Token-2022 mints with decimals=0 and amount=1
+	return dec === 0 && (raw === "1" || raw === "1.0");
 }
+
+function protocolFromSource(source: string): LiquidityDetection["protocol"] {
+	const s = String(source || "").toUpperCase();
+	if (s.includes("RAYDIUM")) return "RAYDIUM";
+	if (s.includes("ORCA")) return "ORCA";
+	if (s.includes("METEORA") || s.includes("DLMM")) return "METEORA";
+	if (s.includes("SABER")) return "SABER";
+	return "UNKNOWN";
+}
+
+function looksCLMM(source: string): boolean {
+	const s = String(source || "").toUpperCase();
+	// Heuristics for concentrated models
+	return (
+		s.includes("CLMM") ||
+		s.includes("CONCENTRATED") ||
+		s.includes("WHIRLPOOL") ||
+		s.includes("DLMM")
+	);
+}
+
+function looksCPMM(source: string): boolean {
+	const s = String(source || "").toUpperCase();
+	// Heuristics for classic AMM/constant-product implementations
+	return (
+		s.includes("AMM") ||
+		s.includes("TOKEN-SWAP") ||
+		(s.includes("RAYDIUM") && !looksCLMM(source)) ||
+		(s.includes("ORCA") && !looksCLMM(source)) ||
+		s.includes("SABER")
+	);
+}
+
+function extractSigFromNotat(notat: string): string | undefined {
+	const m = /sig:([A-Za-z0-9]+)/.exec(notat);
+	return m ? m[1] : undefined;
+}
+
+/**
+ * Detects CLMM/CPMM/AMM liquidity add/remove and returns the legs + optional position NFT.
+ * Works mostly from transfers; protocol/model is a best-effort guess from tx.source.
+ */
+function detectLiquidityEvent(
+	tokenTransfers: TokenTransferPlus[],
+	nativeTransfers: NativeTransfer[],
+	address: string,
+	myATAs: Set<string>,
+	resolveSymDec: (
+		mint: string,
+		symbol?: string,
+		decimals?: number
+	) => { symbol: string; decimals: number },
+	source: string
+): LiquidityDetection | null {
+	const ownsFrom = (t: TokenTransferPlus) =>
+		t.fromUserAccount === address ||
+		(t.fromTokenAccount ? myATAs.has(t.fromTokenAccount) : false);
+	const ownsTo = (t: TokenTransferPlus) =>
+		t.toUserAccount === address ||
+		(t.toTokenAccount ? myATAs.has(t.toTokenAccount) : false);
+
+	// Split NFTs vs fungibles
+	const nftIn = tokenTransfers.filter((t) => ownsTo(t) && isLikelyNFT(t));
+	const nftOut = tokenTransfers.filter((t) => ownsFrom(t) && isLikelyNFT(t));
+	const fIn = tokenTransfers.filter((t) => ownsTo(t) && !isLikelyNFT(t));
+	const fOut = tokenTransfers.filter((t) => ownsFrom(t) && !isLikelyNFT(t));
+
+	// Include native SOL legs when WSOL isn’t present
+	const nativeInSOL = nativeTransfers
+		.filter((n) => n.toUserAccount === address)
+		.reduce((a, n) => a + lamportsToSol(n.amount ?? 0), 0);
+	const nativeOutSOL = nativeTransfers
+		.filter((n) => n.fromUserAccount === address)
+		.reduce((a, n) => a + lamportsToSol(n.amount ?? 0), 0);
+
+	// Build normalized legs
+	const ins = [
+		...fIn.map((t) => {
+			const { amountText, symbol } = amountFromTransfer(t, resolveSymDec);
+			return { sym: symbol, amount: amountText };
+		}),
+		...(nativeInSOL > 0
+			? [{ sym: "SOL", amount: numberToPlain(nativeInSOL) }]
+			: [])
+	];
+	const outs = [
+		...fOut.map((t) => {
+			const { amountText, symbol } = amountFromTransfer(t, resolveSymDec);
+			return { sym: symbol, amount: amountText };
+		}),
+		...(nativeOutSOL > 0
+			? [{ sym: "SOL", amount: numberToPlain(nativeOutSOL) }]
+			: [])
+	];
+
+	// Distinct mint counts to avoid swapping false positives
+	const distinctIns = new Set(ins.map((x) => x.sym)).size;
+	const distinctOuts = new Set(outs.map((x) => x.sym)).size;
+
+	const protocol = protocolFromSource(source);
+	const modelCLMM = looksCLMM(source);
+
+	// --- Preferred: explicit CLMM (when NFT is visible)
+	if (nftIn.length >= 1 && distinctOuts >= 2) {
+		const firstNFT = nftIn[0];
+		const { symbol } = amountFromTransfer(firstNFT, resolveSymDec);
+		return {
+			kind: "clmm-add",
+			protocol,
+			note: "LIQUIDITY ADD",
+			outs,
+			nft: { symbol: symbol || "LP-NFT", amountText: "1" }
+		};
+	}
+	if (nftOut.length >= 1 && distinctIns >= 2) {
+		return {
+			kind: "clmm-remove",
+			protocol,
+			note: "LIQUIDITY REMOVE",
+			ins
+		};
+	}
+
+	// --- NFT not visible? Use leg patterns (prevents swaps from matching)
+	// ADD with 2+ outs and no ins → CLMM if source looks concentrated, else CPMM/AMM
+	if (distinctOuts >= 2 && distinctIns === 0) {
+		return {
+			kind: modelCLMM ? "clmm-add" : "cpmm-add",
+			protocol,
+			note: "LIQUIDITY ADD",
+			outs
+		};
+	}
+	// REMOVE with 2+ ins and no outs
+	if (distinctIns >= 2 && distinctOuts === 0) {
+		return {
+			kind: modelCLMM ? "clmm-remove" : "cpmm-remove",
+			protocol,
+			note: "LIQUIDITY REMOVE",
+			ins
+		};
+	}
+
+	// --- Conservative CPMM path (LP mint/burn visible): require 2+ legs on the opposite side
+	const insMints = new Set(fIn.map((t) => t.mint));
+	const outsMints = new Set(fOut.map((t) => t.mint));
+	const insHasMintNotInOuts = [...insMints].some((m) => !outsMints.has(m));
+	const outsHasMintNotInIns = [...outsMints].some((m) => !insMints.has(m));
+
+	// CPMM ADD: LP minted in + >=2 distinct outs
+	if (insHasMintNotInOuts && distinctOuts >= 2) {
+		return { kind: "cpmm-add", protocol, note: "LIQUIDITY ADD", outs };
+	}
+	// CPMM REMOVE: LP burned out + >=2 distinct ins
+	if (outsHasMintNotInIns && distinctIns >= 2) {
+		return { kind: "cpmm-remove", protocol, note: "LIQUIDITY REMOVE", ins };
+	}
+
+	return null;
+}
+
+/* ================= Core classification helper ================= */
+
+type RowInput = Partial<Omit<KSRow, "Inn" | "Ut" | "Gebyr" | "Notat">> & {
+	Inn?: number | string;
+	Ut?: number | string;
+	Gebyr?: number | string;
+};
+
+function ensureStringAmount(v: number | string | undefined): string {
+	return typeof v === "string"
+		? toAmountString(v)
+		: typeof v === "number"
+		? toAmountString(numberToPlain(v))
+		: "";
+}
+
+function classifyTxToRows(opts: {
+	tx: HeliusTx;
+	address: string;
+	myATAs: Set<string>;
+	includeNFT: boolean;
+	useOslo: boolean;
+	resolveSymDec: (
+		mint: string,
+		symbol?: string,
+		decimals?: number
+	) => { symbol: string; decimals: number };
+}): KSRow[] {
+	const { tx, address, myATAs, includeNFT, useOslo, resolveSymDec } = opts;
+
+	const tsSec = tx.timestamp ?? Math.floor(Date.now() / 1000);
+	const tsMs = tsSec * 1000;
+	const time = toNorwayTimeString(tsMs, useOslo);
+
+	const sig = tx.signature;
+
+	const feePayer =
+		typeof (tx as any).feePayer === "string" ? (tx as any).feePayer : "";
+	const userPaidFee =
+		feePayer && feePayer.toLowerCase() === address.toLowerCase();
+	let feeLeftSOL = userPaidFee && tx.fee ? lamportsToSol(tx.fee) : 0;
+
+	const nativeTransfers: NativeTransfer[] = Array.isArray(tx.nativeTransfers)
+		? tx.nativeTransfers
+		: [];
+
+	const tokenTransfers: TokenTransferPlus[] = Array.isArray(tx.tokenTransfers)
+		? (tx.tokenTransfers as TokenTransferPlus[])
+		: [];
+
+	const type: string = tx.type || tx.description || "UNKNOWN";
+	const source: string =
+		(tx as any).source || (tx as any).programId || "solana";
+	const isSwapMeta = type.toUpperCase().includes("SWAP");
+
+	const rows: KSRow[] = [];
+
+	const pushRow = (r: RowInput, noteSuffix?: string): void => {
+		const gebyr =
+			feeLeftSOL > 0 ? toAmountString(toAmountText(feeLeftSOL)) : "";
+		const gebyrVal = feeLeftSOL > 0 ? "SOL" : "";
+		if (feeLeftSOL > 0) feeLeftSOL = 0;
+
+		rows.push({
+			Tidspunkt: time,
+			Type: r.Type as KSRow["Type"],
+			Inn: ensureStringAmount(r.Inn),
+			"Inn-Valuta": r["Inn-Valuta"]
+				? currencyCode(String(r["Inn-Valuta"]))
+				: "",
+			Ut: ensureStringAmount(r.Ut),
+			"Ut-Valuta": r["Ut-Valuta"] ? currencyCode(String(r["Ut-Valuta"])) : "",
+			Gebyr: gebyr || "0",
+			"Gebyr-Valuta": gebyrVal,
+			Marked: String(r.Marked ?? source ?? "solana"),
+			// Keep Notat starting with sig: to preserve existing behavior; append note after it
+			Notat: `${noteSuffix ? `${noteSuffix} ` : ""}sig:${sig}`
+		});
+	};
+
+	// 1) Liquidity add/remove detection first (CLMM + CPMM + others)
+	const liq = detectLiquidityEvent(
+		tokenTransfers,
+		nativeTransfers,
+		address,
+		myATAs,
+		resolveSymDec,
+		source
+	);
+
+	if (liq) {
+		const market = `${liq.protocol}-LIQUIDITY`;
+
+		if (
+			liq.kind === "clmm-add" ||
+			liq.kind === "cpmm-add" ||
+			liq.kind === "amm-add"
+		) {
+			// Outgoing underlyings -> TAP
+			for (const leg of liq.outs ?? []) {
+				pushRow(
+					{
+						Type: "Tap" as KSRow["Type"],
+						Inn: 0,
+						"Inn-Valuta": "",
+						Ut: leg.amount,
+						"Ut-Valuta": leg.sym,
+						Marked: market
+					},
+					liq.note
+				);
+			}
+			// Include the position NFT as an asset if requested
+			if (includeNFT && liq.nft) {
+				pushRow(
+					{
+						Type: "Erverv",
+						Inn: liq.nft.amountText,
+						"Inn-Valuta": currencyCode(liq.nft.symbol || "LP-NFT"),
+						Ut: 0,
+						"Ut-Valuta": "",
+						Marked: "SOLANA-NFT"
+					},
+					liq.note
+				);
+			}
+		} else {
+			// Remove: incoming underlyings -> Erverv
+			for (const leg of liq.ins ?? []) {
+				pushRow(
+					{
+						Type: "Erverv",
+						Inn: leg.amount,
+						"Inn-Valuta": leg.sym,
+						Ut: 0,
+						"Ut-Valuta": "",
+						Marked: market
+					},
+					liq.note
+				);
+			}
+			// Skip explicit LP burn/NFT close rows to keep CSV clean
+		}
+
+		return rows; // handled
+	}
+
+	// 2) Try to combine into Handel (generic swap) if no liquidity pattern matched
+	const sides =
+		pickSwapSides(
+			tokenTransfers,
+			nativeTransfers,
+			includeNFT,
+			address,
+			myATAs,
+			resolveSymDec
+		) ||
+		(isSwapMeta
+			? pickSwapSides(
+					tokenTransfers,
+					[],
+					includeNFT,
+					address,
+					myATAs,
+					resolveSymDec
+			  )
+			: null);
+
+	if (sides) {
+		pushRow({
+			Type: "Handel",
+			Inn: sides.inAmt,
+			"Inn-Valuta": sides.inSym,
+			Ut: sides.outAmt,
+			"Ut-Valuta": sides.outSym,
+			Marked: "SOLANA DEX"
+		});
+		return rows;
+	}
+
+	// 3) Native SOL transfers
+	const solSent = nativeTransfers.filter((n) => n.fromUserAccount === address);
+	const solRecv = nativeTransfers.filter((n) => n.toUserAccount === address);
+
+	if (solSent.length) {
+		const amt = sum(solSent, (n) => lamportsToSol(n.amount ?? 0));
+		if (amt) {
+			pushRow({
+				Type: "Overføring-Ut",
+				Inn: 0,
+				"Inn-Valuta": "",
+				Ut: amt,
+				"Ut-Valuta": "SOL",
+				Marked: "SOLANA"
+			});
+		}
+	}
+	if (solRecv.length) {
+		const amt = sum(solRecv, (n) => lamportsToSol(n.amount ?? 0));
+		if (amt) {
+			pushRow({
+				Type: "Overføring-Inn",
+				Inn: amt,
+				"Inn-Valuta": "SOL",
+				Ut: 0,
+				"Ut-Valuta": "",
+				Marked: "SOLANA"
+			});
+		}
+	}
+
+	// 4) SPL token transfers
+	const ownsFrom = (t: TokenTransferPlus) =>
+		t.fromUserAccount === address ||
+		(t.fromTokenAccount ? myATAs.has(t.fromTokenAccount) : false);
+	const ownsTo = (t: TokenTransferPlus) =>
+		t.toUserAccount === address ||
+		(t.toTokenAccount ? myATAs.has(t.toTokenAccount) : false);
+
+	for (const t of tokenTransfers) {
+		if (!includeNFT && (t.tokenStandard === "nft" || (t as any).isNFT))
+			continue;
+
+		const { amountNum, amountText, symbol } = amountFromTransfer(
+			t,
+			resolveSymDec
+		);
+		if (amountNum === 0) continue;
+
+		if (ownsFrom(t)) {
+			pushRow({
+				Type: "Overføring-Ut",
+				Inn: 0,
+				"Inn-Valuta": "",
+				Ut: amountText,
+				"Ut-Valuta": symbol,
+				Marked: String(source).toUpperCase() || "SPL"
+			});
+		} else if (ownsTo(t)) {
+			pushRow({
+				Type: "Overføring-Inn",
+				Inn: amountText,
+				"Inn-Valuta": symbol,
+				Ut: 0,
+				"Ut-Valuta": "",
+				Marked: String(source).toUpperCase() || "SPL"
+			});
+		}
+	}
+
+	// 5) Airdrops -> Erverv
+	if (type.toUpperCase().includes("AIRDROP")) {
+		const recvToken = tokenTransfers.find((t) => ownsTo(t));
+		if (recvToken) {
+			const { amountText, symbol } = amountFromTransfer(
+				recvToken,
+				resolveSymDec
+			);
+			if (amountText !== "0") {
+				pushRow({
+					Type: "Erverv",
+					Inn: amountText,
+					"Inn-Valuta": symbol,
+					Ut: 0,
+					"Ut-Valuta": "",
+					Marked: String(source).toUpperCase() || "AIRDROP"
+				});
+			}
+		}
+	}
+
+	// 6) Staking rewards -> Inntekt
+	const rewardLamports = (tx.events as any)?.stakingReward?.amount ?? 0;
+	if (rewardLamports > 0 || String(type).toUpperCase().includes("REWARD")) {
+		const amt = lamportsToSol(rewardLamports);
+		if (amt) {
+			pushRow({
+				Type: "Inntekt",
+				Inn: amt,
+				"Inn-Valuta": "SOL",
+				Ut: 0,
+				"Ut-Valuta": "",
+				Marked: "STAKE"
+			});
+		}
+	}
+
+	return rows;
+}
+
+/* ================= Overrides ================= */
 
 type OverridesPayload = {
 	/** Rename token symbols as-displayed in rows (UPPERCASE, e.g. TOKEN-ABC123 → USDC) */
@@ -499,6 +966,21 @@ function applyOverridesToRows(
 			Marked: mktNew
 		};
 	});
+}
+
+/* ================= Route ================= */
+
+interface Body {
+	address?: string;
+	walletName?: string;
+	fromISO?: string;
+	toISO?: string;
+	includeNFT?: boolean;
+	dustMode?: DustMode;
+	dustThreshold?: string | number;
+	dustInterval?: DustInterval;
+	useOslo?: boolean; // <-- honor timezone toggle
+	overrides?: OverridesPayload;
 }
 
 export async function POST(req: NextRequest) {
@@ -573,12 +1055,14 @@ export async function POST(req: NextRequest) {
 					if (cached) {
 						// Serve from cache quickly
 						const tag = walletTag(address, body.walletName);
-						const rowsPreview = cached.rowsProcessed.slice(0, 500).map((r) => ({
-							...{ ...r, Notat: `${tag} ${r.Notat}` },
-							signature: r.Notat.startsWith("sig:")
-								? r.Notat.slice(4)
-								: undefined
-						}));
+						const rowsPreview = cached.rowsProcessed.slice(0, 500).map((r) => {
+							const withTag = { ...r, Notat: `${tag} ${r.Notat}` };
+							return {
+								...withTag,
+								signature: extractSigFromNotat(r.Notat)
+							};
+						});
+
 						await send({
 							type: "log",
 							message: "Treff i cache – henter forhåndsvisning."
@@ -708,233 +1192,21 @@ export async function POST(req: NextRequest) {
 							try {
 								const tsSec = tx.timestamp ?? Math.floor(Date.now() / 1000);
 								const tsMs = tsSec * 1000;
-
 								if (
 									(fromMs !== undefined && tsMs < fromMs) ||
 									(toMs !== undefined && tsMs > toMs)
 								) {
 									continue;
 								}
-
-								const sig = tx.signature;
-								const time = toNorwayTimeString(tsMs, useOslo);
-
-								// Fee only if this wallet is fee payer
-								const feePayer =
-									typeof (tx as any).feePayer === "string"
-										? (tx as any).feePayer
-										: "";
-								const userPaidFee =
-									feePayer && feePayer.toLowerCase() === address.toLowerCase();
-								let feeLeftSOL =
-									userPaidFee && tx.fee ? lamportsToSol(tx.fee) : 0;
-
-								const nativeTransfers: NativeTransfer[] = Array.isArray(
-									tx.nativeTransfers
-								)
-									? tx.nativeTransfers
-									: [];
-
-								const tokenTransfers: TokenTransferPlus[] = Array.isArray(
-									tx.tokenTransfers
-								)
-									? (tx.tokenTransfers as TokenTransferPlus[])
-									: [];
-
-								const type: string = tx.type || tx.description || "UNKNOWN";
-								const source: string = tx.source || tx.programId || "solana";
-								const isSwapMeta = type.toUpperCase().includes("SWAP");
-
-								type RowInput = Partial<Omit<KSRow, "Inn" | "Ut" | "Gebyr">> & {
-									Inn?: number | string;
-									Ut?: number | string;
-									Gebyr?: number | string;
-								};
-
-								const ensureStringAmount = (
-									v: number | string | undefined
-								): string =>
-									typeof v === "string"
-										? toAmountString(v)
-										: typeof v === "number"
-										? toAmountString(numberToPlain(v))
-										: "";
-
-								const pushRow = (r: RowInput): void => {
-									const gebyr =
-										feeLeftSOL > 0
-											? toAmountString(toAmountText(feeLeftSOL))
-											: "";
-									const gebyrVal = feeLeftSOL > 0 ? "SOL" : "";
-									if (feeLeftSOL > 0) feeLeftSOL = 0; // apply once per tx
-
-									rows.push({
-										Tidspunkt: time,
-										Type: r.Type as KSRow["Type"],
-										Inn: ensureStringAmount(r.Inn),
-										"Inn-Valuta": r["Inn-Valuta"]
-											? currencyCode(String(r["Inn-Valuta"]))
-											: "",
-										Ut: ensureStringAmount(r.Ut),
-										"Ut-Valuta": r["Ut-Valuta"]
-											? currencyCode(String(r["Ut-Valuta"]))
-											: "",
-										Gebyr: gebyr || "0",
-										"Gebyr-Valuta": gebyrVal,
-										Marked: String(r.Marked ?? source ?? "solana"),
-										Notat: `sig:${sig}`
-									});
-								};
-
-								// Helpers: is this token transfer "mine"?
-								const ownsFrom = (t: TokenTransferPlus) =>
-									t.fromUserAccount === address ||
-									(t.fromTokenAccount ? myATAs.has(t.fromTokenAccount) : false);
-								const ownsTo = (t: TokenTransferPlus) =>
-									t.toUserAccount === address ||
-									(t.toTokenAccount ? myATAs.has(t.toTokenAccount) : false);
-
-								// 1) Try to combine into Handel
-								const sides =
-									pickSwapSides(
-										tokenTransfers,
-										nativeTransfers,
-										includeNFT,
-										address,
-										myATAs,
-										resolveSymDec
-									) ||
-									(isSwapMeta
-										? pickSwapSides(
-												tokenTransfers,
-												[],
-												includeNFT,
-												address,
-												myATAs,
-												resolveSymDec
-										  )
-										: null);
-
-								if (sides) {
-									pushRow({
-										Type: "Handel",
-										Inn: sides.inAmt,
-										"Inn-Valuta": sides.inSym,
-										Ut: sides.outAmt,
-										"Ut-Valuta": sides.outSym,
-										Marked: "SOLANA DEX"
-									});
-									continue; // handled; skip granular rows
-								}
-
-								// 2) Native SOL transfers
-								const solSent = nativeTransfers.filter(
-									(n) => n.fromUserAccount === address
-								);
-								const solRecv = nativeTransfers.filter(
-									(n) => n.toUserAccount === address
-								);
-								if (solSent.length) {
-									const amt = sum(solSent, (n) => lamportsToSol(n.amount ?? 0));
-									if (amt) {
-										pushRow({
-											Type: "Overføring-Ut",
-											Inn: 0,
-											"Inn-Valuta": "",
-											Ut: amt,
-											"Ut-Valuta": "SOL",
-											Marked: "SOLANA"
-										});
-									}
-								}
-								if (solRecv.length) {
-									const amt = sum(solRecv, (n) => lamportsToSol(n.amount ?? 0));
-									if (amt) {
-										pushRow({
-											Type: "Overføring-Inn",
-											Inn: amt,
-											"Inn-Valuta": "SOL",
-											Ut: 0,
-											"Ut-Valuta": "",
-											Marked: "SOLANA"
-										});
-									}
-								}
-
-								// 3) SPL token transfers
-								for (const t of tokenTransfers) {
-									if (
-										!includeNFT &&
-										(t.tokenStandard === "nft" || (t as any).isNFT)
-									)
-										continue;
-									const { amountNum, amountText, symbol } = amountFromTransfer(
-										t,
-										resolveSymDec
-									);
-									if (amountNum === 0) continue;
-
-									if (ownsFrom(t)) {
-										pushRow({
-											Type: "Overføring-Ut",
-											Inn: 0,
-											"Inn-Valuta": "",
-											Ut: amountText, // keep precision
-											"Ut-Valuta": symbol,
-											Marked: String(source).toUpperCase() || "SPL"
-										});
-									} else if (ownsTo(t)) {
-										pushRow({
-											Type: "Overføring-Inn",
-											Inn: amountText,
-											"Inn-Valuta": symbol,
-											Ut: 0,
-											"Ut-Valuta": "",
-											Marked: String(source).toUpperCase() || "SPL"
-										});
-									}
-								}
-
-								// 4) Airdrops -> Erverv
-								if (type.toUpperCase().includes("AIRDROP")) {
-									const recvToken = tokenTransfers.find((t) => ownsTo(t));
-									if (recvToken) {
-										const { amountText, symbol } = amountFromTransfer(
-											recvToken,
-											resolveSymDec
-										);
-										if (amountText !== "0") {
-											pushRow({
-												Type: "Erverv",
-												Inn: amountText,
-												"Inn-Valuta": symbol,
-												Ut: 0,
-												"Ut-Valuta": "",
-												Marked: String(source).toUpperCase() || "AIRDROP"
-											});
-										}
-									}
-								}
-
-								// 5) Staking rewards -> Inntekt
-								const rewardLamports =
-									(tx.events as any)?.stakingReward?.amount ?? 0;
-								if (
-									rewardLamports > 0 ||
-									String(type).toUpperCase().includes("REWARD")
-								) {
-									const amt = lamportsToSol(rewardLamports);
-									if (amt) {
-										pushRow({
-											Type: "Inntekt",
-											Inn: amt,
-											"Inn-Valuta": "SOL",
-											Ut: 0,
-											"Ut-Valuta": "",
-											Marked: "STAKE"
-										});
-									}
-								}
+								const classified = classifyTxToRows({
+									tx,
+									address,
+									myATAs,
+									includeNFT,
+									useOslo,
+									resolveSymDec
+								});
+								rows.push(...classified);
 							} catch {
 								// skip one bad tx and continue
 							}
@@ -957,12 +1229,13 @@ export async function POST(req: NextRequest) {
 						});
 
 						const tag = walletTag(address, body.walletName);
-						const rowsPreview = processed.slice(0, 500).map((r) => ({
-							...{ ...r, Notat: `${tag} ${r.Notat}` },
-							signature: r.Notat.startsWith("sig:")
-								? r.Notat.slice(4)
-								: undefined
-						}));
+						const rowsPreview = processed.slice(0, 500).map((r) => {
+							const withTag = { ...r, Notat: `${tag} ${r.Notat}` };
+							return {
+								...withTag,
+								signature: extractSigFromNotat(r.Notat)
+							};
+						});
 
 						await send({
 							type: "done",
@@ -992,10 +1265,13 @@ export async function POST(req: NextRequest) {
 			const cached = getCache(ckey);
 			if (cached) {
 				const tag = walletTag(address, body.walletName);
-				const rowsOutRaw = cached.rowsProcessed.map((r) => ({
-					...{ ...r, Notat: `${tag} ${r.Notat}` },
-					signature: r.Notat.startsWith("sig:") ? r.Notat.slice(4) : undefined
-				}));
+				const rowsOutRaw = cached.rowsProcessed.map((r) => {
+					const withTag = { ...r, Notat: `${tag} ${r.Notat}` };
+					return {
+						...withTag,
+						signature: extractSigFromNotat(r.Notat)
+					};
+				});
 				const rowsOut = applyOverridesToRows(rowsOutRaw, body.overrides);
 				return NextResponse.json({
 					rows: rowsOut,
@@ -1004,6 +1280,7 @@ export async function POST(req: NextRequest) {
 					cacheKey: ckey
 				});
 			}
+
 			// Fallback: compute (no progress)
 			const tokenAccounts = await getTokenAccountsByOwner(
 				address,
@@ -1011,6 +1288,7 @@ export async function POST(req: NextRequest) {
 			);
 			const myATAs = new Set<string>(tokenAccounts);
 			myATAs.add(address);
+
 			const addressesToQuery = [address, ...tokenAccounts];
 			const sigMap = new Map<string, HeliusTx>();
 			for (const who of addressesToQuery) {
@@ -1031,6 +1309,7 @@ export async function POST(req: NextRequest) {
 					if (pages >= 50) break;
 				}
 			}
+
 			const allTxs = [...sigMap.values()].sort(
 				(a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
 			);
@@ -1061,224 +1340,25 @@ export async function POST(req: NextRequest) {
 			const resolveSymDec = makeSymDecResolver(jupMeta, helMeta);
 
 			const rows: KSRow[] = [];
-			const fromMs2 = fromISO ? new Date(fromISO).getTime() : undefined;
-			const toMs2 = toISO ? new Date(toISO).getTime() : undefined;
-
 			for (const tx of allTxs as HeliusTx[]) {
 				try {
 					const tsSec = tx.timestamp ?? Math.floor(Date.now() / 1000);
 					const tsMs = tsSec * 1000;
-
 					if (
-						(fromMs2 !== undefined && tsMs < fromMs2) ||
-						(toMs2 !== undefined && tsMs > toMs2)
+						(fromMs !== undefined && tsMs < fromMs) ||
+						(toMs !== undefined && tsMs > toMs)
 					) {
 						continue;
 					}
-
-					const sig = tx.signature;
-					const time = toNorwayTimeString(tsMs, useOslo);
-
-					const feePayer =
-						typeof (tx as any).feePayer === "string"
-							? (tx as any).feePayer
-							: "";
-					const userPaidFee =
-						feePayer && feePayer.toLowerCase() === address.toLowerCase();
-					let feeLeftSOL = userPaidFee && tx.fee ? lamportsToSol(tx.fee) : 0;
-
-					const nativeTransfers: NativeTransfer[] = Array.isArray(
-						tx.nativeTransfers
-					)
-						? tx.nativeTransfers
-						: [];
-
-					const tokenTransfers: TokenTransferPlus[] = Array.isArray(
-						tx.tokenTransfers
-					)
-						? (tx.tokenTransfers as TokenTransferPlus[])
-						: [];
-
-					const type: string = tx.type || tx.description || "UNKNOWN";
-					const source: string = tx.source || tx.programId || "solana";
-					const isSwapMeta = type.toUpperCase().includes("SWAP");
-
-					type RowInput = Partial<Omit<KSRow, "Inn" | "Ut" | "Gebyr">> & {
-						Inn?: number | string;
-						Ut?: number | string;
-						Gebyr?: number | string;
-					};
-
-					const ensureStringAmount = (v: number | string | undefined): string =>
-						typeof v === "string"
-							? toAmountString(v)
-							: typeof v === "number"
-							? toAmountString(numberToPlain(v))
-							: "";
-
-					const pushRow = (r: RowInput): void => {
-						const gebyr =
-							feeLeftSOL > 0 ? toAmountString(toAmountText(feeLeftSOL)) : "";
-						const gebyrVal = feeLeftSOL > 0 ? "SOL" : "";
-						if (feeLeftSOL > 0) feeLeftSOL = 0;
-
-						rows.push({
-							Tidspunkt: time,
-							Type: r.Type as KSRow["Type"],
-							Inn: ensureStringAmount(r.Inn),
-							"Inn-Valuta": r["Inn-Valuta"]
-								? currencyCode(String(r["Inn-Valuta"]))
-								: "",
-							Ut: ensureStringAmount(r.Ut),
-							"Ut-Valuta": r["Ut-Valuta"]
-								? currencyCode(String(r["Ut-Valuta"]))
-								: "",
-							Gebyr: gebyr || "0",
-							"Gebyr-Valuta": gebyrVal,
-							Marked: String(r.Marked ?? source ?? "solana"),
-							Notat: `sig:${sig}`
-						});
-					};
-
-					const ownsFrom = (t: TokenTransferPlus) =>
-						t.fromUserAccount === address ||
-						(t.fromTokenAccount ? myATAs.has(t.fromTokenAccount) : false);
-					const ownsTo = (t: TokenTransferPlus) =>
-						t.toUserAccount === address ||
-						(t.toTokenAccount ? myATAs.has(t.toTokenAccount) : false);
-
-					const sides =
-						pickSwapSides(
-							tokenTransfers,
-							nativeTransfers,
-							includeNFT,
-							address,
-							myATAs,
-							resolveSymDec
-						) ||
-						(isSwapMeta
-							? pickSwapSides(
-									tokenTransfers,
-									[],
-									includeNFT,
-									address,
-									myATAs,
-									resolveSymDec
-							  )
-							: null);
-
-					if (sides) {
-						pushRow({
-							Type: "Handel",
-							Inn: sides.inAmt,
-							"Inn-Valuta": sides.inSym,
-							Ut: sides.outAmt,
-							"Ut-Valuta": sides.outSym,
-							Marked: "SOLANA DEX"
-						});
-						continue;
-					}
-
-					const solSent = nativeTransfers.filter(
-						(n) => n.fromUserAccount === address
-					);
-					const solRecv = nativeTransfers.filter(
-						(n) => n.toUserAccount === address
-					);
-					if (solSent.length) {
-						const amt = sum(solSent, (n) => lamportsToSol(n.amount ?? 0));
-						if (amt) {
-							pushRow({
-								Type: "Overføring-Ut",
-								Inn: 0,
-								"Inn-Valuta": "",
-								Ut: amt,
-								"Ut-Valuta": "SOL",
-								Marked: "SOLANA"
-							});
-						}
-					}
-					if (solRecv.length) {
-						const amt = sum(solRecv, (n) => lamportsToSol(n.amount ?? 0));
-						if (amt) {
-							pushRow({
-								Type: "Overføring-Inn",
-								Inn: amt,
-								"Inn-Valuta": "SOL",
-								Ut: 0,
-								"Ut-Valuta": "",
-								Marked: "SOLANA"
-							});
-						}
-					}
-
-					for (const t of tokenTransfers) {
-						if (!includeNFT && (t.tokenStandard === "nft" || (t as any).isNFT))
-							continue;
-						const { amountNum, amountText, symbol } = amountFromTransfer(
-							t,
-							resolveSymDec
-						);
-						if (amountNum === 0) continue;
-
-						if (ownsFrom(t)) {
-							pushRow({
-								Type: "Overføring-Ut",
-								Inn: 0,
-								"Inn-Valuta": "",
-								Ut: amountText,
-								"Ut-Valuta": symbol,
-								Marked: String(source).toUpperCase() || "SPL"
-							});
-						} else if (ownsTo(t)) {
-							pushRow({
-								Type: "Overføring-Inn",
-								Inn: amountText,
-								"Inn-Valuta": symbol,
-								Ut: 0,
-								"Ut-Valuta": "",
-								Marked: String(source).toUpperCase() || "SPL"
-							});
-						}
-					}
-
-					if (type.toUpperCase().includes("AIRDROP")) {
-						const recvToken = tokenTransfers.find((t) => ownsTo(t));
-						if (recvToken) {
-							const { amountText, symbol } = amountFromTransfer(
-								recvToken,
-								resolveSymDec
-							);
-							if (amountText !== "0") {
-								pushRow({
-									Type: "Erverv",
-									Inn: amountText,
-									"Inn-Valuta": symbol,
-									Ut: 0,
-									"Ut-Valuta": "",
-									Marked: String(source).toUpperCase() || "AIRDROP"
-								});
-							}
-						}
-					}
-
-					const rewardLamports = (tx.events as any)?.stakingReward?.amount ?? 0;
-					if (
-						rewardLamports > 0 ||
-						String(type).toUpperCase().includes("REWARD")
-					) {
-						const amt = lamportsToSol(rewardLamports);
-						if (amt) {
-							pushRow({
-								Type: "Inntekt",
-								Inn: amt,
-								"Inn-Valuta": "SOL",
-								Ut: 0,
-								"Ut-Valuta": "",
-								Marked: "STAKE"
-							});
-						}
-					}
+					const classified = classifyTxToRows({
+						tx,
+						address,
+						myATAs,
+						includeNFT,
+						useOslo,
+						resolveSymDec
+					});
+					rows.push(...classified);
 				} catch {}
 			}
 
@@ -1299,10 +1379,14 @@ export async function POST(req: NextRequest) {
 			});
 
 			const tag = walletTag(address, body.walletName);
-			const rowsOutRaw = processed.map((r) => ({
-				...{ ...r, Notat: `${tag} ${r.Notat}` },
-				signature: r.Notat.startsWith("sig:") ? r.Notat.slice(4) : undefined
-			}));
+			const rowsOutRaw = processed.map((r) => {
+				const withTag = { ...r, Notat: `${tag} ${r.Notat}` };
+				return {
+					...withTag,
+					signature: extractSigFromNotat(r.Notat)
+				};
+			});
+
 			const rowsOut = applyOverridesToRows(rowsOutRaw, body.overrides);
 
 			return NextResponse.json({
@@ -1392,222 +1476,25 @@ export async function POST(req: NextRequest) {
 		const resolveSymDec = makeSymDecResolver(jupMeta, helMeta);
 
 		const rows: KSRow[] = [];
-		const fromMs2 = fromISO ? new Date(fromISO).getTime() : undefined;
-		const toMs2 = toISO ? new Date(toISO).getTime() : undefined;
-
 		for (const tx of allTxs as HeliusTx[]) {
 			try {
 				const tsSec = tx.timestamp ?? Math.floor(Date.now() / 1000);
 				const tsMs = tsSec * 1000;
-
 				if (
-					(fromMs2 !== undefined && tsMs < fromMs2) ||
-					(toMs2 !== undefined && tsMs > toMs2)
+					(fromMs !== undefined && tsMs < fromMs) ||
+					(toMs !== undefined && tsMs > toMs)
 				) {
 					continue;
 				}
-
-				const sig = tx.signature;
-				const time = toNorwayTimeString(tsMs, useOslo);
-
-				const feePayer =
-					typeof (tx as any).feePayer === "string" ? (tx as any).feePayer : "";
-				const userPaidFee =
-					feePayer && feePayer.toLowerCase() === address.toLowerCase();
-				let feeLeftSOL = userPaidFee && tx.fee ? lamportsToSol(tx.fee) : 0;
-
-				const nativeTransfers: NativeTransfer[] = Array.isArray(
-					tx.nativeTransfers
-				)
-					? tx.nativeTransfers
-					: [];
-
-				const tokenTransfers: TokenTransferPlus[] = Array.isArray(
-					tx.tokenTransfers
-				)
-					? (tx.tokenTransfers as TokenTransferPlus[])
-					: [];
-
-				const type: string = tx.type || tx.description || "UNKNOWN";
-				const source: string = tx.source || "solana";
-				const isSwapMeta = type.toUpperCase().includes("SWAP");
-
-				type RowInput = Partial<Omit<KSRow, "Inn" | "Ut" | "Gebyr">> & {
-					Inn?: number | string;
-					Ut?: number | string;
-					Gebyr?: number | string;
-				};
-
-				const ensureStringAmount = (v: number | string | undefined): string =>
-					typeof v === "string"
-						? toAmountString(v)
-						: typeof v === "number"
-						? toAmountString(numberToPlain(v))
-						: "";
-
-				const pushRow = (r: RowInput): void => {
-					const gebyr =
-						feeLeftSOL > 0 ? toAmountString(toAmountText(feeLeftSOL)) : "";
-					const gebyrVal = feeLeftSOL > 0 ? "SOL" : "";
-					if (feeLeftSOL > 0) feeLeftSOL = 0;
-
-					rows.push({
-						Tidspunkt: time,
-						Type: r.Type as KSRow["Type"],
-						Inn: ensureStringAmount(r.Inn),
-						"Inn-Valuta": r["Inn-Valuta"]
-							? currencyCode(String(r["Inn-Valuta"]))
-							: "",
-						Ut: ensureStringAmount(r.Ut),
-						"Ut-Valuta": r["Ut-Valuta"]
-							? currencyCode(String(r["Ut-Valuta"]))
-							: "",
-						Gebyr: gebyr || "0",
-						"Gebyr-Valuta": gebyrVal,
-						Marked: String(r.Marked ?? source ?? "solana"),
-						Notat: `sig:${sig}`
-					});
-				};
-
-				const ownsFrom = (t: TokenTransferPlus) =>
-					t.fromUserAccount === address ||
-					(t.fromTokenAccount ? myATAs.has(t.fromTokenAccount) : false);
-				const ownsTo = (t: TokenTransferPlus) =>
-					t.toUserAccount === address ||
-					(t.toTokenAccount ? myATAs.has(t.toTokenAccount) : false);
-
-				const sides =
-					pickSwapSides(
-						tokenTransfers,
-						nativeTransfers,
-						includeNFT,
-						address,
-						myATAs,
-						resolveSymDec
-					) ||
-					(isSwapMeta
-						? pickSwapSides(
-								tokenTransfers,
-								[],
-								includeNFT,
-								address,
-								myATAs,
-								resolveSymDec
-						  )
-						: null);
-
-				if (sides) {
-					pushRow({
-						Type: "Handel",
-						Inn: sides.inAmt,
-						"Inn-Valuta": sides.inSym,
-						Ut: sides.outAmt,
-						"Ut-Valuta": sides.outSym,
-						Marked: "SOLANA DEX"
-					});
-					continue;
-				}
-
-				const solSent = nativeTransfers.filter(
-					(n) => n.fromUserAccount === address
-				);
-				const solRecv = nativeTransfers.filter(
-					(n) => n.toUserAccount === address
-				);
-				if (solSent.length) {
-					const amt = sum(solSent, (n) => lamportsToSol(n.amount ?? 0));
-					if (amt) {
-						pushRow({
-							Type: "Overføring-Ut",
-							Inn: 0,
-							"Inn-Valuta": "",
-							Ut: amt,
-							"Ut-Valuta": "SOL",
-							Marked: "SOLANA"
-						});
-					}
-				}
-				if (solRecv.length) {
-					const amt = sum(solRecv, (n) => lamportsToSol(n.amount ?? 0));
-					if (amt) {
-						pushRow({
-							Type: "Overføring-Inn",
-							Inn: amt,
-							"Inn-Valuta": "SOL",
-							Ut: 0,
-							"Ut-Valuta": "",
-							Marked: "SOLANA"
-						});
-					}
-				}
-
-				for (const t of tokenTransfers) {
-					if (!includeNFT && (t.tokenStandard === "nft" || (t as any).isNFT))
-						continue;
-					const { amountNum, amountText, symbol } = amountFromTransfer(
-						t,
-						resolveSymDec
-					);
-					if (amountNum === 0) continue;
-
-					if (ownsFrom(t)) {
-						pushRow({
-							Type: "Overføring-Ut",
-							Inn: 0,
-							"Inn-Valuta": "",
-							Ut: amountText,
-							"Ut-Valuta": symbol,
-							Marked: String(source).toUpperCase() || "SPL"
-						});
-					} else if (ownsTo(t)) {
-						pushRow({
-							Type: "Overføring-Inn",
-							Inn: amountText,
-							"Inn-Valuta": symbol,
-							Ut: 0,
-							"Ut-Valuta": "",
-							Marked: String(source).toUpperCase() || "SPL"
-						});
-					}
-				}
-
-				if (type.toUpperCase().includes("AIRDROP")) {
-					const recvToken = tokenTransfers.find((t) => ownsTo(t));
-					if (recvToken) {
-						const { amountText, symbol } = amountFromTransfer(
-							recvToken,
-							resolveSymDec
-						);
-						if (amountText !== "0") {
-							pushRow({
-								Type: "Erverv",
-								Inn: amountText,
-								"Inn-Valuta": symbol,
-								Ut: 0,
-								"Ut-Valuta": "",
-								Marked: String(source).toUpperCase() || "AIRDROP"
-							});
-						}
-					}
-				}
-
-				const rewardLamports = (tx.events as any)?.stakingReward?.amount ?? 0;
-				if (
-					rewardLamports > 0 ||
-					String(type).toUpperCase().includes("REWARD")
-				) {
-					const amt = lamportsToSol(rewardLamports);
-					if (amt) {
-						pushRow({
-							Type: "Inntekt",
-							Inn: amt,
-							"Inn-Valuta": "SOL",
-							Ut: 0,
-							"Ut-Valuta": "",
-							Marked: "STAKE"
-						});
-					}
-				}
+				const classified = classifyTxToRows({
+					tx,
+					address,
+					myATAs,
+					includeNFT,
+					useOslo,
+					resolveSymDec
+				});
+				rows.push(...classified);
 			} catch {}
 		}
 
