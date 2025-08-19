@@ -1,3 +1,4 @@
+// app/page.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -17,7 +18,9 @@ import {
 	FiChevronDown,
 	FiX,
 	FiTag,
-	FiInfo
+	FiInfo,
+	FiEdit,
+	FiCopy
 } from "react-icons/fi";
 import { IoWalletOutline } from "react-icons/io5";
 import { SiSolana } from "react-icons/si";
@@ -31,9 +34,29 @@ function ClientOnly({ children }: { children: React.ReactNode }) {
 }
 
 /* ================= Types ================= */
+/* ================= Types ================= */
+
+// Kryptosekken types (dropdown options)
+const TYPE_OPTIONS = [
+	"Handel",
+	"Erverv",
+	"Inntekt",
+	"Tap",
+	"Forbruk",
+	"Renteinntekt",
+	"Overføring-Inn",
+	"Overføring-Ut",
+	"Gave-Inn",
+	"Gave-Ut",
+	"Tap-uten-fradrag",
+	"Forvaltningskostnad"
+] as const;
+
+type KSType = (typeof TYPE_OPTIONS)[number];
+
 type KSRow = {
 	Tidspunkt: string;
-	Type: string;
+	Type: KSType; // <- enforce KS types
 	Inn: string;
 	"Inn-Valuta": string;
 	Ut: string;
@@ -43,7 +66,7 @@ type KSRow = {
 	Marked: string;
 	Notat: string;
 };
-type KSPreviewRow = KSRow & { signature?: string };
+type KSPreviewRow = KSRow & { signature?: string; signer?: string };
 
 // "Needs attention" keys and overrides
 type OverrideMaps = {
@@ -85,7 +108,7 @@ function isUnknownMarket(m?: string) {
 	return false;
 }
 
-type DustMode = "off" | "remove" | "aggregate";
+type DustMode = "off" | "remove" | "aggregate-signer" | "aggregate-period";
 type DustInterval = "day" | "week" | "month" | "year";
 type SortOrder = "desc" | "asc";
 
@@ -96,7 +119,9 @@ const schema = z.object({
 	toISO: z.string().optional(),
 	walletName: z.string().optional(),
 	includeNFT: z.boolean().optional(),
-	dustMode: z.enum(["off", "remove", "aggregate"]).optional(),
+	dustMode: z
+		.enum(["off", "remove", "aggregate-signer", "aggregate-period"])
+		.optional(),
 	dustThreshold: z.union([z.string(), z.number()]).optional(),
 	dustInterval: z.enum(["day", "week", "month", "year"]).optional(),
 	useOslo: z.boolean().optional() // ⬅️ added
@@ -216,7 +241,9 @@ export default function Home() {
 	// Dust controls
 	const [dustMode, setDustMode] = useState<DustMode>("off");
 	const [dustThreshold, setDustThreshold] = useState<string>("0.001");
-	const [dustInterval, setDustInterval] = useState<DustInterval>("day");
+	const [dustInterval, setDustInterval] = useState<DustInterval>("week");
+	type EditScope = "one" | "bySigner" | "bySignature" | "byMarked";
+	const [editScope, setEditScope] = useState<EditScope>("one");
 
 	// Tab + overrides + ignores
 	const [activeTab, setActiveTab] = useState<"preview" | "attention">(
@@ -256,7 +283,7 @@ export default function Home() {
 
 		for (const r of rows) {
 			const sig = extractSig(r);
-
+			const isHighlighted = sig && highlightSig === sig;
 			// SYMBOLS
 			for (const s of [r["Inn-Valuta"], r["Ut-Valuta"]].filter(
 				Boolean
@@ -324,6 +351,308 @@ export default function Home() {
 		() => issues.filter((i) => i.status === "pending").length,
 		[issues]
 	);
+
+	// ===== Editable cell modal state =====
+	type FieldKey = keyof KSRow;
+
+	const [editOpen, setEditOpen] = useState(false);
+	const [editTarget, setEditTarget] = useState<{
+		idxOriginal: number;
+		field: FieldKey;
+		sig?: string;
+		signer?: string;
+		label: string;
+	} | null>(null);
+	const [editDraft, setEditDraft] = useState("");
+
+	// Open editor for a given cell
+	function openEditCell(
+		idxOriginal: number,
+		field: FieldKey,
+		currentValue: string
+	) {
+		const sig = extractSig(rows![idxOriginal]);
+		const signer = rows![idxOriginal]?.signer;
+		setEditTarget({
+			idxOriginal,
+			field,
+			sig,
+			signer,
+			label: field
+		});
+		setEditDraft(
+			field === "Type" && !TYPE_OPTIONS.includes(currentValue as KSType)
+				? TYPE_OPTIONS[0]
+				: currentValue ?? ""
+		);
+		setEditScope("one");
+		setEditOpen(true);
+	}
+
+	// Apply an edit (single cell OR all rows with same signer address)
+	function applyEdit(mode: EditScope) {
+		if (!rows || !editTarget) return;
+		const { idxOriginal, field, signer, sig } = editTarget;
+		const newVal = editDraft;
+
+		// capture the original market value of the edited row
+		const originalMarket = rows[idxOriginal]?.Marked?.trim();
+
+		setRows((prev) => {
+			if (!prev) return prev;
+			const next = [...prev];
+
+			if (mode === "one") {
+				const row = { ...next[idxOriginal] } as any;
+				row[field] = newVal;
+				next[idxOriginal] = row;
+				return next;
+			}
+
+			if (mode === "bySigner") {
+				if (!signer) return prev;
+				for (let i = 0; i < next.length; i++) {
+					const rowSigner = next[i]?.signer;
+					if (rowSigner && rowSigner === signer) {
+						const row = { ...next[i] } as any;
+						row[field] = newVal;
+						next[i] = row;
+					}
+				}
+				return next;
+			}
+
+			if (mode === "bySignature") {
+				if (!sig) return prev;
+				for (let i = 0; i < next.length; i++) {
+					const rowSig = extractSig(next[i]);
+					if (rowSig && rowSig === sig) {
+						const row = { ...next[i] } as any;
+						row[field] = newVal;
+						next[i] = row;
+					}
+				}
+				return next;
+			}
+
+			// NEW: apply to all rows that share the same Marked value
+			if (mode === "byMarked") {
+				if (!originalMarket) return prev;
+				for (let i = 0; i < next.length; i++) {
+					if ((next[i]?.Marked ?? "").trim() === originalMarket) {
+						const row = { ...next[i] } as any;
+						row[field] = newVal;
+						next[i] = row;
+					}
+				}
+				return next;
+			}
+
+			return next;
+		});
+
+		// If we actually rename the Marked field, also persist to overrides -> markets
+		if (
+			mode === "byMarked" &&
+			editTarget.field === "Marked" &&
+			originalMarket
+		) {
+			setOverrides((prev) => ({
+				...prev,
+				markets: { ...(prev.markets ?? {}), [originalMarket]: newVal }
+			}));
+		}
+
+		setEditOpen(false);
+		setEditTarget(null);
+		setEditDraft("");
+	}
+
+	// ===== Resizable preview height =====
+	const [previewHeight, setPreviewHeight] = useState<number>(384); // ~24rem default
+	const isDraggingRef = useRef(false);
+	const dragStartYRef = useRef(0);
+	const startHeightRef = useRef(384);
+
+	function onResizeStart(e: React.MouseEvent) {
+		isDraggingRef.current = true;
+		dragStartYRef.current = e.clientY;
+		startHeightRef.current = previewHeight;
+		window.addEventListener("mousemove", onResizing);
+		window.addEventListener("mouseup", onResizeEnd);
+	}
+
+	function onResizing(e: MouseEvent) {
+		if (!isDraggingRef.current) return;
+		const dy = e.clientY - dragStartYRef.current;
+		const h = Math.max(
+			220,
+			Math.min(window.innerHeight - 240, startHeightRef.current + dy)
+		);
+		setPreviewHeight(h);
+	}
+
+	function onResizeEnd() {
+		isDraggingRef.current = false;
+		window.removeEventListener("mousemove", onResizing);
+		window.removeEventListener("mouseup", onResizeEnd);
+	}
+
+	/* === Cell chrome (full-bleed hover highlight, edge-to-edge) === */
+	function CellChrome({
+		children,
+		onEdit,
+		align = "left",
+		title,
+		canEdit = true,
+		clickToEdit = false, // NEW
+		showButton = true // NEW
+	}: {
+		children: React.ReactNode;
+		onEdit: () => void;
+		align?: "left" | "right";
+		title?: string;
+		canEdit?: boolean;
+		clickToEdit?: boolean; // NEW
+		showButton?: boolean; // NEW
+	}) {
+		const clickable = canEdit && clickToEdit;
+
+		return (
+			<div
+				className={`group relative block w-full h-full ${
+					align === "right" ? "text-right" : "text-left"
+				}`}
+				title={title}
+				onClick={
+					clickable
+						? (e) => {
+								e.stopPropagation();
+								onEdit();
+						  }
+						: undefined
+				}
+				role={clickable ? "button" : undefined}
+				tabIndex={clickable ? 0 : undefined}
+				onKeyDown={
+					clickable
+						? (e) => {
+								if (e.key === "Enter" || e.key === " ") {
+									e.preventDefault();
+									onEdit();
+								}
+						  }
+						: undefined
+				}
+			>
+				{/* full-bleed hover overlay */}
+				<span className="rounded pointer-events-none absolute -inset-x-2 top-1/2 -translate-y-1/2 h-10 z-0 ring-1 ring-transparent group-hover:ring-emerald-300/80 group-hover:bg-emerald-50/50 transition" />
+
+				<div
+					className={`relative z-10 ${
+						align === "right" ? "font-mono tabular-nums" : ""
+					}`}
+				>
+					{children}
+				</div>
+
+				{canEdit && showButton && (
+					<button
+						type="button"
+						onClick={(e) => {
+							e.stopPropagation();
+							onEdit();
+						}}
+						className="absolute right-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover:flex items-center justify-center h-5 w-5 rounded bg-white shadow ring-1 ring-slate-300 text-slate-600 hover:bg-slate-50"
+						aria-label="Rediger"
+					>
+						<FiEdit className="h-3.5 w-3.5" />
+					</button>
+				)}
+			</div>
+		);
+	}
+
+	function EditableCell({
+		idxOriginal,
+		field,
+		value,
+		align = "left",
+		title
+	}: {
+		idxOriginal: number;
+		field: keyof KSRow;
+		value: string;
+		align?: "left" | "right";
+		title?: string;
+	}) {
+		const isValutaField =
+			field === "Inn-Valuta" ||
+			field === "Ut-Valuta" ||
+			field === "Gebyr-Valuta";
+		const isEmpty = !String(value ?? "").trim();
+
+		// Empty valuta cells: show chrome + placeholder, but no editing at all
+		if (isValutaField && isEmpty) {
+			return (
+				<CellChrome
+					onEdit={() => {}}
+					align={align}
+					title={title}
+					canEdit={false}
+					clickToEdit={false}
+					showButton={false}
+				>
+					<span
+						className="pointer-events-none select-none text-slate-400 italic"
+						aria-hidden="true"
+					>
+						—
+					</span>
+				</CellChrome>
+			);
+		}
+
+		// Default behavior for other cells
+		const canEdit = !!String(value ?? "").trim();
+		return (
+			<CellChrome
+				onEdit={() => openEditCell(idxOriginal, field, value ?? "")}
+				align={align}
+				title={title || value}
+				canEdit={canEdit}
+			>
+				{value || ""}
+			</CellChrome>
+		);
+	}
+
+	function TidspunktCell({
+		idxOriginal,
+		value
+	}: {
+		idxOriginal: number;
+		value: string;
+	}) {
+		const [datePart, timePart = ""] = (value || "").split(" ");
+		const canEdit = !!String(value ?? "").trim();
+		return (
+			<div className="min-w-[4rem]">
+				<CellChrome
+					onEdit={() => openEditCell(idxOriginal, "Tidspunkt", value ?? "")}
+					title={value}
+					canEdit={canEdit}
+				>
+					<div className="leading-tight">
+						<div className="font-medium">{datePart || value}</div>
+						{timePart ? (
+							<div className="text-slate-500 text-[11px]">{timePart}</div>
+						) : null}
+					</div>
+				</CellChrome>
+			</div>
+		);
+	}
 
 	// Live log
 	const [logOpen, setLogOpen] = useState(false);
@@ -449,10 +778,18 @@ export default function Home() {
 	}
 
 	const filteredHistory = useMemo(() => {
-		const q = address.trim();
+		// Always show the full history; just rank likely matches first.
+		const q = address.trim().toLowerCase();
 		if (!q) return addrHistory;
-		const lc = q.toLowerCase();
-		return addrHistory.filter((a) => a.toLowerCase().includes(lc));
+
+		const starts = addrHistory.filter((a) => a.toLowerCase().startsWith(q));
+		const contains = addrHistory.filter(
+			(a) => !starts.includes(a) && a.toLowerCase().includes(q)
+		);
+		const rest = addrHistory.filter(
+			(a) => !starts.includes(a) && !contains.includes(a)
+		);
+		return [...starts, ...contains, ...rest];
 	}, [addrHistory, address]);
 
 	// Presets
@@ -728,23 +1065,91 @@ export default function Home() {
 		if (!sig) return;
 		setActiveTab("preview");
 		setHighlightSig(sig);
-		// Let tab switch render first, then scroll & highlight
+
 		setTimeout(() => {
 			const container = previewContainerRef.current;
 			if (!container) return;
 			const el = container.querySelector<HTMLElement>(`[data-sig="${sig}"]`);
-			if (el) {
-				el.scrollIntoView({ behavior: "smooth", block: "center" });
-			}
-			// remove highlight after a few seconds
-			setTimeout(() => {
-				setHighlightSig((curr) => (curr === sig ? null : curr));
-			}, 3000);
+			if (!el) return;
+
+			// compute offset inside the container and center it
+			const elRect = el.getBoundingClientRect();
+			const cRect = container.getBoundingClientRect();
+			const offsetTop = elRect.top - cRect.top + container.scrollTop;
+			const target = Math.max(0, offsetTop - container.clientHeight / 2);
+
+			container.scrollTo({ top: target, behavior: "smooth" });
 		}, 60);
+
+		setTimeout(() => {
+			setHighlightSig((curr) => (curr === sig ? null : curr));
+		}, 6000);
+	}
+
+	function middleEllipsis(s: string, start = 10, end = 8) {
+		if (!s) return "";
+		return s.length <= start + end + 1
+			? s
+			: `${s.slice(0, start)}…${s.slice(-end)}`;
+	}
+
+	function MetaBox({
+		label,
+		value,
+		link
+	}: {
+		label: string;
+		value: string;
+		link?: string;
+	}) {
+		const [copied, setCopied] = useState(false);
+		return (
+			<div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+				<div className="min-w-0">
+					<div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+						{label}
+					</div>
+					<div className="font-mono text-[12px] text-slate-800" title={value}>
+						{middleEllipsis(value)}
+					</div>
+				</div>
+
+				<div className="shrink-0 inline-flex items-center gap-1.5">
+					<button
+						type="button"
+						onClick={async () => {
+							try {
+								await navigator.clipboard.writeText(value);
+								setCopied(true);
+								setTimeout(() => setCopied(false), 1200);
+							} catch {}
+						}}
+						className="rounded p-1 text-slate-600 hover:bg-white hover:text-slate-900 ring-1 ring-transparent hover:ring-slate-200"
+						aria-label="Kopier"
+						title={copied ? "Kopiert!" : "Kopier"}
+					>
+						<FiCopy className="h-4 w-4" />
+					</button>
+
+					{link && (
+						<a
+							href={link}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="rounded p-1 text-indigo-600 hover:bg-white hover:text-indigo-700 ring-1 ring-transparent hover:ring-indigo-200"
+							aria-label="Åpne i explorer"
+							title="Åpne i explorer"
+						>
+							<FiExternalLink className="h-4 w-4" />
+						</a>
+					)}
+				</div>
+			</div>
+		);
 	}
 
 	return (
-		<main className="min-h-screen bg-gradient-to-b from-indigo-50 via-white to-emerald-50 text-slate-900">
+		<main className="min-h-screen bg-gradient-to-b from-indigo-50 via-white to-emerald-50 text-slate-900 ">
 			{/* Small UI tweaks */}
 			<style jsx global>{`
 				* {
@@ -783,7 +1188,7 @@ export default function Home() {
 				}
 			`}</style>
 
-			<div className="mx-auto max-w-5xl px-4 py-10 sm:py-16">
+			<div className="mx-auto max-w-6xl px-4 py-10 sm:py-16 ">
 				{/* Header */}
 				<header className="mb-8 sm:mb-12">
 					<div className="inline-flex items-center gap-3 rounded-full bg-white/70 ring-1 ring-black/5 px-3 py-1 text-xs font-medium text-slate-600 shadow-sm backdrop-blur">
@@ -1158,8 +1563,13 @@ export default function Home() {
 											className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
 										>
 											<option value="off">Vis alle</option>
-											<option value="remove">Skjul </option>
-											<option value="aggregate">Slå sammen periodisk</option>
+											<option value="remove">Skjul</option>
+											<option value="aggregate-signer">
+												Slå sammen fra samme sender
+											</option>
+											<option value="aggregate-period">
+												Slå sammen periodisk
+											</option>
 										</select>
 									</div>
 
@@ -1181,8 +1591,9 @@ export default function Home() {
 										</div>
 									)}
 
-									{/* Interval — ONLY when aggregate */}
-									{dustMode === "aggregate" && (
+									{/* Interval — when aggregating */}
+									{(dustMode === "aggregate-period" ||
+										dustMode === "aggregate-signer") && (
 										<div className="flex flex-col gap-1">
 											<label className="text-xs text-slate-600">Periode</label>
 											<select
@@ -1204,25 +1615,29 @@ export default function Home() {
 								{/* Info text – specific per mode */}
 								{dustMode === "off" && (
 									<p className="mt-2 text-[11px] text-slate-500">
-										<b>Vis alle:</b> Støv er mikro-overføringer (typisk &lt;
-										0.001 SOL) som ofte stammer fra spam/dusting, små refusjoner
-										fra DEX/protokoller, kontolukking eller rent-exempt
-										topp-ups, og diverse program-interaksjoner.
+										<b>Vis alle:</b> Ingen støvbehandling.
 									</p>
 								)}
-
 								{dustMode === "remove" && (
 									<p className="mt-2 text-[11px] text-slate-500">
-										<b>Skjul:</b> Filtrerer vekk alle linjer under angitt
-										grense.{" "}
+										<b>Skjul:</b> Filtrerer vekk alle overføringer under
+										grensen.{" "}
 										<span className="text-amber-700">(Ikke anbefalt)</span>
 									</p>
 								)}
-
-								{dustMode === "aggregate" && (
+								{dustMode === "aggregate-signer" && (
 									<p className="mt-2 text-[11px] text-slate-500">
-										<b>Slå sammen periodisk:</b> Slå sammen alle små{" "}
-										<code>Overføring-Inn/Ut</code> i én linje per valgt periode.
+										<b>Slå sammen fra samme sender:</b> Slår sammen små{" "}
+										<code>Overføring-Inn/Ut</code> fra hver{" "}
+										<i>signer-adresse</i> til én linje
+										<b> per valgt periode</b>. Notatet viser hvem som sendte.
+									</p>
+								)}
+								{dustMode === "aggregate-period" && (
+									<p className="mt-2 text-[11px] text-slate-500">
+										<b>Slå sammen periodisk:</b> Slår sammen små{" "}
+										<code>Overføring-Inn/Ut</code> i én linje per valgt periode
+										(uavhengig av sender).
 									</p>
 								)}
 							</div>
@@ -1361,7 +1776,7 @@ export default function Home() {
 											`issue-${kind}-${key.replace(/[^a-z0-9\-]/gi, "_")}`;
 										if (activeTab === "attention") {
 											return (
-												<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3">
+												<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 max-h-[80vh] overflow-y">
 													{issues.length === 0 ? (
 														<div className="text-sm text-emerald-700">
 															Ingen uavklarte elementer 🎉
@@ -1406,7 +1821,7 @@ export default function Home() {
 																		key={`${it.kind}:${it.key}`}
 																		className="rounded-lg bg-white p-3 ring-1 ring-slate-200"
 																	>
-																		<div className="flex items-start justify-between gap-3">
+																		<div className="flex items-center justify-between gap-3">
 																			<div className="space-y-1">
 																				<div className="text-sm font-medium text-slate-800">
 																					{it.kind === "unknown-token"
@@ -1551,12 +1966,26 @@ export default function Home() {
 										}
 
 										// PREVIEW TAB
-										const sorted = [...effectiveRows].sort((a, b) => {
-											const ta = parseTidspunkt(a.Tidspunkt);
-											const tb = parseTidspunkt(b.Tidspunkt);
+										// keep original index for editing lookups
+										// PREVIEW TAB — replace the block that builds `limited`
+										const baseIndexed = effectiveRows.map((r, i) => ({ r, i }));
+										const sorted = [...baseIndexed].sort((a, b) => {
+											const ta = parseTidspunkt(a.r.Tidspunkt);
+											const tb = parseTidspunkt(b.r.Tidspunkt);
 											return sortOrder === "desc" ? tb - ta : ta - tb;
 										});
-										const limited = sorted.slice(0, 200);
+
+										let limited = sorted.slice(0, 200);
+										if (highlightSig) {
+											const idx = sorted.findIndex(
+												(it) => extractSig(it.r) === highlightSig
+											);
+											if (idx >= 0) {
+												const start = Math.max(0, idx - 100);
+												const end = Math.min(sorted.length, idx + 100);
+												limited = sorted.slice(start, end);
+											}
+										}
 
 										return (
 											<div className="mt-6">
@@ -1580,15 +2009,15 @@ export default function Home() {
 														</select>
 													</div>
 												</div>
-
 												<div
 													ref={previewContainerRef}
-													className="max-h-[24rem] overflow-auto rounded-xl ring-1 ring-slate-200"
+													className="relative overflow-auto overscroll-contain rounded-t-xl ring-1 ring-slate-200 contain-content"
+													style={{ height: previewHeight }}
 												>
 													<table className="min-w-full text-xs">
-														<thead className="sticky top-0 bg-slate-50 text-slate-700">
+														<thead className="sticky top-0 z-20 bg-white text-slate-700 shadow-sm">
 															<tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:text-left whitespace-nowrap">
-																<th className="min-w-[9.5rem]">Tidspunkt</th>
+																<th className="min-w-[4rem]">Tidspunkt</th>
 																<th>Type</th>
 																<th className="text-right">Inn</th>
 																<th>Inn-Valuta</th>
@@ -1602,7 +2031,9 @@ export default function Home() {
 															</tr>
 														</thead>
 														<tbody className="divide-y divide-slate-100 bg-white">
-															{limited.map((r, i) => {
+															{limited.map((it, i) => {
+																const r = it.r;
+																const idxOriginal = it.i;
 																const sig = extractSig(r);
 																const solscan = sig
 																	? `https://solscan.io/tx/${sig}`
@@ -1610,53 +2041,100 @@ export default function Home() {
 																const rowKey = `${sig ?? "nosig"}-${r.Type}-${
 																	r["Inn-Valuta"]
 																}-${r["Ut-Valuta"]}-${r.Inn}-${r.Ut}-${i}`;
-																const [datePart, timePart] =
-																	r.Tidspunkt.split(" ");
 
-																const highlight =
-																	sig && highlightSig === sig
-																		? "bg-amber-50 ring-2 ring-amber-400"
-																		: "";
+																const highlight = sig && highlightSig === sig;
 
 																return (
 																	<tr
 																		key={rowKey}
 																		data-sig={sig || undefined}
-																		className={`[&>td]:px-3 [&>td]:py-2 transition-colors ${highlight}`}
+																		className={`odd:bg-white even:bg-black/8 [&>td]:px-3 [&>td]:py-2 transition-colors
+    																	${highlight ? "[&>td]:bg-amber-50" : ""}`}
 																	>
 																		<td className="font-medium whitespace-normal leading-tight">
-																			<div className="min-w-[9.5rem]">
-																				<div>{datePart}</div>
-																				<div className="text-slate-500">
-																					{timePart}
-																				</div>
-																			</div>
+																			<TidspunktCell
+																				idxOriginal={idxOriginal}
+																				value={r.Tidspunkt}
+																			/>
 																		</td>
-																		<td>{r.Type}</td>
-																		<td className="text-right font-mono tabular-nums">
-																			{r.Inn}
+
+																		<td>
+																			<EditableCell
+																				idxOriginal={idxOriginal}
+																				field={"Type"}
+																				value={r.Type}
+																			/>
 																		</td>
-																		<td>{r["Inn-Valuta"]}</td>
-																		<td className="text-right font-mono tabular-nums">
-																			{r.Ut}
+
+																		<td className="text-right">
+																			<EditableCell
+																				idxOriginal={idxOriginal}
+																				field={"Inn"}
+																				value={r.Inn}
+																				align="right"
+																			/>
 																		</td>
-																		<td>{r["Ut-Valuta"]}</td>
-																		<td className="text-right font-mono tabular-nums">
-																			{r.Gebyr}
+
+																		<td>
+																			<EditableCell
+																				idxOriginal={idxOriginal}
+																				field={"Inn-Valuta"}
+																				value={r["Inn-Valuta"]}
+																			/>
 																		</td>
-																		<td>{r["Gebyr-Valuta"]}</td>
-																		<td
-																			className="truncate max-w-[12rem]"
-																			title={r.Marked}
-																		>
-																			{r.Marked}
+
+																		<td className="text-right">
+																			<EditableCell
+																				idxOriginal={idxOriginal}
+																				field={"Ut"}
+																				value={r.Ut}
+																				align="right"
+																			/>
 																		</td>
-																		<td
-																			className="truncate max-w-[14rem]"
-																			title={r.Notat}
-																		>
-																			{r.Notat}
+
+																		<td>
+																			<EditableCell
+																				idxOriginal={idxOriginal}
+																				field={"Ut-Valuta"}
+																				value={r["Ut-Valuta"]}
+																			/>
 																		</td>
+
+																		<td className="text-right">
+																			<EditableCell
+																				idxOriginal={idxOriginal}
+																				field={"Gebyr"}
+																				value={r.Gebyr}
+																				align="right"
+																			/>
+																		</td>
+
+																		<td>
+																			<EditableCell
+																				idxOriginal={idxOriginal}
+																				field={"Gebyr-Valuta"}
+																				value={r["Gebyr-Valuta"]}
+																			/>
+																		</td>
+
+																		<td className="truncate max-w-[12rem]">
+																			<EditableCell
+																				idxOriginal={idxOriginal}
+																				field={"Marked"}
+																				value={r.Marked}
+																				title={r.Marked}
+																			/>
+																		</td>
+
+																		<td className="truncate max-w-[14rem]">
+																			<EditableCell
+																				idxOriginal={idxOriginal}
+																				field={"Notat"}
+																				value={r.Notat}
+																				title={r.Notat}
+																			/>
+																		</td>
+
 																		<td>
 																			{solscan ? (
 																				<a
@@ -1692,6 +2170,13 @@ export default function Home() {
 															)}
 														</tbody>
 													</table>
+												</div>
+												<div
+													onMouseDown={onResizeStart}
+													className="flex items-center justify-center h-4 cursor-ns-resize bg-slate-50 border-x border-b border-slate-200 rounded-b-xl select-none"
+													title="Dra for å endre høyde"
+												>
+													<div className="h-1 w-12 rounded-full bg-slate-300" />
 												</div>
 											</div>
 										);
@@ -1735,6 +2220,153 @@ export default function Home() {
 											<FiDownload className="h-4 w-4" />
 											Last ned CSV
 										</button>
+									</div>
+								</div>
+							)}
+
+							{/* ===== Inline editor modal (improved UI, wraps long text) ===== */}
+							{editOpen && editTarget && (
+								<div
+									className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4"
+									onClick={() => setEditOpen(false)}
+								>
+									<div
+										className="w-full max-w-lg sm:max-w-2xl rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200 p-4"
+										onClick={(e) => e.stopPropagation()}
+									>
+										<div className="flex items-center justify-between">
+											<h3 className="text-sm font-semibold text-slate-800">
+												Rediger felt:{" "}
+												<code className="font-mono">{editTarget.label}</code>
+											</h3>
+											<button
+												type="button"
+												onClick={() => setEditOpen(false)}
+												className="rounded-md p-1 text-slate-500 hover:bg-slate-100"
+												aria-label="Lukk"
+											>
+												<FiX className="h-5 w-5" />
+											</button>
+										</div>
+
+										{(editTarget.sig || editTarget.signer) && (
+											<div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+												{editTarget.sig && (
+													<MetaBox
+														label="Signatur"
+														value={editTarget.sig}
+														link={`https://solscan.io/tx/${editTarget.sig}`}
+													/>
+												)}
+												{editTarget.signer && (
+													<MetaBox
+														label="Signer-adresse"
+														value={editTarget.signer}
+														link={`https://solscan.io/address/${editTarget.signer}`}
+													/>
+												)}
+											</div>
+										)}
+
+										<div className="mt-3">
+											{editTarget.field === "Type" ? (
+												<select
+													value={editDraft}
+													onChange={(e) => setEditDraft(e.target.value)}
+													className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+												>
+													{TYPE_OPTIONS.map((t) => (
+														<option key={t} value={t}>
+															{t}
+														</option>
+													))}
+												</select>
+											) : (
+												<textarea
+													rows={6}
+													autoFocus
+													value={editDraft}
+													onChange={(e) => setEditDraft(e.target.value)}
+													className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words min-h-[7rem]"
+													placeholder="Ny verdi…"
+												/>
+											)}
+											<p className="mt-1 text-[11px] text-slate-500">
+												{editTarget.field === "Type"
+													? "Velg en støttet type fra Kryptosekken."
+													: ""}
+											</p>
+										</div>
+
+										<div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+											<div className="text-[11px] text-slate-500">
+												Velg hvor endringen skal gjelde.
+											</div>
+											<div className="flex flex-wrap items-center gap-2">
+												<select
+													value={editScope}
+													onChange={(e) =>
+														setEditScope(e.target.value as EditScope)
+													}
+													className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+												>
+													<option value="one">Bare dette feltet</option>
+													<option
+														value="bySigner"
+														disabled={!editTarget?.signer}
+														title={
+															editTarget?.signer
+																? ""
+																: "Ingen sender-adresse tilgjengelig"
+														}
+													>
+														Alle fra samme sender adresse
+													</option>
+													<option
+														value="bySignature"
+														disabled={!editTarget?.sig}
+														title={
+															editTarget?.sig
+																? ""
+																: "Ingen signatur tilgjengelig"
+														}
+													>
+														Alle med samme signatur
+													</option>
+
+													{/* NEW */}
+													<option
+														value="byMarked"
+														disabled={
+															!rows?.[
+																editTarget?.idxOriginal ?? 0
+															]?.Marked?.trim()
+														}
+														title={
+															rows?.[
+																editTarget?.idxOriginal ?? 0
+															]?.Marked?.trim()
+																? ""
+																: "Ingen Marked på valgt rad"
+														}
+													>
+														Alle fra samme marked
+													</option>
+												</select>
+
+												<button
+													type="button"
+													onClick={() => applyEdit(editScope)}
+													disabled={
+														(editScope === "bySigner" && !editTarget?.signer) ||
+														(editScope === "bySignature" && !editTarget?.sig)
+													}
+													className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+												>
+													Lagre
+												</button>
+											</div>
+										</div>
 									</div>
 								</div>
 							)}

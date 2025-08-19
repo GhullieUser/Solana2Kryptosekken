@@ -407,3 +407,63 @@ export async function fetchJupiterTokenMetadataMap(
 
 	return out;
 }
+
+/* ================= Fee payer / signer (RPC fallback for missing feePayer) ================= */
+
+/**
+ * Best-effort lookup of the signer/fee payer for a given signature using Helius RPC.
+ * Returns null if it cannot be determined.
+ */
+export async function fetchFeePayer(
+	signature: string,
+	apiKey?: string
+): Promise<string | null> {
+	const key = resolveHeliusKey(apiKey);
+	const url = new URL(
+		`https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(key)}`
+	);
+
+	// jsonParsed returns accountKeys with { pubkey, signer, writable }
+	const body = {
+		jsonrpc: "2.0",
+		id: 1,
+		method: "getTransaction",
+		params: [
+			signature,
+			{
+				encoding: "jsonParsed",
+				maxSupportedTransactionVersion: 0
+			}
+		]
+	};
+
+	const res = await fetchWithRetry(
+		url,
+		{
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(body)
+		},
+		3
+	);
+
+	const raw = await res.text();
+	let json: any;
+	try {
+		json = JSON.parse(raw);
+	} catch {
+		return null;
+	}
+	const keys = json?.result?.transaction?.message?.accountKeys;
+	if (!Array.isArray(keys) || keys.length === 0) return null;
+
+	const first = keys[0];
+	if (typeof first === "string") return first;
+	if (first && typeof first?.pubkey === "string") return first.pubkey as string;
+
+	// Some nodes may return a different shape; try to find the first signer
+	const signerObj = keys.find(
+		(k: any) => k?.signer && typeof k?.pubkey === "string"
+	);
+	return typeof signerObj?.pubkey === "string" ? signerObj.pubkey : null;
+}

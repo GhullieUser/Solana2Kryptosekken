@@ -8,7 +8,8 @@ import {
 	getTokenAccountsByOwner,
 	HeliusTx,
 	NativeTransfer,
-	TokenTransfer
+	TokenTransfer,
+	fetchFeePayer
 } from "@/lib/helius";
 import {
 	KSRow,
@@ -29,6 +30,8 @@ type CacheVal = {
 	rawCount: number;
 	count: number;
 	createdAt: number;
+	/** signature -> signer/feePayer mapping for quick access when serving from cache */
+	sigToSigner?: Record<string, string>;
 };
 const CACHE = new Map<string, CacheVal>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -72,11 +75,11 @@ function sum<T>(arr: T[], f: (x: T) => number): number {
 	return arr.reduce((a, b) => a + f(b), 0);
 }
 
-function numberToPlain(n: number, maxDecimals = 18): string {
+function numberToPlain(n: number): string {
 	if (!Number.isFinite(n)) return "0";
 	const s = String(n);
 	if (!/e/i.test(s)) return s;
-	const f = n.toFixed(maxDecimals);
+	const f = n.toFixed(18);
 	return f.replace(/\.?0+$/, "");
 }
 
@@ -250,7 +253,12 @@ function pickSwapSides(
 
 /* ================= Dust helpers ================= */
 
-type DustMode = "off" | "remove" | "aggregate";
+type DustMode =
+	| "off"
+	| "remove"
+	| "aggregate-signer"
+	| "aggregate-period"
+	| "aggregate";
 type DustInterval = "day" | "week" | "month" | "year";
 
 function decStrToNum(s: string): number {
@@ -331,15 +339,22 @@ function bucketEndDateMs(key: string, interval: DustInterval): number {
 function processDust(
 	rows: KSRow[],
 	opts: {
-		mode: DustMode;
+		mode: DustMode; // "off" | "remove" | "aggregate-signer" | "aggregate-period" | "aggregate"
 		threshold: number;
-		interval: DustInterval;
+		interval: DustInterval; // "day" | "week" | "month" | "year"
 		useOslo: boolean;
+		/** Resolve signer (fee payer) for a given signature */
+		getSigner?: (sig: string) => string | undefined;
+		/** Your own wallet address (so we can mark outgoing rows as sent by you) */
+		selfAddress?: string;
 	}
 ): KSRow[] {
-	const { mode, threshold, interval, useOslo } = opts;
+	const { mode, threshold, interval, useOslo, getSigner, selfAddress } = opts;
+
+	// Nothing to do
 	if (mode === "off" || threshold <= 0) return rows;
 
+	// Hard remove sub-threshold transfers
 	if (mode === "remove") {
 		return rows.filter((r) => {
 			if (!isTransferRow(r)) return true;
@@ -349,85 +364,195 @@ function processDust(
 		});
 	}
 
-	// aggregate
-	type AggKey = string; // `${bucket}|${dir}|${sym}`
-	type AggVal = {
-		count: number;
-		totalAmt: number;
-		totalFeeSOL: number;
-		bucketMs: number;
-		dir: "INN" | "UT";
-		sym: string;
-	};
-	const keep: KSRow[] = [];
-	const agg = new Map<AggKey, AggVal>();
+	// Helper to create final, sorted array
+	const finish = (keep: KSRow[], aggRows: KSRow[]) =>
+		[...keep, ...aggRows].sort((a, b) =>
+			a.Tidspunkt < b.Tidspunkt ? -1 : a.Tidspunkt > b.Tidspunkt ? 1 : 0
+		);
 
-	for (const r of rows) {
-		if (!isTransferRow(r)) {
-			keep.push(r);
-			continue;
-		}
-		const info = directionAndCurrency(r);
-		if (!info) {
-			keep.push(r);
-			continue;
-		}
-		if (info.amt >= threshold) {
-			keep.push(r);
-			continue;
+	// ===================== AGGREGATE BY SIGNER (per period) =====================
+	if (mode === "aggregate-signer" || mode === "aggregate") {
+		type AggKey = string; // `${bucket}|${dir}|${sym}|${signer}`
+		type AggVal = {
+			count: number;
+			totalAmt: number;
+			totalFeeSOL: number;
+			bucketMs: number;
+			dir: "INN" | "UT";
+			sym: string;
+			signer: string;
+		};
+
+		const keep: KSRow[] = [];
+		const agg = new Map<AggKey, AggVal>();
+
+		for (const r of rows) {
+			if (!isTransferRow(r)) {
+				keep.push(r);
+				continue;
+			}
+
+			const info = directionAndCurrency(r);
+			if (!info) {
+				keep.push(r);
+				continue;
+			}
+
+			// Keep large transfers
+			if (info.amt >= threshold) {
+				keep.push(r);
+				continue;
+			}
+
+			// Pull signer from tx signature in Notat; if outgoing and missing, assume self
+			const sig = extractSigFromNotat(r.Notat || "");
+			const signer =
+				(sig && getSigner?.(sig)) ||
+				(info.dir === "UT" ? selfAddress : undefined) ||
+				"UNKNOWN";
+
+			const bucket = bucketKeyFromTidspunkt(r.Tidspunkt, interval);
+			const key = `${bucket}|${info.dir}|${info.sym}|${signer}`;
+			const fee = decStrToNum(r.Gebyr);
+
+			const existing = agg.get(key);
+			if (existing) {
+				existing.count += 1;
+				existing.totalAmt += info.amt;
+				existing.totalFeeSOL += fee;
+			} else {
+				agg.set(key, {
+					count: 1,
+					totalAmt: info.amt,
+					totalFeeSOL: fee,
+					bucketMs: bucketEndDateMs(bucket, interval),
+					dir: info.dir,
+					sym: info.sym,
+					signer
+				});
+			}
 		}
 
-		const bucket = bucketKeyFromTidspunkt(r.Tidspunkt, interval);
-		const key = `${bucket}|${info.dir}|${info.sym}`;
-		const fee = decStrToNum(r.Gebyr);
-		const existing = agg.get(key);
-		if (existing) {
-			existing.count += 1;
-			existing.totalAmt += info.amt;
-			existing.totalFeeSOL += fee;
-		} else {
-			agg.set(key, {
-				count: 1,
-				totalAmt: info.amt,
-				totalFeeSOL: fee,
-				bucketMs: bucketEndDateMs(bucket, interval),
-				dir: info.dir,
-				sym: info.sym
+		const aggRows: KSRow[] = [];
+		const short = (a: string) =>
+			a && a.length > 12 ? `${a.slice(0, 5)}…${a.slice(-5)}` : a;
+
+		for (const [, v] of agg.entries()) {
+			// clamp to now to avoid future timestamps
+			const nowMs = Date.now();
+			const cappedMs = Math.min(v.bucketMs, nowMs);
+			const ts = toNorwayTimeString(cappedMs, useOslo);
+
+			const type: KSRow["Type"] =
+				v.dir === "INN" ? "Overføring-Inn" : "Overføring-Ut";
+			const inn = v.dir === "INN" ? numberToPlain(v.totalAmt) : "0";
+			const ut = v.dir === "UT" ? numberToPlain(v.totalAmt) : "0";
+			const gebyr = v.totalFeeSOL > 0 ? numberToPlain(v.totalFeeSOL) : "0";
+			const signerNote =
+				v.signer && v.signer !== "UNKNOWN" ? short(v.signer) : "ukjent";
+
+			aggRows.push({
+				Tidspunkt: ts,
+				Type: type,
+				Inn: toAmountString(inn),
+				"Inn-Valuta": v.dir === "INN" ? currencyCode(v.sym) : "",
+				Ut: toAmountString(ut),
+				"Ut-Valuta": v.dir === "UT" ? currencyCode(v.sym) : "",
+				Gebyr: toAmountString(gebyr),
+				"Gebyr-Valuta": v.totalFeeSOL > 0 ? "SOL" : "",
+				Marked: "AGGREGERT-STØV",
+				Notat: `agg:${v.count} støv < ${threshold} fra:${signerNote}`
 			});
 		}
+
+		return finish(keep, aggRows);
 	}
 
-	const aggRows: KSRow[] = [];
-	for (const [, v] of agg.entries()) {
-		// cap to now to avoid future timestamps in current period
-		const nowMs = Date.now();
-		const cappedMs = Math.min(v.bucketMs, nowMs);
-		const ts = toNorwayTimeString(cappedMs, useOslo);
+	// ===================== AGGREGATE BY PERIOD ONLY (ignores signer) =====================
+	if (mode === "aggregate-period") {
+		type AggKey = string; // `${bucket}|${dir}|${sym}`
+		type AggVal = {
+			count: number;
+			totalAmt: number;
+			totalFeeSOL: number;
+			bucketMs: number;
+			dir: "INN" | "UT";
+			sym: string;
+		};
 
-		const type: KSRow["Type"] =
-			v.dir === "INN" ? "Overføring-Inn" : "Overføring-Ut";
-		const inn = v.dir === "INN" ? numberToPlain(v.totalAmt) : "0";
-		const ut = v.dir === "UT" ? numberToPlain(v.totalAmt) : "0";
-		const gebyr = v.totalFeeSOL > 0 ? numberToPlain(v.totalFeeSOL) : "0";
+		const keep: KSRow[] = [];
+		const agg = new Map<AggKey, AggVal>();
 
-		aggRows.push({
-			Tidspunkt: ts,
-			Type: type,
-			Inn: toAmountString(inn),
-			"Inn-Valuta": v.dir === "INN" ? currencyCode(v.sym) : "",
-			Ut: toAmountString(ut),
-			"Ut-Valuta": v.dir === "UT" ? currencyCode(v.sym) : "",
-			Gebyr: toAmountString(gebyr),
-			"Gebyr-Valuta": v.totalFeeSOL > 0 ? "SOL" : "",
-			Marked: "AGGREGERT",
-			Notat: `agg:${v.count} støv < ${opts.threshold}`
-		});
+		for (const r of rows) {
+			if (!isTransferRow(r)) {
+				keep.push(r);
+				continue;
+			}
+
+			const info = directionAndCurrency(r);
+			if (!info) {
+				keep.push(r);
+				continue;
+			}
+
+			if (info.amt < threshold) {
+				const bucket = bucketKeyFromTidspunkt(r.Tidspunkt, interval);
+				const key = `${bucket}|${info.dir}|${info.sym}`;
+				const fee = decStrToNum(r.Gebyr);
+
+				const existing = agg.get(key);
+				if (existing) {
+					existing.count += 1;
+					existing.totalAmt += info.amt;
+					existing.totalFeeSOL += fee;
+				} else {
+					agg.set(key, {
+						count: 1,
+						totalAmt: info.amt,
+						totalFeeSOL: fee,
+						bucketMs: bucketEndDateMs(bucket, interval),
+						dir: info.dir,
+						sym: info.sym
+					});
+				}
+				continue;
+			}
+
+			// >= threshold
+			keep.push(r);
+		}
+
+		const aggRows: KSRow[] = [];
+		for (const [, v] of agg.entries()) {
+			const nowMs = Date.now();
+			const cappedMs = Math.min(v.bucketMs, nowMs);
+			const ts = toNorwayTimeString(cappedMs, useOslo);
+
+			const type: KSRow["Type"] =
+				v.dir === "INN" ? "Overføring-Inn" : "Overføring-Ut";
+			const inn = v.dir === "INN" ? numberToPlain(v.totalAmt) : "0";
+			const ut = v.dir === "UT" ? numberToPlain(v.totalAmt) : "0";
+			const gebyr = v.totalFeeSOL > 0 ? numberToPlain(v.totalFeeSOL) : "0";
+
+			aggRows.push({
+				Tidspunkt: ts,
+				Type: type,
+				Inn: toAmountString(inn),
+				"Inn-Valuta": v.dir === "INN" ? currencyCode(v.sym) : "",
+				Ut: toAmountString(ut),
+				"Ut-Valuta": v.dir === "UT" ? currencyCode(v.sym) : "",
+				Gebyr: toAmountString(gebyr),
+				"Gebyr-Valuta": v.totalFeeSOL > 0 ? "SOL" : "",
+				Marked: "AGGREGERT-STØV",
+				Notat: `agg:${v.count} støv < ${threshold}`
+			});
+		}
+
+		return finish(keep, aggRows);
 	}
 
-	const out = [...keep, ...aggRows].sort((a, b) =>
-		a.Tidspunkt < b.Tidspunkt ? -1 : a.Tidspunkt > b.Tidspunkt ? 1 : 0
-	);
-	return out;
+	// Unknown mode → no change
+	return rows;
 }
 
 /* ================= Wallet tag for Notat ================= */
@@ -880,7 +1005,7 @@ function classifyTxToRows(opts: {
 	}
 
 	// 5) Airdrops -> Erverv
-	if (type.toUpperCase().includes("AIRDROP")) {
+	if ((tx.type || "").toUpperCase().includes("AIRDROP")) {
 		const recvToken = tokenTransfers.find((t) => ownsTo(t));
 		if (recvToken) {
 			const { amountText, symbol } = amountFromTransfer(
@@ -902,7 +1027,12 @@ function classifyTxToRows(opts: {
 
 	// 6) Staking rewards -> Inntekt
 	const rewardLamports = (tx.events as any)?.stakingReward?.amount ?? 0;
-	if (rewardLamports > 0 || String(type).toUpperCase().includes("REWARD")) {
+	if (
+		rewardLamports > 0 ||
+		String(tx.type || "")
+			.toUpperCase()
+			.includes("REWARD")
+	) {
 		const amt = lamportsToSol(rewardLamports);
 		if (amt) {
 			pushRow({
@@ -930,10 +1060,11 @@ type OverridesPayload = {
 	markets?: Record<string, string>;
 };
 
-function applyOverridesToRows(
-	rows: KSRow[],
+// Keep extras (like signature/signer) when overriding
+function applyOverridesToRows<T extends KSRow>(
+	rows: T[],
 	overrides?: OverridesPayload
-): KSRow[] {
+): T[] {
 	if (!overrides) return rows;
 
 	// accept both shapes: { tokenSymbols } or { symbols }
@@ -1001,7 +1132,10 @@ export async function POST(req: NextRequest) {
 		const useOslo = Boolean(body.useOslo ?? false);
 
 		// Dust params with defaults
-		const dustMode: DustMode = (body.dustMode ?? "off") as DustMode;
+		const rawDustMode = (body.dustMode ?? "off") as DustMode;
+		const dustMode: DustMode = (
+			rawDustMode === "aggregate" ? "aggregate-period" : rawDustMode
+		) as DustMode;
 		const dustThresholdNum =
 			typeof body.dustThreshold === "number"
 				? body.dustThreshold
@@ -1043,6 +1177,25 @@ export async function POST(req: NextRequest) {
 			return NextResponse.json({ ok: true, cleared, cacheKey: ckey });
 		}
 
+		// helper to build {signature, signer} for rows, reading from cache map or given map
+		const attachSigAndSigner = (
+			rows: KSRow[],
+			tag: string,
+			sigToSigner: Map<string, string> | Record<string, string> | undefined
+		) => {
+			const map =
+				sigToSigner instanceof Map
+					? sigToSigner
+					: new Map(Object.entries(sigToSigner || {}));
+			return rows.map((r) => {
+				// was: `${tag} ${r.Notat}`
+				const withTag = { ...r, Notat: `${tag} - ${r.Notat}` };
+				const sig = extractSigFromNotat(r.Notat);
+				const signer = sig ? map.get(sig) : undefined;
+				return { ...withTag, signature: sig, signer };
+			});
+		};
+
 		/* ---------- NDJSON streaming (preview with progress) ---------- */
 		if (wantNDJSON) {
 			const stream = new ReadableStream({
@@ -1055,13 +1208,11 @@ export async function POST(req: NextRequest) {
 					if (cached) {
 						// Serve from cache quickly
 						const tag = walletTag(address, body.walletName);
-						const rowsPreview = cached.rowsProcessed.slice(0, 500).map((r) => {
-							const withTag = { ...r, Notat: `${tag} ${r.Notat}` };
-							return {
-								...withTag,
-								signature: extractSigFromNotat(r.Notat)
-							};
-						});
+						const rowsPreview = attachSigAndSigner(
+							cached.rowsProcessed.slice(0, 500),
+							tag,
+							cached.sigToSigner
+						);
 
 						await send({
 							type: "log",
@@ -1080,7 +1231,22 @@ export async function POST(req: NextRequest) {
 						return;
 					}
 
-					// No cache => compute with progress logs
+					// Fallback to computing
+					const resolveMissingSigners = async (sigs: string[]) => {
+						const out = new Map<string, string>();
+						// light concurrency; avoid hammering RPC
+						const jobs = sigs.map(async (s) => {
+							try {
+								const fp = await fetchFeePayer(s, process.env.HELIUS_API_KEY);
+								if (fp) out.set(s, fp);
+							} catch {
+								/* ignore */
+							}
+						});
+						await Promise.allSettled(jobs);
+						return out;
+					};
+
 					try {
 						await send({
 							type: "log",
@@ -1100,6 +1266,8 @@ export async function POST(req: NextRequest) {
 
 						const addressesToQuery = [address, ...tokenAccounts];
 						const sigMap = new Map<string, HeliusTx>();
+						const sigToSigner = new Map<string, string>();
+						const missingSignerSigs = new Set<string>();
 						const maxPages = 50;
 
 						for (let ai = 0; ai < addressesToQuery.length; ai++) {
@@ -1125,6 +1293,13 @@ export async function POST(req: NextRequest) {
 								for (const tx of page) {
 									if (!tx?.signature) continue;
 									sigMap.set(tx.signature, tx);
+
+									const fpRaw: unknown = (tx as any).feePayer;
+									if (typeof fpRaw === "string" && fpRaw) {
+										sigToSigner.set(tx.signature, fpRaw);
+									} else {
+										missingSignerSigs.add(tx.signature);
+									}
 								}
 								const short = `${who.slice(0, 5)}…${who.slice(-5)}`;
 								await send({
@@ -1148,6 +1323,18 @@ export async function POST(req: NextRequest) {
 								totalATAs: tokenAccounts.length,
 								addressShort: short
 							});
+						}
+
+						// Fallback signer resolution (best effort)
+						if (missingSignerSigs.size > 0) {
+							await send({
+								type: "log",
+								message: "Henter manglende signer-adresser …"
+							});
+							const fallback = await resolveMissingSigners([
+								...missingSignerSigs
+							]);
+							for (const [k, v] of fallback.entries()) sigToSigner.set(k, v);
 						}
 
 						const allTxs = [...sigMap.values()].sort(
@@ -1217,25 +1404,28 @@ export async function POST(req: NextRequest) {
 							mode: dustMode,
 							threshold: dustThreshold,
 							interval: dustInterval,
-							useOslo
+							useOslo,
+							getSigner: (s) => (s ? sigToSigner.get(s) : undefined),
+							selfAddress: address
 						});
+
 						const count = processed.length;
 
+						// cache rows + signer map
 						setCache(ckey, {
 							rowsProcessed: processed,
 							count,
 							rawCount,
-							createdAt: Date.now()
+							createdAt: Date.now(),
+							sigToSigner: Object.fromEntries(sigToSigner.entries())
 						});
 
 						const tag = walletTag(address, body.walletName);
-						const rowsPreview = processed.slice(0, 500).map((r) => {
-							const withTag = { ...r, Notat: `${tag} ${r.Notat}` };
-							return {
-								...withTag,
-								signature: extractSigFromNotat(r.Notat)
-							};
-						});
+						const rowsPreview = attachSigAndSigner(
+							processed.slice(0, 500),
+							tag,
+							sigToSigner
+						);
 
 						await send({
 							type: "done",
@@ -1262,16 +1452,15 @@ export async function POST(req: NextRequest) {
 
 		/* ---------- JSON (non-stream) ---------- */
 		if (wantJSON) {
+			const tag = walletTag(address, body.walletName);
+
 			const cached = getCache(ckey);
 			if (cached) {
-				const tag = walletTag(address, body.walletName);
-				const rowsOutRaw = cached.rowsProcessed.map((r) => {
-					const withTag = { ...r, Notat: `${tag} ${r.Notat}` };
-					return {
-						...withTag,
-						signature: extractSigFromNotat(r.Notat)
-					};
-				});
+				const rowsOutRaw = attachSigAndSigner(
+					cached.rowsProcessed,
+					tag,
+					cached.sigToSigner
+				);
 				const rowsOut = applyOverridesToRows(rowsOutRaw, body.overrides);
 				return NextResponse.json({
 					rows: rowsOut,
@@ -1281,7 +1470,7 @@ export async function POST(req: NextRequest) {
 				});
 			}
 
-			// Fallback: compute (no progress)
+			// Compute (no progress stream)
 			const tokenAccounts = await getTokenAccountsByOwner(
 				address,
 				process.env.HELIUS_API_KEY
@@ -1291,6 +1480,9 @@ export async function POST(req: NextRequest) {
 
 			const addressesToQuery = [address, ...tokenAccounts];
 			const sigMap = new Map<string, HeliusTx>();
+			const sigToSigner = new Map<string, string>();
+			const missingSignerSigs = new Set<string>();
+
 			for (const who of addressesToQuery) {
 				let pages = 0;
 				for await (const page of fetchEnhancedTxs({
@@ -1305,9 +1497,28 @@ export async function POST(req: NextRequest) {
 					for (const tx of page) {
 						if (!tx?.signature) continue;
 						sigMap.set(tx.signature, tx);
+						const fpRaw: unknown = (tx as any).feePayer;
+						if (typeof fpRaw === "string" && fpRaw) {
+							sigToSigner.set(tx.signature, fpRaw);
+						} else {
+							missingSignerSigs.add(tx.signature);
+						}
 					}
 					if (pages >= 50) break;
 				}
+			}
+
+			// Fallback signer resolution
+			if (missingSignerSigs.size > 0) {
+				const jobs = [...missingSignerSigs].map(async (s) => {
+					try {
+						const fp = await fetchFeePayer(s, process.env.HELIUS_API_KEY);
+						if (fp) sigToSigner.set(s, fp);
+					} catch {
+						/* ignore */
+					}
+				});
+				await Promise.allSettled(jobs);
 			}
 
 			const allTxs = [...sigMap.values()].sort(
@@ -1367,26 +1578,22 @@ export async function POST(req: NextRequest) {
 				mode: dustMode,
 				threshold: dustThreshold,
 				interval: dustInterval,
-				useOslo
+				useOslo,
+				getSigner: (s) => (s ? sigToSigner.get(s) : undefined),
+				selfAddress: address
 			});
+
 			const count = processed.length;
 
 			setCache(ckey, {
 				rowsProcessed: processed,
 				count,
 				rawCount,
-				createdAt: Date.now()
+				createdAt: Date.now(),
+				sigToSigner: Object.fromEntries(sigToSigner.entries())
 			});
 
-			const tag = walletTag(address, body.walletName);
-			const rowsOutRaw = processed.map((r) => {
-				const withTag = { ...r, Notat: `${tag} ${r.Notat}` };
-				return {
-					...withTag,
-					signature: extractSigFromNotat(r.Notat)
-				};
-			});
-
+			const rowsOutRaw = attachSigAndSigner(processed, tag, sigToSigner);
 			const rowsOut = applyOverridesToRows(rowsOutRaw, body.overrides);
 
 			return NextResponse.json({
@@ -1405,7 +1612,7 @@ export async function POST(req: NextRequest) {
 		if (cached) {
 			const rowsWithTag = cached.rowsProcessed.map((r) => ({
 				...r,
-				Notat: `${tag} ${r.Notat}`
+				Notat: `${tag} - ${r.Notat}`
 			}));
 			const rowsForCsv = applyOverridesToRows(rowsWithTag, body.overrides);
 			const csv = rowsToCSV(rowsForCsv);
@@ -1503,8 +1710,15 @@ export async function POST(req: NextRequest) {
 			mode: dustMode,
 			threshold: dustThreshold,
 			interval: dustInterval,
-			useOslo
+			useOslo,
+			getSigner: (s) => {
+				const tx = s ? sigMap.get(s) : undefined;
+				const fp = (tx as any)?.feePayer;
+				return typeof fp === "string" && fp ? fp : undefined;
+			},
+			selfAddress: address
 		});
+
 		const count = processed.length;
 
 		setCache(ckey, {
@@ -1516,7 +1730,7 @@ export async function POST(req: NextRequest) {
 
 		const rowsWithTag = processed.map((r) => ({
 			...r,
-			Notat: `${tag} ${r.Notat}`
+			Notat: `${tag} - ${r.Notat}`
 		}));
 		const rowsForCsv = applyOverridesToRows(rowsWithTag, body.overrides);
 		const csv = rowsToCSV(rowsForCsv);
