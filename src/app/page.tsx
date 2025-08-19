@@ -25,6 +25,8 @@ import {
 import { IoWalletOutline } from "react-icons/io5";
 import { SiSolana } from "react-icons/si";
 
+import Image from "next/image";
+
 /* ================= Client-only guard (Option A) ================= */
 function ClientOnly({ children }: { children: React.ReactNode }) {
 	const [mounted, setMounted] = useState(false);
@@ -1149,7 +1151,7 @@ export default function Home() {
 	}
 
 	return (
-		<main className="min-h-screen bg-gradient-to-b from-indigo-50 via-white to-emerald-50 text-slate-900 ">
+		<main className="min-h-screen ">
 			{/* Small UI tweaks */}
 			<style jsx global>{`
 				* {
@@ -1191,9 +1193,19 @@ export default function Home() {
 			<div className="mx-auto max-w-6xl px-4 py-10 sm:py-16 ">
 				{/* Header */}
 				<header className="mb-8 sm:mb-12">
-					<div className="inline-flex items-center gap-3 rounded-full bg-white/70 ring-1 ring-black/5 px-3 py-1 text-xs font-medium text-slate-600 shadow-sm backdrop-blur">
-						<SiSolana className="h-4 w-4" aria-hidden />
-						Solana → Kryptosekken • CSV Generator
+					<div className="flex items-center justify-between">
+						<div className="inline-flex items-center gap-3 rounded-full bg-white/70 ring-1 ring-black/5 px-3 py-1 text-xs font-medium text-slate-600 shadow-sm backdrop-blur">
+							<SiSolana className="h-4 w-4" aria-hidden />
+							Solana → Kryptosekken • CSV Generator
+						</div>
+						<Image
+							src="/Sol2KS_logo.svg"
+							alt="Sol2KS"
+							width={160}
+							height={160}
+							className="h-10 w-auto sm:h-14"
+							priority
+						/>
 					</div>
 
 					<h1 className="mt-4 text-balance text-3xl sm:text-4xl font-semibold tracking-tight">
