@@ -634,6 +634,11 @@ function extractSigFromNotat(notat: string): string | undefined {
 /**
  * Detects CLMM/CPMM/AMM liquidity add/remove and returns the legs + optional position NFT.
  * Works mostly from transfers; protocol/model is a best-effort guess from tx.source.
+ *
+ * IMPORTANT TIGHTENING:
+ *  - If tx looks like aggregator/swap (source mentions JUPITER/AGGREGATOR), don't detect liquidity.
+ *  - Ignore native SOL legs when token SOL (WSOL) is present to avoid counting ATA rent/close.
+ *  - If both ins and outs have exactly 1 distinct symbol each, treat as swap-like elsewhere (return null).
  */
 function detectLiquidityEvent(
 	tokenTransfers: TokenTransferPlus[],
@@ -647,6 +652,12 @@ function detectLiquidityEvent(
 	) => { symbol: string; decimals: number },
 	source: string
 ): LiquidityDetection | null {
+	const srcU = String(source || "").toUpperCase();
+	// Never classify aggregator flows as liquidity
+	if (srcU.includes("JUPITER") || srcU.includes("AGGREGATOR")) {
+		return null;
+	}
+
 	const ownsFrom = (t: TokenTransferPlus) =>
 		t.fromUserAccount === address ||
 		(t.fromTokenAccount ? myATAs.has(t.fromTokenAccount) : false);
@@ -660,13 +671,27 @@ function detectLiquidityEvent(
 	const fIn = tokenTransfers.filter((t) => ownsTo(t) && !isLikelyNFT(t));
 	const fOut = tokenTransfers.filter((t) => ownsFrom(t) && !isLikelyNFT(t));
 
-	// Include native SOL legs when WSOL isn’t present
-	const nativeInSOL = nativeTransfers
-		.filter((n) => n.toUserAccount === address)
-		.reduce((a, n) => a + lamportsToSol(n.amount ?? 0), 0);
-	const nativeOutSOL = nativeTransfers
-		.filter((n) => n.fromUserAccount === address)
-		.reduce((a, n) => a + lamportsToSol(n.amount ?? 0), 0);
+	// Detect if SOL is already represented as token (WSOL), then ignore native legs to avoid ATA rent noise
+	let hasTokenSOL = false;
+	for (const t of [...fIn, ...fOut]) {
+		const { symbol } = amountFromTransfer(t, resolveSymDec);
+		if (symbol === "SOL") {
+			hasTokenSOL = true;
+			break;
+		}
+	}
+
+	// Include native SOL legs only if WSOL not present
+	const nativeInSOL = !hasTokenSOL
+		? nativeTransfers
+				.filter((n) => n.toUserAccount === address)
+				.reduce((a, n) => a + lamportsToSol(n.amount ?? 0), 0)
+		: 0;
+	const nativeOutSOL = !hasTokenSOL
+		? nativeTransfers
+				.filter((n) => n.fromUserAccount === address)
+				.reduce((a, n) => a + lamportsToSol(n.amount ?? 0), 0)
+		: 0;
 
 	// Build normalized legs
 	const ins = [
@@ -688,13 +713,14 @@ function detectLiquidityEvent(
 			: [])
 	];
 
-	// Distinct mint counts to avoid swapping false positives
 	const distinctIns = new Set(ins.map((x) => x.sym)).size;
 	const distinctOuts = new Set(outs.map((x) => x.sym)).size;
 
+	// If this looks like a simple swap (1 in, 1 out), do not treat as liquidity
+	if (distinctIns === 1 && distinctOuts === 1) return null;
+
 	const protocol = protocolFromSource(source);
 	const modelCLMM = looksCLMM(source);
-
 	// --- Preferred: explicit CLMM (when NFT is visible)
 	if (nftIn.length >= 1 && distinctOuts >= 2) {
 		const firstNFT = nftIn[0];
@@ -716,8 +742,8 @@ function detectLiquidityEvent(
 		};
 	}
 
-	// --- NFT not visible? Use leg patterns (prevents swaps from matching)
-	// ADD with 2+ outs and no ins → CLMM if source looks concentrated, else CPMM/AMM
+	// --- NFT not visible? Use strict leg patterns (prevents swaps from matching)
+	// ADD with 2+ *distinct* outs and 0 ins
 	if (distinctOuts >= 2 && distinctIns === 0) {
 		return {
 			kind: modelCLMM ? "clmm-add" : "cpmm-add",
@@ -726,7 +752,7 @@ function detectLiquidityEvent(
 			outs
 		};
 	}
-	// REMOVE with 2+ ins and no outs
+	// REMOVE with 2+ *distinct* ins and 0 outs
 	if (distinctIns >= 2 && distinctOuts === 0) {
 		return {
 			kind: modelCLMM ? "clmm-remove" : "cpmm-remove",
@@ -736,21 +762,8 @@ function detectLiquidityEvent(
 		};
 	}
 
-	// --- Conservative CPMM path (LP mint/burn visible): require 2+ legs on the opposite side
-	const insMints = new Set(fIn.map((t) => t.mint));
-	const outsMints = new Set(fOut.map((t) => t.mint));
-	const insHasMintNotInOuts = [...insMints].some((m) => !outsMints.has(m));
-	const outsHasMintNotInIns = [...outsMints].some((m) => !insMints.has(m));
-
-	// CPMM ADD: LP minted in + >=2 distinct outs
-	if (insHasMintNotInOuts && distinctOuts >= 2) {
-		return { kind: "cpmm-add", protocol, note: "LIQUIDITY ADD", outs };
-	}
-	// CPMM REMOVE: LP burned out + >=2 distinct ins
-	if (outsHasMintNotInIns && distinctIns >= 2) {
-		return { kind: "cpmm-remove", protocol, note: "LIQUIDITY REMOVE", ins };
-	}
-
+	// Drop the old "LP minted/burned inferred by differing mint sets" heuristic:
+	// it caused false positives on aggregator swaps. Without explicit signals, return null.
 	return null;
 }
 
@@ -807,7 +820,9 @@ function classifyTxToRows(opts: {
 	const type: string = tx.type || tx.description || "UNKNOWN";
 	const source: string =
 		(tx as any).source || (tx as any).programId || "solana";
+	const srcU = String(source || "").toUpperCase();
 	const isSwapMeta = type.toUpperCase().includes("SWAP");
+	const isJupiter = srcU.includes("JUPITER") || srcU.includes("AGGREGATOR");
 
 	const rows: KSRow[] = [];
 
@@ -834,7 +849,44 @@ function classifyTxToRows(opts: {
 		});
 	};
 
-	// 1) Liquidity add/remove detection first (CLMM + CPMM + others)
+	// === NEW: Prefer SWAP classification early for Jupiter/DEX swaps ===
+	// This prevents aggregator swaps from being misclassified as "UNKNOWN-LIQUIDITY".
+	let sides =
+		pickSwapSides(
+			tokenTransfers,
+			nativeTransfers,
+			includeNFT,
+			address,
+			myATAs,
+			resolveSymDec
+		) || null;
+
+	if (!sides && isSwapMeta) {
+		// fallback: ignore native when type hints swap but weird native legs confuse it
+		sides = pickSwapSides(
+			tokenTransfers,
+			[],
+			includeNFT,
+			address,
+			myATAs,
+			resolveSymDec
+		);
+	}
+
+	if (sides && (isJupiter || isSwapMeta)) {
+		pushRow({
+			Type: "Handel",
+			Inn: sides.inAmt,
+			"Inn-Valuta": sides.inSym,
+			Ut: sides.outAmt,
+			"Ut-Valuta": sides.outSym,
+			// Keep this generic so the UI recognizes it as known:
+			Marked: isJupiter ? "SOLANA DEX" : "SOLANA DEX"
+		});
+		return rows;
+	}
+
+	// 1) Liquidity add/remove detection (tightened)
 	const liq = detectLiquidityEvent(
 		tokenTransfers,
 		nativeTransfers,
@@ -901,27 +953,7 @@ function classifyTxToRows(opts: {
 		return rows; // handled
 	}
 
-	// 2) Try to combine into Handel (generic swap) if no liquidity pattern matched
-	const sides =
-		pickSwapSides(
-			tokenTransfers,
-			nativeTransfers,
-			includeNFT,
-			address,
-			myATAs,
-			resolveSymDec
-		) ||
-		(isSwapMeta
-			? pickSwapSides(
-					tokenTransfers,
-					[],
-					includeNFT,
-					address,
-					myATAs,
-					resolveSymDec
-			  )
-			: null);
-
+	// 2) Generic swap (if we didn't already return above)
 	if (sides) {
 		pushRow({
 			Type: "Handel",
