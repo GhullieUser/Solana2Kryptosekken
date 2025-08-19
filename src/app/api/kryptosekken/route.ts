@@ -98,6 +98,85 @@ function shiftDecString(raw: string, decimals: number): string {
 	return (neg ? "-" : "") + s;
 }
 
+function nativeSolInOut(
+	nativeTransfers: NativeTransfer[],
+	address: string
+): {
+	inSOL: number;
+	outSOL: number;
+} {
+	const inSOL = nativeTransfers
+		.filter((n) => n.toUserAccount === address)
+		.reduce((a, n) => a + lamportsToSol(n.amount ?? 0), 0);
+	const outSOL = nativeTransfers
+		.filter((n) => n.fromUserAccount === address)
+		.reduce((a, n) => a + lamportsToSol(n.amount ?? 0), 0);
+	return { inSOL, outSOL };
+}
+
+/** Try to derive the user's SOL delta (post - pre) in SOL. */
+function getUserLamportsDeltaSOL(tx: HeliusTx, address: string): number | null {
+	const anyTx = tx as any;
+
+	// meta.pre/post + accountKeys
+	const meta = anyTx?.meta;
+	const keysRaw =
+		anyTx?.transaction?.message?.accountKeys || anyTx?.accountKeys || null;
+	if (
+		meta &&
+		Array.isArray(meta.preBalances) &&
+		Array.isArray(meta.postBalances) &&
+		Array.isArray(keysRaw)
+	) {
+		const keys: string[] = keysRaw.map((k: any) =>
+			typeof k === "string" ? k : k?.pubkey || ""
+		);
+		const idx = keys.findIndex(
+			(k) => typeof k === "string" && k.toLowerCase() === address.toLowerCase()
+		);
+		if (
+			idx >= 0 &&
+			typeof meta.preBalances[idx] === "number" &&
+			typeof meta.postBalances[idx] === "number"
+		) {
+			const deltaLamports = meta.postBalances[idx] - meta.preBalances[idx];
+			return lamportsToSol(deltaLamports);
+		}
+	}
+
+	// accountData entries
+	if (Array.isArray(anyTx?.accountData)) {
+		const rec = anyTx.accountData.find(
+			(r: any) =>
+				(typeof r?.account === "string" &&
+					r.account.toLowerCase() === address.toLowerCase()) ||
+				(typeof r?.pubkey === "string" &&
+					r.pubkey.toLowerCase() === address.toLowerCase())
+		);
+		if (rec) {
+			if (
+				rec?.pre?.lamports != null &&
+				rec?.post?.lamports != null &&
+				Number.isFinite(rec.pre.lamports) &&
+				Number.isFinite(rec.post.lamports)
+			) {
+				return lamportsToSol(rec.post.lamports - rec.pre.lamports);
+			}
+			if (
+				rec?.nativeBalanceChange != null &&
+				Number.isFinite(rec.nativeBalanceChange)
+			) {
+				return lamportsToSol(rec.nativeBalanceChange);
+			}
+			if (rec?.lamportsChange != null && Number.isFinite(rec.lamportsChange)) {
+				return lamportsToSol(rec.lamportsChange);
+			}
+		}
+	}
+
+	return null;
+}
+
 type TokenTransferPlus = TokenTransfer & {
 	rawTokenAmount?: { tokenAmount?: string; decimals?: number };
 	fromTokenAccount?: string;
@@ -242,13 +321,30 @@ function pickSwapSides(
 	const outList = [...outTotals.entries()].sort((a, b) => b[1] - a[1]);
 
 	const [inSym, inAmt] = inList[0];
-	const outDifferent = outList.find(([sym]) => sym !== inSym);
-	const [outSym, outAmt] = outDifferent ?? outList[0];
+
+	// Prefer an out symbol that is NOT also an in symbol (handles routed swaps like SOL->USDC->TOKEN)
+	const inSet = new Set(inTotals.keys());
+	const outOnly = [...outTotals.entries()].filter(([sym]) => !inSet.has(sym));
+	let outSym: string | undefined;
+	let outAmt: number | undefined;
+
+	if (outOnly.length > 0) {
+		// Prefer SOL if present among out-only symbols, else largest
+		const solOnly = outOnly.find(([s]) => s === "SOL");
+		if (solOnly) {
+			[outSym, outAmt] = solOnly;
+		} else {
+			[outSym, outAmt] = outOnly.sort((a, b) => b[1] - a[1])[0];
+		}
+	} else {
+		const outDifferent = outList.find(([sym]) => sym !== inSym);
+		[outSym, outAmt] = outDifferent ?? outList[0];
+	}
 
 	if (!inSym || !outSym || inSym === outSym) return null;
-	if (!(inAmt > 0 && outAmt > 0)) return null;
+	if (!(inAmt > 0 && (outAmt ?? 0) > 0)) return null;
 
-	return { inAmt, inSym, outAmt, outSym };
+	return { inAmt, inSym, outAmt: outAmt!, outSym };
 }
 
 /* ================= Dust helpers ================= */
@@ -576,7 +672,7 @@ type LiquidityKind =
 
 type LiquidityDetection = {
 	kind: LiquidityKind;
-	protocol: "RAYDIUM" | "ORCA" | "METEORA" | "SABER" | "UNKNOWN";
+	protocol: "RAYDIUM" | "ORCA" | "METEORA" | "SABER" | "PUMPFUN" | "UNKNOWN";
 	note: "LIQUIDITY ADD" | "LIQUIDITY REMOVE";
 	outs?: Array<{ sym: string; amount: number | string }>;
 	ins?: Array<{ sym: string; amount: number | string }>;
@@ -596,6 +692,7 @@ function isLikelyNFT(t: TokenTransferPlus): boolean {
 
 function protocolFromSource(source: string): LiquidityDetection["protocol"] {
 	const s = String(source || "").toUpperCase();
+	if (s.includes("PUMP")) return "PUMPFUN";
 	if (s.includes("RAYDIUM")) return "RAYDIUM";
 	if (s.includes("ORCA")) return "ORCA";
 	if (s.includes("METEORA") || s.includes("DLMM")) return "METEORA";
@@ -614,18 +711,6 @@ function looksCLMM(source: string): boolean {
 	);
 }
 
-function looksCPMM(source: string): boolean {
-	const s = String(source || "").toUpperCase();
-	// Heuristics for classic AMM/constant-product implementations
-	return (
-		s.includes("AMM") ||
-		s.includes("TOKEN-SWAP") ||
-		(s.includes("RAYDIUM") && !looksCLMM(source)) ||
-		(s.includes("ORCA") && !looksCLMM(source)) ||
-		s.includes("SABER")
-	);
-}
-
 function extractSigFromNotat(notat: string): string | undefined {
 	const m = /sig:([A-Za-z0-9]+)/.exec(notat);
 	return m ? m[1] : undefined;
@@ -633,10 +718,8 @@ function extractSigFromNotat(notat: string): string | undefined {
 
 /**
  * Detects CLMM/CPMM/AMM liquidity add/remove and returns the legs + optional position NFT.
- * Works mostly from transfers; protocol/model is a best-effort guess from tx.source.
- *
- * IMPORTANT TIGHTENING:
- *  - If tx looks like aggregator/swap (source mentions JUPITER/AGGREGATOR), don't detect liquidity.
+ * IMPORTANT:
+ *  - If tx looks like aggregator/swap (source mentions JUPITER/AGGREGATOR/GMGN), don't detect liquidity.
  *  - Ignore native SOL legs when token SOL (WSOL) is present to avoid counting ATA rent/close.
  *  - If both ins and outs have exactly 1 distinct symbol each, treat as swap-like elsewhere (return null).
  */
@@ -653,8 +736,13 @@ function detectLiquidityEvent(
 	source: string
 ): LiquidityDetection | null {
 	const srcU = String(source || "").toUpperCase();
-	// Never classify aggregator flows as liquidity
-	if (srcU.includes("JUPITER") || srcU.includes("AGGREGATOR")) {
+
+	// Never classify aggregator flows OR Pump.fun swaps as liquidity
+	if (
+		srcU.includes("JUPITER") ||
+		srcU.includes("AGGREGATOR") ||
+		srcU.includes("GMGN")
+	) {
 		return null;
 	}
 
@@ -721,6 +809,7 @@ function detectLiquidityEvent(
 
 	const protocol = protocolFromSource(source);
 	const modelCLMM = looksCLMM(source);
+
 	// --- Preferred: explicit CLMM (when NFT is visible)
 	if (nftIn.length >= 1 && distinctOuts >= 2) {
 		const firstNFT = nftIn[0];
@@ -742,8 +831,34 @@ function detectLiquidityEvent(
 		};
 	}
 
-	// --- NFT not visible? Use strict leg patterns (prevents swaps from matching)
-	// ADD with 2+ *distinct* outs and 0 ins
+	// Fungible LP heuristics (e.g., Pump.fun LP Tokens)
+	const lpIn = fIn.filter((t) => {
+		const { symbol } = amountFromTransfer(t, resolveSymDec);
+		return symbol.includes("LP");
+	});
+	const lpOut = fOut.filter((t) => {
+		const { symbol } = amountFromTransfer(t, resolveSymDec);
+		return symbol.includes("LP");
+	});
+
+	if (lpIn.length >= 1 && distinctOuts >= 2) {
+		return {
+			kind: modelCLMM ? "clmm-add" : "cpmm-add",
+			protocol: srcU.includes("PUMP") ? "PUMPFUN" : protocol,
+			note: "LIQUIDITY ADD",
+			outs
+		};
+	}
+	if (lpOut.length >= 1 && distinctIns >= 2) {
+		return {
+			kind: modelCLMM ? "clmm-remove" : "cpmm-remove",
+			protocol: srcU.includes("PUMP") ? "PUMPFUN" : protocol,
+			note: "LIQUIDITY REMOVE",
+			ins
+		};
+	}
+
+	// Strict leg patterns (prevents swaps from matching)
 	if (distinctOuts >= 2 && distinctIns === 0) {
 		return {
 			kind: modelCLMM ? "clmm-add" : "cpmm-add",
@@ -752,7 +867,6 @@ function detectLiquidityEvent(
 			outs
 		};
 	}
-	// REMOVE with 2+ *distinct* ins and 0 outs
 	if (distinctIns >= 2 && distinctOuts === 0) {
 		return {
 			kind: modelCLMM ? "clmm-remove" : "cpmm-remove",
@@ -762,8 +876,7 @@ function detectLiquidityEvent(
 		};
 	}
 
-	// Drop the old "LP minted/burned inferred by differing mint sets" heuristic:
-	// it caused false positives on aggregator swaps. Without explicit signals, return null.
+	// Drop the old "LP inferred" heuristic.
 	return null;
 }
 
@@ -781,6 +894,98 @@ function ensureStringAmount(v: number | string | undefined): string {
 		: typeof v === "number"
 		? toAmountString(numberToPlain(v))
 		: "";
+}
+
+/** Derive two swap legs for routed swaps (A->B->C), using a bridge token B that appears in both in & out. */
+function deriveRoutedSwapLegs(
+	tokenTransfers: TokenTransferPlus[],
+	address: string,
+	myATAs: Set<string>,
+	includeNFT: boolean,
+	resolveSymDec: (
+		mint: string,
+		symbol?: string,
+		decimals?: number
+	) => { symbol: string; decimals: number }
+): Array<{ inAmt: number; inSym: string; outAmt: number; outSym: string }> {
+	const inTotals = new Map<string, number>();
+	const outTotals = new Map<string, number>();
+
+	const ownsFrom = (t: TokenTransferPlus) =>
+		t.fromUserAccount === address ||
+		(t.fromTokenAccount ? myATAs.has(t.fromTokenAccount) : false);
+	const ownsTo = (t: TokenTransferPlus) =>
+		t.toUserAccount === address ||
+		(t.toTokenAccount ? myATAs.has(t.toTokenAccount) : false);
+
+	for (const t of tokenTransfers) {
+		if (!includeNFT && (t.tokenStandard === "nft" || (t as any).isNFT))
+			continue;
+		const { amountNum, symbol } = amountFromTransfer(t, resolveSymDec);
+		if (!Number.isFinite(amountNum) || amountNum === 0) continue;
+		if (ownsTo(t))
+			inTotals.set(symbol, (inTotals.get(symbol) ?? 0) + amountNum);
+		if (ownsFrom(t))
+			outTotals.set(symbol, (outTotals.get(symbol) ?? 0) + amountNum);
+	}
+
+	if (inTotals.size < 2 || outTotals.size < 2) return [];
+
+	// Bridge tokens = intersection (amounts roughly equal within 1%)
+	const bridges: Array<{ sym: string; flow: number }> = [];
+	for (const [sym, inAmt] of inTotals.entries()) {
+		const outAmt = outTotals.get(sym) ?? 0;
+		if (inAmt > 0 && outAmt > 0) {
+			const rel = Math.abs(inAmt - outAmt) / Math.max(inAmt, outAmt);
+			if (rel <= 0.01) bridges.push({ sym, flow: Math.max(inAmt, outAmt) });
+		}
+	}
+	if (bridges.length === 0) return [];
+	bridges.sort((a, b) => b.flow - a.flow);
+	const bridgeSym = bridges[0].sym;
+
+	const outsNonBridge = [...outTotals.entries()]
+		.filter(([s]) => s !== bridgeSym)
+		.sort((a, b) => b[1] - a[1]);
+	const insNonBridge = [...inTotals.entries()]
+		.filter(([s]) => s !== bridgeSym)
+		.sort((a, b) => b[1] - a[1]);
+
+	if (outsNonBridge.length === 0 || insNonBridge.length === 0) return [];
+
+	// Prefer SOL as first spend if present
+	const firstSpend =
+		outsNonBridge.find(([s]) => s === "SOL") ?? outsNonBridge[0];
+
+	// Leg 1: OUT(non-bridge) -> IN(bridge)
+	const leg1 = {
+		outSym: firstSpend[0],
+		outAmt: firstSpend[1],
+		inSym: bridgeSym,
+		inAmt: inTotals.get(bridgeSym) || 0
+	};
+
+	// Leg 2: OUT(bridge) -> IN(non-bridge)
+	const gain = insNonBridge[0];
+	const leg2 = {
+		outSym: bridgeSym,
+		outAmt: outTotals.get(bridgeSym) || 0,
+		inSym: gain[0],
+		inAmt: gain[1]
+	};
+
+	const legs = [leg1, leg2].filter(
+		(l) => l.inAmt > 0 && l.outAmt > 0 && l.inSym !== l.outSym
+	);
+
+	if (
+		legs.length === 2 &&
+		legs[0].inSym === legs[1].inSym &&
+		legs[0].outSym === legs[1].outSym
+	) {
+		return [legs[0]];
+	}
+	return legs;
 }
 
 function classifyTxToRows(opts: {
@@ -822,7 +1027,10 @@ function classifyTxToRows(opts: {
 		(tx as any).source || (tx as any).programId || "solana";
 	const srcU = String(source || "").toUpperCase();
 	const isSwapMeta = type.toUpperCase().includes("SWAP");
-	const isJupiter = srcU.includes("JUPITER") || srcU.includes("AGGREGATOR");
+	const looksPump = srcU.includes("PUMP");
+	const looksGMGN = srcU.includes("GMGN");
+	const isAggregator =
+		srcU.includes("JUPITER") || srcU.includes("AGGREGATOR") || looksGMGN;
 
 	const rows: KSRow[] = [];
 
@@ -844,13 +1052,130 @@ function classifyTxToRows(opts: {
 			Gebyr: gebyr || "0",
 			"Gebyr-Valuta": gebyrVal,
 			Marked: String(r.Marked ?? source ?? "solana"),
-			// Keep Notat starting with sig: to preserve existing behavior; append note after it
+			// Keep Notat starting with sig:
 			Notat: `${noteSuffix ? `${noteSuffix} ` : ""}sig:${sig}`
 		});
 	};
 
-	// === NEW: Prefer SWAP classification early for Jupiter/DEX swaps ===
-	// This prevents aggregator swaps from being misclassified as "UNKNOWN-LIQUIDITY".
+	// === 1) Pump.fun & DEX liquidity detection (first) ===
+	const liq = detectLiquidityEvent(
+		tokenTransfers,
+		nativeTransfers,
+		address,
+		myATAs,
+		resolveSymDec,
+		source
+	);
+
+	if (liq) {
+		const market =
+			liq.protocol === "PUMPFUN"
+				? "Pump.fun-LIQUIDITY"
+				: `${liq.protocol}-LIQUIDITY`;
+
+		if (
+			liq.kind === "clmm-add" ||
+			liq.kind === "cpmm-add" ||
+			liq.kind === "amm-add"
+		) {
+			for (const leg of liq.outs ?? []) {
+				pushRow(
+					{
+						Type: "Tap",
+						Inn: 0,
+						"Inn-Valuta": "",
+						Ut: leg.amount,
+						"Ut-Valuta": leg.sym,
+						Marked: market
+					},
+					liq.note
+				);
+			}
+			if (includeNFT && liq.nft) {
+				pushRow(
+					{
+						Type: "Erverv",
+						Inn: liq.nft.amountText,
+						"Inn-Valuta": currencyCode(liq.nft.symbol || "LP-NFT"),
+						Ut: 0,
+						"Ut-Valuta": "",
+						Marked: "SOLANA-NFT"
+					},
+					liq.note
+				);
+			}
+		} else {
+			for (const leg of liq.ins ?? []) {
+				pushRow(
+					{
+						Type: "Erverv",
+						Inn: leg.amount,
+						"Inn-Valuta": leg.sym,
+						Ut: 0,
+						"Ut-Valuta": "",
+						Marked: market
+					},
+					liq.note
+				);
+			}
+		}
+		return rows;
+	}
+
+	// === 2) Multi-leg routed swaps (ALWAYS try, not only when aggregator flag is present) ===
+	{
+		const legs = deriveRoutedSwapLegs(
+			tokenTransfers,
+			address,
+			myATAs,
+			includeNFT,
+			resolveSymDec
+		);
+
+		if (legs.length >= 2) {
+			// Fold native SOL tips/priority into fee on first push
+			const ownsFrom = (t: TokenTransferPlus) =>
+				t.fromUserAccount === address ||
+				(t.fromTokenAccount ? myATAs.has(t.fromTokenAccount) : false);
+			const tokenSolOut = (tokenTransfers || []).reduce((acc, t) => {
+				if (!ownsFrom(t)) return acc;
+				const { amountNum, symbol } = amountFromTransfer(t, resolveSymDec);
+				return (
+					acc +
+					(symbol === "SOL" ? (Number.isFinite(amountNum) ? amountNum : 0) : 0)
+				);
+			}, 0);
+			const { inSOL: nativeInSOL, outSOL: nativeOutSOL } = nativeSolInOut(
+				nativeTransfers,
+				address
+			);
+			let extraTipSOL = nativeOutSOL - tokenSolOut - nativeInSOL;
+			if (!Number.isFinite(extraTipSOL)) extraTipSOL = 0;
+			if (extraTipSOL < 0) extraTipSOL = 0;
+			if (extraTipSOL > 0.5) extraTipSOL = 0;
+			if (extraTipSOL > 0) feeLeftSOL += extraTipSOL;
+
+			const market = looksGMGN
+				? "GMGN"
+				: srcU.includes("JUPITER")
+				? "JUPITER"
+				: "SOLANA DEX";
+
+			legs.forEach((leg) => {
+				pushRow({
+					Type: "Handel",
+					Inn: leg.inAmt,
+					"Inn-Valuta": leg.inSym,
+					Ut: leg.outAmt,
+					"Ut-Valuta": leg.outSym,
+					Marked: market
+				});
+			});
+			return rows;
+		}
+	}
+
+	// === 3) Single-leg SWAP classification (Jupiter/DEX/Pump) ===
 	let sides =
 		pickSwapSides(
 			tokenTransfers,
@@ -873,100 +1198,75 @@ function classifyTxToRows(opts: {
 		);
 	}
 
-	if (sides && (isJupiter || isSwapMeta)) {
-		pushRow({
-			Type: "Handel",
-			Inn: sides.inAmt,
-			"Inn-Valuta": sides.inSym,
-			Ut: sides.outAmt,
-			"Ut-Valuta": sides.outSym,
-			// Keep this generic so the UI recognizes it as known:
-			Marked: isJupiter ? "SOLANA DEX" : "SOLANA DEX"
-		});
-		return rows;
-	}
+	// Pump.fun fallback (derive SOL spent from delta)
+	if (!sides && looksPump) {
+		const tokOut = (tokenTransfers || [])
+			.filter((t) => !(t.tokenStandard === "nft" || (t as any).isNFT))
+			.filter(
+				(t) =>
+					t.fromUserAccount === address ||
+					(t.fromTokenAccount ? myATAs.has(t.fromTokenAccount) : false)
+			)
+			.map((t) => {
+				const a = amountFromTransfer(t, resolveSymDec);
+				return { ...a, raw: t };
+			})
+			.sort((a, b) => b.amountNum - a.amountNum)[0];
 
-	// 1) Liquidity add/remove detection (tightened)
-	const liq = detectLiquidityEvent(
-		tokenTransfers,
-		nativeTransfers,
-		address,
-		myATAs,
-		resolveSymDec,
-		source
-	);
-
-	if (liq) {
-		const market = `${liq.protocol}-LIQUIDITY`;
-
-		if (
-			liq.kind === "clmm-add" ||
-			liq.kind === "cpmm-add" ||
-			liq.kind === "amm-add"
-		) {
-			// Outgoing underlyings -> TAP
-			for (const leg of liq.outs ?? []) {
-				pushRow(
-					{
-						Type: "Tap" as KSRow["Type"],
-						Inn: 0,
-						"Inn-Valuta": "",
-						Ut: leg.amount,
-						"Ut-Valuta": leg.sym,
-						Marked: market
-					},
-					liq.note
-				);
+		let inferredInSOL = nativeSolInOut(nativeTransfers, address).inSOL;
+		if (!inferredInSOL || inferredInSOL <= 0) {
+			const delta = getUserLamportsDeltaSOL(tx, address);
+			if (delta != null) {
+				const feeSOL = userPaidFee && tx.fee ? lamportsToSol(tx.fee) : 0;
+				const outNative = nativeSolInOut(nativeTransfers, address).outSOL;
+				inferredInSOL = delta + feeSOL + outNative;
 			}
-			// Include the position NFT as an asset if requested
-			if (includeNFT && liq.nft) {
-				pushRow(
-					{
-						Type: "Erverv",
-						Inn: liq.nft.amountText,
-						"Inn-Valuta": currencyCode(liq.nft.symbol || "LP-NFT"),
-						Ut: 0,
-						"Ut-Valuta": "",
-						Marked: "SOLANA-NFT"
-					},
-					liq.note
-				);
-			}
-		} else {
-			// Remove: incoming underlyings -> Erverv
-			for (const leg of liq.ins ?? []) {
-				pushRow(
-					{
-						Type: "Erverv",
-						Inn: leg.amount,
-						"Inn-Valuta": leg.sym,
-						Ut: 0,
-						"Ut-Valuta": "",
-						Marked: market
-					},
-					liq.note
-				);
-			}
-			// Skip explicit LP burn/NFT close rows to keep CSV clean
 		}
-
-		return rows; // handled
+		if (tokOut && inferredInSOL > 0) {
+			sides = {
+				inAmt: inferredInSOL,
+				inSym: "SOL",
+				outAmt: tokOut.amountNum,
+				outSym: tokOut.symbol
+			};
+		}
 	}
 
-	// 2) Generic swap (if we didn't already return above)
-	if (sides) {
+	if (sides && (isAggregator || isSwapMeta || looksPump)) {
+		// Fold extra native SOL "tips/priority" into fee
+		const ownsFrom = (t: TokenTransferPlus) =>
+			t.fromUserAccount === address ||
+			(t.fromTokenAccount ? myATAs.has(t.fromTokenAccount) : false);
+		const tokenSolOut = (tokenTransfers || []).reduce((acc, t) => {
+			if (!ownsFrom(t)) return acc;
+			const { amountNum, symbol } = amountFromTransfer(t, resolveSymDec);
+			return (
+				acc +
+				(symbol === "SOL" ? (Number.isFinite(amountNum) ? amountNum : 0) : 0)
+			);
+		}, 0);
+		const { inSOL: nativeInSOL, outSOL: nativeOutSOL } = nativeSolInOut(
+			nativeTransfers,
+			address
+		);
+		let extraTipSOL = nativeOutSOL - tokenSolOut - nativeInSOL;
+		if (!Number.isFinite(extraTipSOL)) extraTipSOL = 0;
+		if (extraTipSOL < 0) extraTipSOL = 0;
+		if (extraTipSOL > 0.5) extraTipSOL = 0;
+		if (extraTipSOL > 0) feeLeftSOL += extraTipSOL;
+
 		pushRow({
 			Type: "Handel",
 			Inn: sides.inAmt,
 			"Inn-Valuta": sides.inSym,
 			Ut: sides.outAmt,
 			"Ut-Valuta": sides.outSym,
-			Marked: "SOLANA DEX"
+			Marked: looksPump ? "Pump.fun" : looksGMGN ? "GMGN" : "SOLANA DEX"
 		});
 		return rows;
 	}
 
-	// 3) Native SOL transfers
+	// === 4) Native SOL transfers
 	const solSent = nativeTransfers.filter((n) => n.fromUserAccount === address);
 	const solRecv = nativeTransfers.filter((n) => n.toUserAccount === address);
 
@@ -997,7 +1297,7 @@ function classifyTxToRows(opts: {
 		}
 	}
 
-	// 4) SPL token transfers
+	// === 5) SPL token transfers
 	const ownsFrom = (t: TokenTransferPlus) =>
 		t.fromUserAccount === address ||
 		(t.fromTokenAccount ? myATAs.has(t.fromTokenAccount) : false);
@@ -1036,7 +1336,7 @@ function classifyTxToRows(opts: {
 		}
 	}
 
-	// 5) Airdrops -> Erverv
+	// 6) Airdrops -> Erverv
 	if ((tx.type || "").toUpperCase().includes("AIRDROP")) {
 		const recvToken = tokenTransfers.find((t) => ownsTo(t));
 		if (recvToken) {
@@ -1057,7 +1357,7 @@ function classifyTxToRows(opts: {
 		}
 	}
 
-	// 6) Staking rewards -> Inntekt
+	// 7) Staking rewards -> Inntekt
 	const rewardLamports = (tx.events as any)?.stakingReward?.amount ?? 0;
 	if (
 		rewardLamports > 0 ||
@@ -1266,7 +1566,7 @@ export async function POST(req: NextRequest) {
 					// Fallback to computing
 					const resolveMissingSigners = async (sigs: string[]) => {
 						const out = new Map<string, string>();
-						// light concurrency; avoid hammering RPC
+						// light concurrency
 						const jobs = sigs.map(async (s) => {
 							try {
 								const fp = await fetchFeePayer(s, process.env.HELIUS_API_KEY);
@@ -1637,7 +1937,6 @@ export async function POST(req: NextRequest) {
 		}
 
 		/* ---------- CSV (use cache if available) ---------- */
-		// If useCache=1 and cache exists, return quickly; else compute (and cache)
 		const cached = useCache ? getCache(ckey) : null;
 		const tag = walletTag(address, body.walletName);
 

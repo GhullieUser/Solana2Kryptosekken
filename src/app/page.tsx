@@ -98,7 +98,8 @@ const KNOWN_MARKETS = new Set([
 	"solana dex",
 	"airdrop",
 	"stake",
-	"aggregert" // <-- aggregated dust rows
+	"aggregert",
+	"pump.fun"
 ]);
 
 function isUnknownMarket(m?: string) {
