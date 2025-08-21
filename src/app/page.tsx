@@ -26,6 +26,7 @@ import { IoWalletOutline } from "react-icons/io5";
 import { SiSolana } from "react-icons/si";
 
 import Image from "next/image";
+import Link from "next/link";
 
 /* ================= Client-only guard (Option A) ================= */
 function ClientOnly({ children }: { children: React.ReactNode }) {
@@ -264,6 +265,13 @@ export default function Home() {
 	// Highlight handling & table container ref
 	const [highlightSig, setHighlightSig] = useState<string | null>(null);
 	const previewContainerRef = useRef<HTMLDivElement | null>(null);
+
+	const addrInputRef = useRef<HTMLInputElement | null>(null);
+	const canOpenExplorer = address.trim().length > 0;
+	const explorerHref = canOpenExplorer
+		? `https://solscan.io/address/${address.trim()}`
+		: "#";
+	const hasAddressInput = address.trim().length > 0;
 
 	const effectiveRows: KSPreviewRow[] = useMemo(() => {
 		if (!rows) return [];
@@ -1240,6 +1248,7 @@ export default function Home() {
 									{/* perfectly centered */}
 									<IoWalletOutline className="pointer-events-none absolute left-3 inset-y-0 mt-2 h-5 w-5 text-slate-400" />
 									<input
+										ref={addrInputRef}
 										name="address"
 										required
 										autoComplete="off"
@@ -1251,18 +1260,41 @@ export default function Home() {
 										}}
 										onFocus={() => setAddrMenuOpen(true)}
 										onBlur={() => setTimeout(() => setAddrMenuOpen(false), 120)}
-										className="block w-full rounded-xl border border-slate-200 bg-white pl-11 pr-10 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+										className="block w-full rounded-xl border border-slate-200 bg-white pl-11 pr-24 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
 									/>
-									{/* History toggle (centered) */}
-									<button
-										type="button"
-										aria-label="Adressehistorikk"
-										onMouseDown={(e) => e.preventDefault()}
-										onClick={() => setAddrMenuOpen((v) => !v)}
-										className="absolute inset-y-0 right-3 mt-[7px] rounded-md p-1 text-slate-500 hover:bg-slate-100 h-6 w-6 aspect-square"
-									>
-										<FiClock className="h-4 w-4" />
-									</button>
+
+									{/* right-side actions: clear, history */}
+									<div className="absolute inset-y-0 right-3 sm:top-[-19px] flex items-center gap-1">
+										{/* quick clear (X) — only when there is input */}
+										{hasAddressInput && (
+											<button
+												type="button"
+												aria-label="Tøm felt"
+												onMouseDown={(e) => e.preventDefault()}
+												onClick={() => {
+													setAddress("");
+													setAddrMenuOpen(false);
+													setTimeout(() => addrInputRef.current?.focus(), 0);
+												}}
+												className="rounded-md p-1 text-slate-500 hover:bg-slate-100 h-6 w-6"
+												title="Tøm felt"
+											>
+												<FiX className="h-4 w-4" />
+											</button>
+										)}
+
+										{/* history */}
+										<button
+											type="button"
+											aria-label="Adressehistorikk"
+											onMouseDown={(e) => e.preventDefault()}
+											onClick={() => setAddrMenuOpen((v) => !v)}
+											className="rounded-md p-1 text-slate-500 hover:bg-slate-100 h-6 w-6"
+											title="Adressehistorikk"
+										>
+											<FiClock className="h-4 w-4" />
+										</button>
+									</div>
 
 									{/* Dropdown history */}
 									{addrMenuOpen && (addrHistory.length > 0 || address) && (
@@ -1318,7 +1350,7 @@ export default function Home() {
 													className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-white"
 												>
 													<FiTrash2 className="h-3 w-3" />
-													Tøm
+													Tøm historikk
 												</button>
 											</div>
 										</div>
@@ -1327,16 +1359,45 @@ export default function Home() {
 
 								{/* Wallet name */}
 								<div className="relative">
-									{/* perfectly centered */}
+									{/* tag icon stays inside the input */}
 									<FiTag className="pointer-events-none absolute left-3 inset-y-0 mt-2.5 h-5 w-5 text-slate-400" />
-									<input
-										name="walletName"
-										autoComplete="off"
-										placeholder="Navn (valgfritt)"
-										value={walletName}
-										onChange={(e) => setWalletName(e.target.value)}
-										className="block w-full rounded-xl border border-slate-200 bg-white pl-11 pr-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-									/>
+
+									<div className="flex items-center gap-2">
+										<input
+											name="walletName"
+											autoComplete="off"
+											placeholder="Navn (valgfritt)"
+											value={walletName}
+											onChange={(e) => setWalletName(e.target.value)}
+											className="block w-full rounded-xl border border-slate-200 bg-white pl-11 pr-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+										/>
+
+										{/* Solscan button (disabled when no address input) */}
+										<Link
+											href={explorerHref}
+											target="_blank"
+											rel="noopener noreferrer"
+											aria-disabled={!canOpenExplorer}
+											tabIndex={canOpenExplorer ? 0 : -1}
+											onClick={(e) => {
+												if (!canOpenExplorer) e.preventDefault();
+											}}
+											className={`inline-flex items-center gap-2 rounded-xl border  text-sm shadow-sm aspect-square p-2 h-[37px] w-[37px] justify-center
+											${
+												canOpenExplorer
+													? "border-slate-200 bg-white text-indigo-700 hover:bg-slate-50"
+													: "border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed"
+											}`}
+											title={
+												canOpenExplorer
+													? "Åpne i Solscan"
+													: "Skriv inn en adresse først"
+											}
+										>
+											<FiExternalLink className="h-[17px] w-[17px]" />
+										</Link>
+									</div>
+
 									<p className="mt-1 text-[11px] text-slate-500">
 										Vises i <b>Notat</b> (eks. <b>MIN WALLET</b>).
 									</p>
@@ -1740,7 +1801,7 @@ export default function Home() {
 									<button
 										type="button"
 										onClick={clearCacheNow}
-										className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/60 px-2 py-1 hover:bg-white"
+										className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/60 px-2 py-1 hover:bg-white whitespace-nowrap"
 										title="Tøm mellomlager for denne forespørselen"
 									>
 										<FiTrash2 className="h-4 w-4" />
@@ -2150,18 +2211,18 @@ export default function Home() {
 
 																		<td>
 																			{solscan ? (
-																				<a
+																				<Link
 																					href={solscan}
 																					target="_blank"
 																					rel="noopener noreferrer"
-																					className="inline-flex items-center gap-1 text-indigo-600 hover:underline"
+																					className="inline-flex items-center gap-1 text-indigo-600 hover:underline justify-center ml-4"
 																					title="Åpne i Solscan"
 																				>
 																					<FiExternalLink className="h-4 w-4" />
 																					<span className="sr-only">
 																						Solscan
 																					</span>
-																				</a>
+																				</Link>
 																			) : (
 																				<span className="text-slate-400">
 																					—
