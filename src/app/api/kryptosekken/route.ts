@@ -831,8 +831,9 @@ function processDust(
 			const cappedMs = Math.min(v.bucketMs, nowMs);
 			const ts = toNorwayTimeString(cappedMs, useOslo);
 
-			const type: KSRow["Type"] =
-				v.dir === "INN" ? "Overføring-Inn" : "Overføring-Ut";
+			// aggregate-period: prefer Erverv for INN
+			const type: KSRow["Type"] = v.dir === "INN" ? "Erverv" : "Overføring-Ut";
+
 			const inn = v.dir === "INN" ? numberToPlain(v.totalAmt) : "0";
 			const ut = v.dir === "UT" ? numberToPlain(v.totalAmt) : "0";
 			const gebyr = v.totalFeeSOL > 0 ? numberToPlain(v.totalFeeSOL) : "0";

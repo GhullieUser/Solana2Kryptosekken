@@ -102,10 +102,15 @@ function parseRetryBody(text: string): string {
 	}
 }
 
+function redactApiKey(u: string) {
+	return u.replace(/(api-key=)[^&]+/i, "$1***");
+}
+
 async function throwHelius(res: Response, url: URL): Promise<never> {
 	const raw = await res.text().catch(() => "");
 	const detail = parseRetryBody(raw);
-	throw new Error(`Helius ${res.status} — ${detail}\nURL: ${url.toString()}`);
+	const redacted = redactApiKey(url.toString());
+	throw new Error(`Helius ${res.status} — ${detail}\nURL: ${redacted}`);
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -119,17 +124,14 @@ async function fetchWithRetry(
 	init: RequestInit,
 	tries = 5
 ): Promise<Response> {
-	let lastRes: Response | null = null;
-
 	for (let attempt = 0; attempt <= tries; attempt++) {
 		const res = await fetch(url.toString(), init);
-		lastRes = res;
 
 		if (res.ok) return res;
 
 		const retriable = res.status === 429 || res.status >= 500;
 		if (!retriable) {
-			await throwHelius(res, url);
+			await throwHelius(res, url); // never returns
 		}
 
 		// compute wait: Retry-After (s) or exp backoff with jitter
@@ -148,12 +150,14 @@ async function fetchWithRetry(
 		}
 
 		// exhausted
-		await throwHelius(res, url);
+		await throwHelius(res, url); // never returns
 	}
 
-	// Type pacifier; we always throw above on exhaustion
+	// Unreachable, but keeps TS happy if control-flow analysis changes
 	throw new Error(
-		`Helius fetch failed after ${tries + 1} attempts for ${url.toString()}`
+		`Helius fetch failed after ${tries + 1} attempts for ${redactApiKey(
+			url.toString()
+		)}`
 	);
 }
 
@@ -189,6 +193,7 @@ export async function* fetchEnhancedTxs(
 
 	let before: string | undefined;
 	let pages = 0;
+	const seenBefores = new Set<string>();
 
 	while (true) {
 		const url = new URL(base);
@@ -200,11 +205,38 @@ export async function* fetchEnhancedTxs(
 		if (typeof endTime === "number")
 			url.searchParams.set("endTime", String(endTime));
 
-		const res = await fetchWithRetry(
-			url,
-			{ headers: { accept: "application/json" } },
-			5
-		);
+		let res: Response;
+
+		try {
+			res = await fetchWithRetry(
+				url,
+				{ headers: { accept: "application/json" } },
+				5
+			);
+		} catch (err: any) {
+			// Handle 404 pagination-hint: “… query the API again with the `before` parameter set to <sig>”
+			const msg = String(err?.message || "");
+			const statusMatch = msg.match(/Helius\s+(\d+)/i);
+			const status = statusMatch ? parseInt(statusMatch[1], 10) : undefined;
+
+			if (status === 404 && /before.*set to/i.test(msg)) {
+				// extract suggested signature (base58)
+				const m =
+					msg.match(/set to\s+([1-9A-HJ-NP-Za-km-z]+)/i) ||
+					msg.match(/before[`'":\s]+([1-9A-HJ-NP-Za-km-z]+)/i);
+				const suggested = m?.[1];
+
+				if (suggested && !seenBefores.has(suggested)) {
+					before = suggested;
+					seenBefores.add(suggested);
+					if (perPageDelay > 0) await sleep(perPageDelay);
+					continue; // retry loop with new `before`
+				}
+			}
+
+			// Not a hint we can use — rethrow
+			throw err;
+		}
 
 		const list: unknown = await res.json();
 		if (!Array.isArray(list) || list.length === 0) return;
@@ -212,7 +244,12 @@ export async function* fetchEnhancedTxs(
 		const txs = list as HeliusTx[];
 		yield txs;
 
-		before = txs[txs.length - 1]?.signature;
+		const lastSig = txs[txs.length - 1]?.signature;
+		if (!lastSig) return;
+		if (seenBefores.has(lastSig)) return; // avoid loops
+		seenBefores.add(lastSig);
+		before = lastSig;
+
 		pages++;
 		if (opts.maxPages && pages >= opts.maxPages) return;
 
@@ -408,7 +445,7 @@ export async function fetchJupiterTokenMetadataMap(
 	return out;
 }
 
-/* ================= Fee payer / signer (RPC fallback for missing feePayer) ================= */
+/* ================= Fee payer / signer (RPC) ================= */
 
 /**
  * Best-effort lookup of the signer/fee payer for a given signature using Helius RPC.

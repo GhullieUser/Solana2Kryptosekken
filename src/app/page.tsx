@@ -8,25 +8,25 @@ import "react-day-picker/dist/style.css";
 import {
 	FiCalendar,
 	FiLoader,
-	FiDownload,
 	FiEye,
 	FiExternalLink,
 	FiClock,
 	FiTrash2,
 	FiSliders,
-	FiActivity,
 	FiChevronDown,
 	FiX,
 	FiTag,
 	FiInfo,
-	FiEdit,
-	FiCopy
+	FiActivity
 } from "react-icons/fi";
 import { IoWalletOutline } from "react-icons/io5";
 import { SiSolana } from "react-icons/si";
 
 import Image from "next/image";
 import Link from "next/link";
+
+// ⬇️ New: preview component (separate card)
+import Preview from "@/app/components/preview";
 
 /* ================= Client-only guard (Option A) ================= */
 function ClientOnly({ children }: { children: React.ReactNode }) {
@@ -37,29 +37,40 @@ function ClientOnly({ children }: { children: React.ReactNode }) {
 }
 
 /* ================= Types ================= */
-/* ================= Types ================= */
 
 // Kryptosekken types (dropdown options)
-const TYPE_OPTIONS = [
-	"Handel",
-	"Erverv",
-	"Inntekt",
-	"Tap",
-	"Forbruk",
-	"Renteinntekt",
-	"Overføring-Inn",
-	"Overføring-Ut",
-	"Gave-Inn",
-	"Gave-Ut",
-	"Tap-uten-fradrag",
-	"Forvaltningskostnad"
-] as const;
+// const TYPE_OPTIONS = [
+// 	"Handel",
+// 	"Erverv",
+// 	"Inntekt",
+// 	"Tap",
+// 	"Forbruk",
+// 	"Renteinntekt",
+// 	"Overføring-Inn",
+// 	"Overføring-Ut",
+// 	"Gave-Inn",
+// 	"Gave-Ut",
+// 	"Tap-uten-fradrag",
+// 	"Forvaltningskostnad"
+// ] as const;
 
-type KSType = (typeof TYPE_OPTIONS)[number];
+export type KSType =
+	| "Handel"
+	| "Erverv"
+	| "Inntekt"
+	| "Tap"
+	| "Forbruk"
+	| "Renteinntekt"
+	| "Overføring-Inn"
+	| "Overføring-Ut"
+	| "Gave-Inn"
+	| "Gave-Ut"
+	| "Tap-uten-fradrag"
+	| "Forvaltningskostnad";
 
-type KSRow = {
+export type KSRow = {
 	Tidspunkt: string;
-	Type: KSType; // <- enforce KS types
+	Type: KSType;
 	Inn: string;
 	"Inn-Valuta": string;
 	Ut: string;
@@ -69,26 +80,15 @@ type KSRow = {
 	Marked: string;
 	Notat: string;
 };
-type KSPreviewRow = KSRow & { signature?: string; signer?: string };
+export type KSPreviewRow = KSRow & { signature?: string; signer?: string };
 
-// "Needs attention" keys and overrides
-type OverrideMaps = {
-	symbols: Record<string, string>; // e.g. { "TOKEN-AB12CD": "FOO" }
-	markets: Record<string, string>; // e.g. { "solana": "HELLOMOON" }
-};
-export type IssueKind = "unknown-token" | "unknown-market";
-type IssueStatus = "pending" | "renamed" | "ignored";
-type Issue = {
-	kind: IssueKind;
-	key: string;
-	count: number;
-	sigs: string[]; // all related signatures
-	status: IssueStatus;
-	newName?: string; // current override, if any
+export type OverrideMaps = {
+	symbols: Record<string, string>;
+	markets: Record<string, string>;
 };
 
 const PLACEHOLDER_RE = /^TOKEN-[0-9A-Z]{6}$/i;
-const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/; // moved up so isUnknownMarket can use it
+const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
 
 function isPlaceholderSymbol(s?: string) {
 	return !!s && (PLACEHOLDER_RE.test(s) || s.toUpperCase() === "UNKNOWN");
@@ -106,15 +106,14 @@ const KNOWN_MARKETS = new Set([
 function isUnknownMarket(m?: string) {
 	if (!m) return true;
 	const lc = m.trim().toLowerCase();
-	if (KNOWN_MARKETS.has(lc)) return false; // known/OK
-	if (BASE58_RE.test(m)) return true; // raw program IDs
+	if (KNOWN_MARKETS.has(lc)) return false;
+	if (BASE58_RE.test(m)) return true;
 	if (m.toUpperCase() === "UNKNOWN") return true;
 	return false;
 }
 
 type DustMode = "off" | "remove" | "aggregate-signer" | "aggregate-period";
 type DustInterval = "day" | "week" | "month" | "year";
-type SortOrder = "desc" | "asc";
 
 /* Validation for payload sent to API */
 const schema = z.object({
@@ -128,7 +127,7 @@ const schema = z.object({
 		.optional(),
 	dustThreshold: z.union([z.string(), z.number()]).optional(),
 	dustInterval: z.enum(["day", "week", "month", "year"]).optional(),
-	useOslo: z.boolean().optional() // ⬅️ added
+	useOslo: z.boolean().optional()
 });
 type Payload = z.infer<typeof schema>;
 
@@ -146,33 +145,6 @@ function endOfDayISO(d: Date) {
 function isProbablySolanaAddress(s: string) {
 	const len = s.length;
 	return len >= 32 && len <= 44 && BASE58_RE.test(s);
-}
-function parseTidspunkt(t: string): number {
-	const [date, time] = t.split(" ");
-	const [y, m, d] = date.split("-").map((n) => parseInt(n, 10));
-	const [hh = "0", mm = "0", ss = "0"] = (time || "").split(":");
-	const dt = new Date(
-		y,
-		(m || 1) - 1,
-		d || 1,
-		parseInt(hh, 10),
-		parseInt(mm, 10),
-		parseInt(ss, 10)
-	);
-	return dt.getTime();
-}
-function formatRangeLabel(r?: DateRange) {
-	if (!r?.from && !r?.to) return "Velg datoer";
-	const f = (d?: Date) => (d ? d.toLocaleDateString("no-NO") : "–");
-	if (r?.from && r?.to) return `${f(r.from)} → ${f(r.to)}`;
-	return `${f(r?.from)} → …`;
-}
-
-// Stronger signature extraction used consistently
-function extractSig(row: KSPreviewRow): string | undefined {
-	if (row.signature) return row.signature;
-	const m = row.Notat?.match(/sig:([1-9A-HJ-NP-Za-km-z]+)/);
-	return m?.[1];
 }
 
 /* ================= Reusable switch (controlled) ================= */
@@ -240,30 +212,21 @@ export default function Home() {
 
 	// Settings
 	const [includeNFT, setIncludeNFT] = useState(false);
-	const [useOslo, setUseOslo] = useState(false); // ⬅️ added
+	const [useOslo, setUseOslo] = useState(false);
 
 	// Dust controls
 	const [dustMode, setDustMode] = useState<DustMode>("off");
 	const [dustThreshold, setDustThreshold] = useState<string>("0.001");
 	const [dustInterval, setDustInterval] = useState<DustInterval>("week");
-	type EditScope = "one" | "bySigner" | "bySignature" | "byMarked";
-	const [editScope, setEditScope] = useState<EditScope>("one");
 
-	// Tab + overrides + ignores
-	const [activeTab, setActiveTab] = useState<"preview" | "attention">(
-		"preview"
-	);
+	// Overrides for symbol/market (used in preview & in the chip count here)
 	const [overrides, setOverrides] = useState<OverrideMaps>({
 		symbols: {},
 		markets: {}
 	});
-	const [ignoredKeys, setIgnoredKeys] = useState<Set<string>>(new Set());
 
-	// Preview sort
-	const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+	// Highlight & preview-specific state moved into <Preview />
 
-	// Highlight handling & table container ref
-	const [highlightSig, setHighlightSig] = useState<string | null>(null);
 	const previewContainerRef = useRef<HTMLDivElement | null>(null);
 
 	const addrInputRef = useRef<HTMLInputElement | null>(null);
@@ -273,6 +236,7 @@ export default function Home() {
 		: "#";
 	const hasAddressInput = address.trim().length > 0;
 
+	// Apply overrides only for showing the “N transactions found” chip
 	const effectiveRows: KSPreviewRow[] = useMemo(() => {
 		if (!rows) return [];
 		const mapSym = overrides.symbols;
@@ -285,386 +249,6 @@ export default function Home() {
 		}));
 	}, [rows, overrides]);
 
-	// Issues list (includes handled ones, shows status)
-	const issues: Issue[] = useMemo(() => {
-		if (!rows) return [];
-		// track counts + sig lists
-		const sCount = new Map<string, { count: number; sigs: Set<string> }>();
-		const mCount = new Map<string, { count: number; sigs: Set<string> }>();
-
-		for (const r of rows) {
-			const sig = extractSig(r);
-			const isHighlighted = sig && highlightSig === sig;
-			// SYMBOLS
-			for (const s of [r["Inn-Valuta"], r["Ut-Valuta"]].filter(
-				Boolean
-			) as string[]) {
-				if (!isPlaceholderSymbol(s)) continue;
-				const o = sCount.get(s) || { count: 0, sigs: new Set<string>() };
-				o.count += 1;
-				if (sig) o.sigs.add(sig);
-				sCount.set(s, o);
-			}
-
-			// MARKET
-			const m = r.Marked;
-			if (isUnknownMarket(m)) {
-				const o = mCount.get(m) || { count: 0, sigs: new Set<string>() };
-				o.count += 1;
-				if (sig) o.sigs.add(sig);
-				mCount.set(m, o);
-			}
-		}
-
-		const out: Issue[] = [];
-
-		for (const [k, v] of sCount.entries()) {
-			const id = `symbol:${k}`;
-			const hasRename = Boolean(overrides.symbols[k]);
-			const isIgnored = ignoredKeys.has(id);
-			out.push({
-				kind: "unknown-token",
-				key: k,
-				count: v.count,
-				sigs: [...v.sigs],
-				status: hasRename ? "renamed" : isIgnored ? "ignored" : "pending",
-				newName: hasRename ? overrides.symbols[k] : undefined
-			});
-		}
-		for (const [k, v] of mCount.entries()) {
-			const id = `market:${k}`;
-			const hasRename = Object.prototype.hasOwnProperty.call(
-				overrides.markets,
-				k
-			);
-			const isIgnored = ignoredKeys.has(id);
-			out.push({
-				kind: "unknown-market",
-				key: k,
-				count: v.count,
-				sigs: [...v.sigs],
-				status: hasRename ? "renamed" : isIgnored ? "ignored" : "pending",
-				newName: hasRename ? overrides.markets[k] : undefined
-			});
-		}
-
-		// sort: pending first, then by count desc
-		return out.sort((a, b) => {
-			if (a.status !== b.status) {
-				if (a.status === "pending") return -1;
-				if (b.status === "pending") return 1;
-			}
-			return b.count - a.count;
-		});
-	}, [rows, overrides, ignoredKeys]);
-
-	const pendingIssuesCount = useMemo(
-		() => issues.filter((i) => i.status === "pending").length,
-		[issues]
-	);
-
-	// ===== Editable cell modal state =====
-	type FieldKey = keyof KSRow;
-
-	const [editOpen, setEditOpen] = useState(false);
-	const [editTarget, setEditTarget] = useState<{
-		idxOriginal: number;
-		field: FieldKey;
-		sig?: string;
-		signer?: string;
-		label: string;
-	} | null>(null);
-	const [editDraft, setEditDraft] = useState("");
-
-	// Open editor for a given cell
-	function openEditCell(
-		idxOriginal: number,
-		field: FieldKey,
-		currentValue: string
-	) {
-		const sig = extractSig(rows![idxOriginal]);
-		const signer = rows![idxOriginal]?.signer;
-		setEditTarget({
-			idxOriginal,
-			field,
-			sig,
-			signer,
-			label: field
-		});
-		setEditDraft(
-			field === "Type" && !TYPE_OPTIONS.includes(currentValue as KSType)
-				? TYPE_OPTIONS[0]
-				: currentValue ?? ""
-		);
-		setEditScope("one");
-		setEditOpen(true);
-	}
-
-	// Apply an edit (single cell OR all rows with same signer address)
-	function applyEdit(mode: EditScope) {
-		if (!rows || !editTarget) return;
-		const { idxOriginal, field, signer, sig } = editTarget;
-		const newVal = editDraft;
-
-		// capture the original market value of the edited row
-		const originalMarket = rows[idxOriginal]?.Marked?.trim();
-
-		setRows((prev) => {
-			if (!prev) return prev;
-			const next = [...prev];
-
-			if (mode === "one") {
-				const row = { ...next[idxOriginal] } as any;
-				row[field] = newVal;
-				next[idxOriginal] = row;
-				return next;
-			}
-
-			if (mode === "bySigner") {
-				if (!signer) return prev;
-				for (let i = 0; i < next.length; i++) {
-					const rowSigner = next[i]?.signer;
-					if (rowSigner && rowSigner === signer) {
-						const row = { ...next[i] } as any;
-						row[field] = newVal;
-						next[i] = row;
-					}
-				}
-				return next;
-			}
-
-			if (mode === "bySignature") {
-				if (!sig) return prev;
-				for (let i = 0; i < next.length; i++) {
-					const rowSig = extractSig(next[i]);
-					if (rowSig && rowSig === sig) {
-						const row = { ...next[i] } as any;
-						row[field] = newVal;
-						next[i] = row;
-					}
-				}
-				return next;
-			}
-
-			// NEW: apply to all rows that share the same Marked value
-			if (mode === "byMarked") {
-				if (!originalMarket) return prev;
-				for (let i = 0; i < next.length; i++) {
-					if ((next[i]?.Marked ?? "").trim() === originalMarket) {
-						const row = { ...next[i] } as any;
-						row[field] = newVal;
-						next[i] = row;
-					}
-				}
-				return next;
-			}
-
-			return next;
-		});
-
-		// If we actually rename the Marked field, also persist to overrides -> markets
-		if (
-			mode === "byMarked" &&
-			editTarget.field === "Marked" &&
-			originalMarket
-		) {
-			setOverrides((prev) => ({
-				...prev,
-				markets: { ...(prev.markets ?? {}), [originalMarket]: newVal }
-			}));
-		}
-
-		setEditOpen(false);
-		setEditTarget(null);
-		setEditDraft("");
-	}
-
-	// ===== Resizable preview height =====
-	const [previewHeight, setPreviewHeight] = useState<number>(384); // ~24rem default
-	const isDraggingRef = useRef(false);
-	const dragStartYRef = useRef(0);
-	const startHeightRef = useRef(384);
-
-	function onResizeStart(e: React.MouseEvent) {
-		isDraggingRef.current = true;
-		dragStartYRef.current = e.clientY;
-		startHeightRef.current = previewHeight;
-		window.addEventListener("mousemove", onResizing);
-		window.addEventListener("mouseup", onResizeEnd);
-	}
-
-	function onResizing(e: MouseEvent) {
-		if (!isDraggingRef.current) return;
-		const dy = e.clientY - dragStartYRef.current;
-		const h = Math.max(
-			220,
-			Math.min(window.innerHeight - 240, startHeightRef.current + dy)
-		);
-		setPreviewHeight(h);
-	}
-
-	function onResizeEnd() {
-		isDraggingRef.current = false;
-		window.removeEventListener("mousemove", onResizing);
-		window.removeEventListener("mouseup", onResizeEnd);
-	}
-
-	/* === Cell chrome (full-bleed hover highlight, edge-to-edge) === */
-	function CellChrome({
-		children,
-		onEdit,
-		align = "left",
-		title,
-		canEdit = true,
-		clickToEdit = false, // NEW
-		showButton = true // NEW
-	}: {
-		children: React.ReactNode;
-		onEdit: () => void;
-		align?: "left" | "right";
-		title?: string;
-		canEdit?: boolean;
-		clickToEdit?: boolean; // NEW
-		showButton?: boolean; // NEW
-	}) {
-		const clickable = canEdit && clickToEdit;
-
-		return (
-			<div
-				className={`group relative block w-full h-full ${
-					align === "right" ? "text-right" : "text-left"
-				}`}
-				title={title}
-				onClick={
-					clickable
-						? (e) => {
-								e.stopPropagation();
-								onEdit();
-						  }
-						: undefined
-				}
-				role={clickable ? "button" : undefined}
-				tabIndex={clickable ? 0 : undefined}
-				onKeyDown={
-					clickable
-						? (e) => {
-								if (e.key === "Enter" || e.key === " ") {
-									e.preventDefault();
-									onEdit();
-								}
-						  }
-						: undefined
-				}
-			>
-				{/* full-bleed hover overlay */}
-				<span className="rounded pointer-events-none absolute -inset-x-2 top-1/2 -translate-y-1/2 h-10 z-0 ring-1 ring-transparent group-hover:ring-emerald-300/80 group-hover:bg-emerald-50/50 transition" />
-
-				<div
-					className={`relative z-10 ${
-						align === "right" ? "font-mono tabular-nums" : ""
-					}`}
-				>
-					{children}
-				</div>
-
-				{canEdit && showButton && (
-					<button
-						type="button"
-						onClick={(e) => {
-							e.stopPropagation();
-							onEdit();
-						}}
-						className="absolute right-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover:flex items-center justify-center h-5 w-5 rounded bg-white shadow ring-1 ring-slate-300 text-slate-600 hover:bg-slate-50"
-						aria-label="Rediger"
-					>
-						<FiEdit className="h-3.5 w-3.5" />
-					</button>
-				)}
-			</div>
-		);
-	}
-
-	function EditableCell({
-		idxOriginal,
-		field,
-		value,
-		align = "left",
-		title
-	}: {
-		idxOriginal: number;
-		field: keyof KSRow;
-		value: string;
-		align?: "left" | "right";
-		title?: string;
-	}) {
-		const isValutaField =
-			field === "Inn-Valuta" ||
-			field === "Ut-Valuta" ||
-			field === "Gebyr-Valuta";
-		const isEmpty = !String(value ?? "").trim();
-
-		// Empty valuta cells: show chrome + placeholder, but no editing at all
-		if (isValutaField && isEmpty) {
-			return (
-				<CellChrome
-					onEdit={() => {}}
-					align={align}
-					title={title}
-					canEdit={false}
-					clickToEdit={false}
-					showButton={false}
-				>
-					<span
-						className="pointer-events-none select-none text-slate-400 italic"
-						aria-hidden="true"
-					>
-						—
-					</span>
-				</CellChrome>
-			);
-		}
-
-		// Default behavior for other cells
-		const canEdit = !!String(value ?? "").trim();
-		return (
-			<CellChrome
-				onEdit={() => openEditCell(idxOriginal, field, value ?? "")}
-				align={align}
-				title={title || value}
-				canEdit={canEdit}
-			>
-				{value || ""}
-			</CellChrome>
-		);
-	}
-
-	function TidspunktCell({
-		idxOriginal,
-		value
-	}: {
-		idxOriginal: number;
-		value: string;
-	}) {
-		const [datePart, timePart = ""] = (value || "").split(" ");
-		const canEdit = !!String(value ?? "").trim();
-		return (
-			<div className="min-w-[4rem]">
-				<CellChrome
-					onEdit={() => openEditCell(idxOriginal, "Tidspunkt", value ?? "")}
-					title={value}
-					canEdit={canEdit}
-				>
-					<div className="leading-tight">
-						<div className="font-medium">{datePart || value}</div>
-						{timePart ? (
-							<div className="text-slate-500 text-[11px]">{timePart}</div>
-						) : null}
-					</div>
-				</CellChrome>
-			</div>
-		);
-	}
-
 	// Live log
 	const [logOpen, setLogOpen] = useState(false);
 	const [logLines, setLogLines] = useState<string[]>([]);
@@ -676,7 +260,6 @@ export default function Home() {
 		]);
 	const clearLog = () => setLogLines([]);
 
-	// auto-scroll log
 	useEffect(() => {
 		if (logRef.current) {
 			logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -697,46 +280,8 @@ export default function Home() {
 				const list = JSON.parse(raw) as string[];
 				if (Array.isArray(list)) setAddrHistory(list);
 			}
-			// names are loaded lazily
 		} catch {}
 	}, []);
-	function renameIssue(kind: IssueKind, key: string, newVal: string) {
-		if (!newVal.trim()) return;
-		setOverrides((prev) => {
-			const next = {
-				...prev,
-				symbols: { ...prev.symbols },
-				markets: { ...prev.markets }
-			};
-			if (kind === "unknown-token")
-				next.symbols[key] = newVal.trim().toUpperCase();
-			else next.markets[key] = newVal.trim();
-			return next;
-		});
-	}
-
-	function ignoreIssue(kind: IssueKind, key: string) {
-		const id = `${kind === "unknown-token" ? "symbol" : "market"}:${key}`;
-		setIgnoredKeys((prev) => {
-			const next = new Set(prev);
-			if (next.has(id)) next.delete(id);
-			else next.add(id);
-			return next;
-		});
-	}
-
-	// per-issue expand/collapse state
-	const [openIssues, setOpenIssues] = useState<Set<string>>(new Set());
-	function toggleOpenIssue(id: string) {
-		setOpenIssues((prev) => {
-			const next = new Set(prev);
-			if (next.has(id)) next.delete(id);
-			else next.add(id);
-			return next;
-		});
-	}
-
-	/* ========== localStorage helpers ========== */
 	function readNamesMap(): Record<string, string> {
 		try {
 			const raw = localStorage.getItem(NAMES_KEY);
@@ -789,10 +334,8 @@ export default function Home() {
 	}
 
 	const filteredHistory = useMemo(() => {
-		// Always show the full history; just rank likely matches first.
 		const q = address.trim().toLowerCase();
 		if (!q) return addrHistory;
-
 		const starts = addrHistory.filter((a) => a.toLowerCase().startsWith(q));
 		const contains = addrHistory.filter(
 			(a) => !starts.includes(a) && a.toLowerCase().includes(q)
@@ -832,11 +375,10 @@ export default function Home() {
 			dustMode,
 			dustThreshold,
 			dustInterval,
-			useOslo // ⬅️ include in payload
+			useOslo
 		};
 	}
 	function q(s?: string) {
-		// keep literal double quotes in names/addresses from breaking the log line
 		return `"${String(s ?? "").replace(/"/g, '\\"')}"`;
 	}
 
@@ -970,8 +512,8 @@ export default function Home() {
 		}
 	}
 
-	/* ========== Download CSV (uses server cache) ========== */
-	async function downloadCSV() {
+	/* ========== Download CSV (uses server cache) — passed into <Preview> ========== */
+	async function downloadCSV(currentOverrides: OverrideMaps) {
 		if (!lastPayloadRef.current) return;
 		setError(null);
 		try {
@@ -981,7 +523,7 @@ export default function Home() {
 				headers: { "Content-Type": "application/json", Accept: "text/csv" },
 				body: JSON.stringify({
 					...lastPayloadRef.current,
-					overrides // ⬅️ send renames for server-side CSV
+					overrides: currentOverrides
 				})
 			});
 			if (!res.ok) {
@@ -1020,14 +562,11 @@ export default function Home() {
 		setDustMode("off");
 		setDustThreshold("0.001");
 		setDustInterval("day");
-		setSortOrder("desc");
 		setIncludeNFT(false);
-		setUseOslo(false); // reset tz toggle
+		setUseOslo(false);
 		clearLog();
 		setLogOpen(false);
 		setOverrides({ symbols: {}, markets: {} });
-		setIgnoredKeys(new Set());
-		setActiveTab("preview");
 
 		// reset to default 30 days
 		const now = new Date();
@@ -1036,11 +575,8 @@ export default function Home() {
 		setRange({ from, to: now });
 	}
 
-	const previewsReady = !loading && Array.isArray(rows) && rows.length > 0;
-
 	const nice = (d?: Date) => (d ? d.toLocaleDateString("no-NO") : "—");
 
-	// moved to its own banner; kept handler
 	async function clearCacheNow() {
 		try {
 			const payload = lastPayloadRef.current || buildPayload();
@@ -1071,93 +607,7 @@ export default function Home() {
 		}
 	}
 
-	// Jump to a signature in the preview and highlight it
-	function jumpToSig(sig: string) {
-		if (!sig) return;
-		setActiveTab("preview");
-		setHighlightSig(sig);
-
-		setTimeout(() => {
-			const container = previewContainerRef.current;
-			if (!container) return;
-			const el = container.querySelector<HTMLElement>(`[data-sig="${sig}"]`);
-			if (!el) return;
-
-			// compute offset inside the container and center it
-			const elRect = el.getBoundingClientRect();
-			const cRect = container.getBoundingClientRect();
-			const offsetTop = elRect.top - cRect.top + container.scrollTop;
-			const target = Math.max(0, offsetTop - container.clientHeight / 2);
-
-			container.scrollTo({ top: target, behavior: "smooth" });
-		}, 60);
-
-		setTimeout(() => {
-			setHighlightSig((curr) => (curr === sig ? null : curr));
-		}, 6000);
-	}
-
-	function middleEllipsis(s: string, start = 10, end = 8) {
-		if (!s) return "";
-		return s.length <= start + end + 1
-			? s
-			: `${s.slice(0, start)}…${s.slice(-end)}`;
-	}
-
-	function MetaBox({
-		label,
-		value,
-		link
-	}: {
-		label: string;
-		value: string;
-		link?: string;
-	}) {
-		const [copied, setCopied] = useState(false);
-		return (
-			<div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5">
-				<div className="min-w-0">
-					<div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-						{label}
-					</div>
-					<div className="font-mono text-[12px] text-slate-800" title={value}>
-						{middleEllipsis(value)}
-					</div>
-				</div>
-
-				<div className="shrink-0 inline-flex items-center gap-1.5">
-					<button
-						type="button"
-						onClick={async () => {
-							try {
-								await navigator.clipboard.writeText(value);
-								setCopied(true);
-								setTimeout(() => setCopied(false), 1200);
-							} catch {}
-						}}
-						className="rounded p-1 text-slate-600 hover:bg-white hover:text-slate-900 ring-1 ring-transparent hover:ring-slate-200"
-						aria-label="Kopier"
-						title={copied ? "Kopiert!" : "Kopier"}
-					>
-						<FiCopy className="h-4 w-4" />
-					</button>
-
-					{link && (
-						<a
-							href={link}
-							target="_blank"
-							rel="noopener noreferrer"
-							className="rounded p-1 text-indigo-600 hover:bg-white hover:text-indigo-700 ring-1 ring-transparent hover:ring-indigo-200"
-							aria-label="Åpne i explorer"
-							title="Åpne i explorer"
-						>
-							<FiExternalLink className="h-4 w-4" />
-						</a>
-					)}
-				</div>
-			</div>
-		);
-	}
+	const hasRows = rows !== null; // show preview card (even if 0 rows) once we've checked
 
 	return (
 		<main className="min-h-screen ">
@@ -1229,9 +679,8 @@ export default function Home() {
 					</p>
 				</header>
 
-				{/* Card */}
+				{/* ========= Card 1: Inputs / Settings / Log / Cache ========= */}
 				<div className="mt-4 rounded-3xl bg-white shadow-xl shadow-slate-900/5 ring-1 ring-slate-200/60">
-					{/* Wrap the ENTIRE form in ClientOnly to avoid hydration issues */}
 					<ClientOnly>
 						<form
 							ref={formRef}
@@ -1245,7 +694,6 @@ export default function Home() {
 							<div className="grid gap-3 sm:grid-cols-[1fr_280px]">
 								{/* Address */}
 								<div className="relative">
-									{/* perfectly centered */}
 									<IoWalletOutline className="pointer-events-none absolute left-3 inset-y-0 mt-2 h-5 w-5 text-slate-400" />
 									<input
 										ref={addrInputRef}
@@ -1265,7 +713,7 @@ export default function Home() {
 
 									{/* right-side actions: clear, history */}
 									<div className="absolute inset-y-0 right-3 sm:top-[-19px] flex items-center gap-1">
-										{/* quick clear (X) — only when there is input */}
+										{/* quick clear */}
 										{hasAddressInput && (
 											<button
 												type="button"
@@ -1282,7 +730,6 @@ export default function Home() {
 												<FiX className="h-4 w-4" />
 											</button>
 										)}
-
 										{/* history */}
 										<button
 											type="button"
@@ -1359,9 +806,7 @@ export default function Home() {
 
 								{/* Wallet name */}
 								<div className="relative">
-									{/* tag icon stays inside the input */}
 									<FiTag className="pointer-events-none absolute left-3 inset-y-0 mt-2.5 h-5 w-5 text-slate-400" />
-
 									<div className="flex items-center gap-2">
 										<input
 											name="walletName"
@@ -1372,7 +817,7 @@ export default function Home() {
 											className="block w-full rounded-xl border border-slate-200 bg-white pl-11 pr-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
 										/>
 
-										{/* Solscan button (disabled when no address input) */}
+										{/* Solscan button */}
 										<Link
 											href={explorerHref}
 											target="_blank"
@@ -1383,11 +828,11 @@ export default function Home() {
 												if (!canOpenExplorer) e.preventDefault();
 											}}
 											className={`inline-flex items-center gap-2 rounded-xl border  text-sm shadow-sm aspect-square p-2 h-[37px] w-[37px] justify-center
-											${
-												canOpenExplorer
-													? "border-slate-200 bg-white text-indigo-700 hover:bg-slate-50"
-													: "border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed"
-											}`}
+                        ${
+													canOpenExplorer
+														? "border-slate-200 bg-white text-indigo-700 hover:bg-slate-50"
+														: "border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed"
+												}`}
 											title={
 												canOpenExplorer
 													? "Åpne i Solscan"
@@ -1554,7 +999,7 @@ export default function Home() {
 								</div>
 							</div>
 
-							{/* NFT section (separate) */}
+							{/* NFT section */}
 							<div className="mt-6 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
 								<div className="flex items-center justify-between">
 									<div className="inline-flex items-center gap-3">
@@ -1574,16 +1019,14 @@ export default function Home() {
 								</div>
 							</div>
 
-							{/* Dust section (separate) */}
+							{/* Dust section */}
 							<div className="mt-4 rounded-xl border border-slate-200 p-4">
-								{/* Header + tooltip aligned to opposite sides */}
 								<div className="mb-3 flex items-center justify-between">
 									<div className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
 										<FiSliders className="h-4 w-4" />
 										Støvtransaksjoner
 									</div>
 
-									{/* Info tooltip (hover/focus) */}
 									<div className="relative group">
 										<button
 											type="button"
@@ -1703,8 +1146,8 @@ export default function Home() {
 									<p className="mt-2 text-[11px] text-slate-500">
 										<b>Slå sammen fra samme sender:</b> Slår sammen små{" "}
 										<code>Overføring-Inn/Ut</code> fra hver{" "}
-										<i>signer-adresse</i> til én linje
-										<b> per valgt periode</b>. Notatet viser hvem som sendte.
+										<i>signer-adresse</i> til én linje<b> per valgt periode</b>.
+										Notatet viser hvem som sendte.
 									</p>
 								)}
 								{dustMode === "aggregate-period" && (
@@ -1791,7 +1234,7 @@ export default function Home() {
 								</div>
 							)}
 
-							{/* Cache banner */}
+							{/* Cache banner (stays with top card) */}
 							{cacheKeyRef.current && !loading && (
 								<div className="mt-3 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
 									<span>
@@ -1809,652 +1252,20 @@ export default function Home() {
 									</button>
 								</div>
 							)}
-
-							{rows && (
-								<>
-									{/* Tabs header */}
-									<div className="mt-6 border-b border-slate-200 flex items-center gap-4">
-										<button
-											type="button"
-											onClick={() => setActiveTab("preview")}
-											className={`px-3 py-2 text-sm -mb-px border-b-2 ${
-												activeTab === "preview"
-													? "border-indigo-600 text-indigo-700"
-													: "border-transparent text-slate-600 hover:text-slate-800"
-											}`}
-										>
-											Forhåndsvisning
-										</button>
-										<button
-											type="button"
-											onClick={() => setActiveTab("attention")}
-											className={`px-3 py-2 text-sm -mb-px border-b-2 ${
-												activeTab === "attention"
-													? "border-indigo-600 text-indigo-700"
-													: "border-transparent text-slate-600 hover:text-slate-800"
-											}`}
-											title="Uavklarte elementer som bør navngis"
-										>
-											Trenger oppmerksomhet
-											{pendingIssuesCount > 0 && (
-												<span className="ml-2 inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-800 text-[11px] px-1.5 py-0.5">
-													{pendingIssuesCount}
-												</span>
-											)}
-										</button>
-									</div>
-
-									{/* Tabs content */}
-									{(() => {
-										const idForIssue = (kind: IssueKind, key: string) =>
-											`issue-${kind}-${key.replace(/[^a-z0-9\-]/gi, "_")}`;
-										if (activeTab === "attention") {
-											return (
-												<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 max-h-[80vh] overflow-y">
-													{issues.length === 0 ? (
-														<div className="text-sm text-emerald-700">
-															Ingen uavklarte elementer 🎉
-														</div>
-													) : (
-														<ul className="space-y-3">
-															{issues.map((it) => {
-																const inputId = idForIssue(it.kind, it.key);
-																const isOpen = openIssues.has(inputId);
-
-																const statusBadge =
-																	it.status === "pending" ? (
-																		<span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800">
-																			Avventer
-																		</span>
-																	) : it.status === "renamed" ? (
-																		<span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-800">
-																			Endret
-																			{it.newName ? ` → ${it.newName}` : ""}
-																		</span>
-																	) : (
-																		<span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] text-slate-700">
-																			Ignorert
-																		</span>
-																	);
-
-																// Build occurrence list with details (timestamp, type, tokens)
-																const occurrenceRows =
-																	rows?.filter((r) => {
-																		if (it.kind === "unknown-token") {
-																			return (
-																				r["Inn-Valuta"] === it.key ||
-																				r["Ut-Valuta"] === it.key
-																			);
-																		}
-																		// unknown-market
-																		return r.Marked === it.key;
-																	}) ?? [];
-
-																return (
-																	<li
-																		key={`${it.kind}:${it.key}`}
-																		className="rounded-lg bg-white p-3 ring-1 ring-slate-200"
-																	>
-																		<div className="flex items-center justify-between gap-3">
-																			<div className="space-y-1">
-																				<div className="text-sm font-medium text-slate-800">
-																					{it.kind === "unknown-token"
-																						? "Ukjent token"
-																						: "Ukjent marked"}
-																					:{" "}
-																					<code className="font-mono">
-																						{it.key}
-																					</code>
-																					{statusBadge}
-																				</div>
-																				<div className="text-xs text-slate-600">
-																					{it.count} forekomster
-																				</div>
-																			</div>
-
-																			<div className="flex items-center gap-2">
-																				<input
-																					id={inputId}
-																					defaultValue={it.newName ?? ""}
-																					placeholder={
-																						it.kind === "unknown-token"
-																							? "Ny tokensymbol (BTC, ETH, SOL...)"
-																							: "Nytt markedsnavn"
-																					}
-																					className="w-56 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
-																				/>
-																				<button
-																					type="button"
-																					onClick={() => {
-																						const el = document.getElementById(
-																							inputId
-																						) as HTMLInputElement | null;
-																						const val = (
-																							el?.value ?? ""
-																						).trim();
-																						if (!val) return;
-																						renameIssue(it.kind, it.key, val);
-																					}}
-																					className="rounded-md bg-indigo-600 text-white px-2 py-1 text-sm disabled:opacity-60"
-																				>
-																					Lagre
-																				</button>
-																				<button
-																					type="button"
-																					onClick={() =>
-																						ignoreIssue(it.kind, it.key)
-																					}
-																					className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
-																					title={
-																						it.status === "ignored"
-																							? "Angre ignorering"
-																							: "Ignorer"
-																					}
-																				>
-																					{it.status === "ignored"
-																						? "Angre"
-																						: "Ignorer"}
-																				</button>
-																				<button
-																					type="button"
-																					onClick={() =>
-																						toggleOpenIssue(inputId)
-																					}
-																					className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
-																				>
-																					{isOpen
-																						? "Skjul forekomster"
-																						: `Vis forekomster (${occurrenceRows.length})`}
-																				</button>
-																			</div>
-																		</div>
-
-																		{/* Expandable occurrence list (click to jump & highlight) */}
-																		{isOpen && (
-																			<div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-2">
-																				{occurrenceRows.length === 0 ? (
-																					<div className="text-xs text-slate-600">
-																						Ingen forekomster funnet.
-																					</div>
-																				) : (
-																					<ul className="grid gap-2 sm:grid-cols-1 md:grid-cols-2">
-																						{occurrenceRows.map((r, idx) => {
-																							const sig = extractSig(r);
-																							const tokenInfo =
-																								[
-																									r["Inn-Valuta"],
-																									r["Ut-Valuta"]
-																								]
-																									.filter(Boolean)
-																									.join(" / ") || "—";
-																							return (
-																								<li
-																									key={`${sig ?? "x"}-${idx}`}
-																								>
-																									<button
-																										type="button"
-																										onClick={() =>
-																											sig && jumpToSig(sig)
-																										}
-																										disabled={!sig}
-																										className="w-full text-left rounded-md bg-white px-2 py-1.5 text-xs shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-60"
-																										title={
-																											sig
-																												? "Gå til rad i forhåndsvisning"
-																												: "Ingen signatur funnet"
-																										}
-																									>
-																										<div className="flex items-center justify-between gap-2">
-																											<span className="font-mono text-[11px] text-slate-600">
-																												{r.Tidspunkt}
-																											</span>
-																											{sig ? (
-																												<span className="text-[10px] text-indigo-600">
-																													Gå til rad
-																												</span>
-																											) : null}
-																										</div>
-																										<div className="mt-0.5">
-																											<span className="font-medium text-slate-800">
-																												{r.Type}
-																											</span>{" "}
-																											<span className="text-slate-600">
-																												• {tokenInfo}
-																											</span>
-																										</div>
-																									</button>
-																								</li>
-																							);
-																						})}
-																					</ul>
-																				)}
-																			</div>
-																		)}
-																	</li>
-																);
-															})}
-														</ul>
-													)}
-												</div>
-											);
-										}
-
-										// PREVIEW TAB
-										// keep original index for editing lookups
-										// PREVIEW TAB — replace the block that builds `limited`
-										const baseIndexed = effectiveRows.map((r, i) => ({ r, i }));
-										const sorted = [...baseIndexed].sort((a, b) => {
-											const ta = parseTidspunkt(a.r.Tidspunkt);
-											const tb = parseTidspunkt(b.r.Tidspunkt);
-											return sortOrder === "desc" ? tb - ta : ta - tb;
-										});
-
-										let limited = sorted.slice(0, 200);
-										if (highlightSig) {
-											const idx = sorted.findIndex(
-												(it) => extractSig(it.r) === highlightSig
-											);
-											if (idx >= 0) {
-												const start = Math.max(0, idx - 100);
-												const end = Math.min(sorted.length, idx + 100);
-												limited = sorted.slice(start, end);
-											}
-										}
-
-										return (
-											<div className="mt-6">
-												<div className="mb-2 flex items-center justify-between">
-													<div className="text-xs text-slate-600">
-														Viser {Math.min(effectiveRows.length, 200)} av{" "}
-														{effectiveRows.length} rader.
-													</div>
-													{/* Sorter */}
-													<div className="flex items-center gap-2 text-xs">
-														<span className="text-slate-600">Sorter:</span>
-														<select
-															value={sortOrder}
-															onChange={(e) =>
-																setSortOrder(e.target.value as SortOrder)
-															}
-															className="min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-														>
-															<option value="desc">Nyeste først</option>
-															<option value="asc">Eldste først</option>
-														</select>
-													</div>
-												</div>
-												<div
-													ref={previewContainerRef}
-													className="relative overflow-auto overscroll-contain rounded-t-xl ring-1 ring-slate-200 contain-content"
-													style={{ height: previewHeight }}
-												>
-													<table className="min-w-full text-xs">
-														<thead className="sticky top-0 z-20 bg-white text-slate-700 shadow-sm">
-															<tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:text-left whitespace-nowrap">
-																<th className="min-w-[4rem]">Tidspunkt</th>
-																<th>Type</th>
-																<th className="text-right">Inn</th>
-																<th>Inn-Valuta</th>
-																<th className="text-right">Ut</th>
-																<th>Ut-Valuta</th>
-																<th className="text-right">Gebyr</th>
-																<th>Gebyr-Valuta</th>
-																<th>Marked</th>
-																<th>Notat</th>
-																<th>Explorer</th>
-															</tr>
-														</thead>
-														<tbody className="divide-y divide-slate-100 bg-white">
-															{limited.map((it, i) => {
-																const r = it.r;
-																const idxOriginal = it.i;
-																const sig = extractSig(r);
-																const solscan = sig
-																	? `https://solscan.io/tx/${sig}`
-																	: undefined;
-																const rowKey = `${sig ?? "nosig"}-${r.Type}-${
-																	r["Inn-Valuta"]
-																}-${r["Ut-Valuta"]}-${r.Inn}-${r.Ut}-${i}`;
-
-																const highlight = sig && highlightSig === sig;
-
-																return (
-																	<tr
-																		key={rowKey}
-																		data-sig={sig || undefined}
-																		className={`odd:bg-white even:bg-black/8 [&>td]:px-3 [&>td]:py-2 transition-colors
-    																	${highlight ? "[&>td]:bg-amber-50" : ""}`}
-																	>
-																		<td className="font-medium whitespace-normal leading-tight">
-																			<TidspunktCell
-																				idxOriginal={idxOriginal}
-																				value={r.Tidspunkt}
-																			/>
-																		</td>
-
-																		<td>
-																			<EditableCell
-																				idxOriginal={idxOriginal}
-																				field={"Type"}
-																				value={r.Type}
-																			/>
-																		</td>
-
-																		<td className="text-right">
-																			<EditableCell
-																				idxOriginal={idxOriginal}
-																				field={"Inn"}
-																				value={r.Inn}
-																				align="right"
-																			/>
-																		</td>
-
-																		<td>
-																			<EditableCell
-																				idxOriginal={idxOriginal}
-																				field={"Inn-Valuta"}
-																				value={r["Inn-Valuta"]}
-																			/>
-																		</td>
-
-																		<td className="text-right">
-																			<EditableCell
-																				idxOriginal={idxOriginal}
-																				field={"Ut"}
-																				value={r.Ut}
-																				align="right"
-																			/>
-																		</td>
-
-																		<td>
-																			<EditableCell
-																				idxOriginal={idxOriginal}
-																				field={"Ut-Valuta"}
-																				value={r["Ut-Valuta"]}
-																			/>
-																		</td>
-
-																		<td className="text-right">
-																			<EditableCell
-																				idxOriginal={idxOriginal}
-																				field={"Gebyr"}
-																				value={r.Gebyr}
-																				align="right"
-																			/>
-																		</td>
-
-																		<td>
-																			<EditableCell
-																				idxOriginal={idxOriginal}
-																				field={"Gebyr-Valuta"}
-																				value={r["Gebyr-Valuta"]}
-																			/>
-																		</td>
-
-																		<td className="truncate max-w-[12rem]">
-																			<EditableCell
-																				idxOriginal={idxOriginal}
-																				field={"Marked"}
-																				value={r.Marked}
-																				title={r.Marked}
-																			/>
-																		</td>
-
-																		<td className="truncate max-w-[14rem]">
-																			<EditableCell
-																				idxOriginal={idxOriginal}
-																				field={"Notat"}
-																				value={r.Notat}
-																				title={r.Notat}
-																			/>
-																		</td>
-
-																		<td>
-																			{solscan ? (
-																				<Link
-																					href={solscan}
-																					target="_blank"
-																					rel="noopener noreferrer"
-																					className="inline-flex items-center gap-1 text-indigo-600 hover:underline justify-center ml-4"
-																					title="Åpne i Solscan"
-																				>
-																					<FiExternalLink className="h-4 w-4" />
-																					<span className="sr-only">
-																						Solscan
-																					</span>
-																				</Link>
-																			) : (
-																				<span className="text-slate-400">
-																					—
-																				</span>
-																			)}
-																		</td>
-																	</tr>
-																);
-															})}
-															{limited.length === 0 && (
-																<tr>
-																	<td
-																		colSpan={11}
-																		className="px-3 py-6 text-center text-slate-500"
-																	>
-																		Ingen rader funnet for valgte kriterier.
-																	</td>
-																</tr>
-															)}
-														</tbody>
-													</table>
-												</div>
-												<div
-													onMouseDown={onResizeStart}
-													className="flex items-center justify-center h-4 cursor-ns-resize bg-slate-50 border-x border-b border-slate-200 rounded-b-xl select-none"
-													title="Dra for å endre høyde"
-												>
-													<div className="h-1 w-12 rounded-full bg-slate-300" />
-												</div>
-											</div>
-										);
-									})()}
-								</>
-							)}
-							{/* Global actions row (below the big card) */}
-							{previewsReady && (
-								<div className="mt-4 flex items-center justify-between">
-									{rows && (
-										<div className="text-sm">
-											{pendingIssuesCount > 0 ? (
-												<button
-													type="button"
-													onClick={() => setActiveTab("attention")}
-													className="text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 hover:bg-amber-100"
-												>
-													Løs ‘Trenger oppmerksomhet’ først (
-													{pendingIssuesCount})
-												</button>
-											) : (
-												<span className="text-emerald-700">
-													Alt ser bra ut ✅
-												</span>
-											)}
-										</div>
-									)}
-
-									<div>
-										<button
-											type="button"
-											onClick={downloadCSV}
-											disabled={!rows || pendingIssuesCount > 0 || loading}
-											className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:shadow-lg active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
-											title={
-												pendingIssuesCount > 0
-													? "Løs ‘Trenger oppmerksomhet’ først"
-													: "Last ned CSV"
-											}
-										>
-											<FiDownload className="h-4 w-4" />
-											Last ned CSV
-										</button>
-									</div>
-								</div>
-							)}
-
-							{/* ===== Inline editor modal (improved UI, wraps long text) ===== */}
-							{editOpen && editTarget && (
-								<div
-									className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4"
-									onClick={() => setEditOpen(false)}
-								>
-									<div
-										className="w-full max-w-lg sm:max-w-2xl rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200 p-4"
-										onClick={(e) => e.stopPropagation()}
-									>
-										<div className="flex items-center justify-between">
-											<h3 className="text-sm font-semibold text-slate-800">
-												Rediger felt:{" "}
-												<code className="font-mono">{editTarget.label}</code>
-											</h3>
-											<button
-												type="button"
-												onClick={() => setEditOpen(false)}
-												className="rounded-md p-1 text-slate-500 hover:bg-slate-100"
-												aria-label="Lukk"
-											>
-												<FiX className="h-5 w-5" />
-											</button>
-										</div>
-
-										{(editTarget.sig || editTarget.signer) && (
-											<div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-												{editTarget.sig && (
-													<MetaBox
-														label="Signatur"
-														value={editTarget.sig}
-														link={`https://solscan.io/tx/${editTarget.sig}`}
-													/>
-												)}
-												{editTarget.signer && (
-													<MetaBox
-														label="Signer-adresse"
-														value={editTarget.signer}
-														link={`https://solscan.io/address/${editTarget.signer}`}
-													/>
-												)}
-											</div>
-										)}
-
-										<div className="mt-3">
-											{editTarget.field === "Type" ? (
-												<select
-													value={editDraft}
-													onChange={(e) => setEditDraft(e.target.value)}
-													className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-												>
-													{TYPE_OPTIONS.map((t) => (
-														<option key={t} value={t}>
-															{t}
-														</option>
-													))}
-												</select>
-											) : (
-												<textarea
-													rows={6}
-													autoFocus
-													value={editDraft}
-													onChange={(e) => setEditDraft(e.target.value)}
-													className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words min-h-[7rem]"
-													placeholder="Ny verdi…"
-												/>
-											)}
-											<p className="mt-1 text-[11px] text-slate-500">
-												{editTarget.field === "Type"
-													? "Velg en støttet type fra Kryptosekken."
-													: ""}
-											</p>
-										</div>
-
-										<div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-											<div className="text-[11px] text-slate-500">
-												Velg hvor endringen skal gjelde.
-											</div>
-											<div className="flex flex-wrap items-center gap-2">
-												<select
-													value={editScope}
-													onChange={(e) =>
-														setEditScope(e.target.value as EditScope)
-													}
-													className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
-												>
-													<option value="one">Bare dette feltet</option>
-													<option
-														value="bySigner"
-														disabled={!editTarget?.signer}
-														title={
-															editTarget?.signer
-																? ""
-																: "Ingen sender-adresse tilgjengelig"
-														}
-													>
-														Alle fra samme sender adresse
-													</option>
-													<option
-														value="bySignature"
-														disabled={!editTarget?.sig}
-														title={
-															editTarget?.sig
-																? ""
-																: "Ingen signatur tilgjengelig"
-														}
-													>
-														Alle med samme signatur
-													</option>
-
-													{/* NEW */}
-													<option
-														value="byMarked"
-														disabled={
-															!rows?.[
-																editTarget?.idxOriginal ?? 0
-															]?.Marked?.trim()
-														}
-														title={
-															rows?.[
-																editTarget?.idxOriginal ?? 0
-															]?.Marked?.trim()
-																? ""
-																: "Ingen Marked på valgt rad"
-														}
-													>
-														Alle fra samme marked
-													</option>
-												</select>
-
-												<button
-													type="button"
-													onClick={() => applyEdit(editScope)}
-													disabled={
-														(editScope === "bySigner" && !editTarget?.signer) ||
-														(editScope === "bySignature" && !editTarget?.sig)
-													}
-													className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-												>
-													Lagre
-												</button>
-											</div>
-										</div>
-									</div>
-								</div>
-							)}
-
-							{/* Help */}
-							<div className="mt-6 rounded-xl bg-gradient-to-r from-emerald-50 to-indigo-50 p-4 text-xs text-slate-600 ring-1 ring-slate-200/70">
-								Mapper: <b>Swaps</b> → <code>Handel</code>, <b>SOL/SPL</b> →{" "}
-								<code>Overføring-Inn/Ut</code>, <b>Airdrops</b> →{" "}
-								<code>Erverv</code>, <b>staking</b> → <code>Inntekt</code>.
-								Ukjente tokens får koden <code>TOKEN-XXXXXX</code>.
-							</div>
 						</form>
 					</ClientOnly>
 				</div>
+
+				{/* ========= Card 2: Preview & below (tabs/table/attention/modal/download/help) ========= */}
+				{hasRows && (
+					<Preview
+						rows={rows}
+						setRows={setRows}
+						overrides={overrides}
+						setOverrides={setOverrides}
+						onDownloadCSV={downloadCSV}
+					/>
+				)}
 
 				{/* Footer */}
 				<footer className="mt-6 text-xs text-slate-500">
@@ -2464,4 +1275,12 @@ export default function Home() {
 			</div>
 		</main>
 	);
+}
+
+/* ========== local helpers used only by this file ========== */
+function formatRangeLabel(r?: DateRange) {
+	if (!r?.from && !r?.to) return "Velg datoer";
+	const f = (d?: Date) => (d ? d.toLocaleDateString("no-NO") : "–");
+	if (r?.from && r?.to) return `${f(r.from)} → ${f(r.to)}`;
+	return `${f(r?.from)} → …`;
 }
