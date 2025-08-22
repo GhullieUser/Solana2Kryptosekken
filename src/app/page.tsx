@@ -1,4 +1,3 @@
-// app/page.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -17,7 +16,9 @@ import {
 	FiX,
 	FiTag,
 	FiInfo,
-	FiActivity
+	FiActivity,
+	FiSun,
+	FiMoon
 } from "react-icons/fi";
 import { IoWalletOutline } from "react-icons/io5";
 import { SiSolana } from "react-icons/si";
@@ -25,10 +26,10 @@ import { SiSolana } from "react-icons/si";
 import Image from "next/image";
 import Link from "next/link";
 
-// ⬇️ New: preview component (separate card)
+// ⬇️ Preview card
 import Preview from "@/app/components/preview";
 
-/* ================= Client-only guard (Option A) ================= */
+/* ================= Client-only guard ================= */
 function ClientOnly({ children }: { children: React.ReactNode }) {
 	const [mounted, setMounted] = useState(false);
 	useEffect(() => setMounted(true), []);
@@ -36,24 +37,64 @@ function ClientOnly({ children }: { children: React.ReactNode }) {
 	return <>{children}</>;
 }
 
+/* ================= Theme toggle (pill button) ================= */
+function useTheme() {
+	const [isDark, setIsDark] = useState(false);
+
+	useEffect(() => {
+		// Initialize from localStorage or system
+		const saved =
+			typeof window !== "undefined" ? localStorage.getItem("theme") : null;
+		const systemPrefersDark =
+			typeof window !== "undefined" &&
+			window.matchMedia &&
+			window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+		const dark = saved ? saved === "dark" : systemPrefersDark;
+		document.documentElement.classList.toggle("dark", dark);
+		setIsDark(dark);
+	}, []);
+
+	const toggle = () => {
+		setIsDark((prev) => {
+			const next = !prev;
+			document.documentElement.classList.toggle("dark", next);
+			try {
+				localStorage.setItem("theme", next ? "dark" : "light");
+			} catch {}
+			return next;
+		});
+	};
+
+	return { isDark, toggle };
+}
+
+function ThemePill() {
+	const { isDark, toggle } = useTheme();
+	return (
+		<button
+			type="button"
+			onClick={toggle}
+			className="inline-flex items-center gap-2 rounded-full bg-white/70 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-white/90 dark:hover:bg-white/10 transition"
+			title="Bytt lys/mørk"
+			aria-label="Bytt lys/mørk"
+		>
+			{isDark ? (
+				<>
+					<FiMoon className="h-4 w-4" />
+					Mørk
+				</>
+			) : (
+				<>
+					<FiSun className="h-4 w-4" />
+					Lys
+				</>
+			)}
+		</button>
+	);
+}
+
 /* ================= Types ================= */
-
-// Kryptosekken types (dropdown options)
-// const TYPE_OPTIONS = [
-// 	"Handel",
-// 	"Erverv",
-// 	"Inntekt",
-// 	"Tap",
-// 	"Forbruk",
-// 	"Renteinntekt",
-// 	"Overføring-Inn",
-// 	"Overføring-Ut",
-// 	"Gave-Inn",
-// 	"Gave-Ut",
-// 	"Tap-uten-fradrag",
-// 	"Forvaltningskostnad"
-// ] as const;
-
 export type KSType =
 	| "Handel"
 	| "Erverv"
@@ -80,7 +121,11 @@ export type KSRow = {
 	Marked: string;
 	Notat: string;
 };
-export type KSPreviewRow = KSRow & { signature?: string; signer?: string };
+export type KSPreviewRow = KSRow & {
+	signature?: string;
+	signer?: string;
+	rowId?: string;
+};
 
 export type OverrideMaps = {
 	symbols: Record<string, string>;
@@ -102,7 +147,6 @@ const KNOWN_MARKETS = new Set([
 	"aggregert",
 	"pump.fun"
 ]);
-
 function isUnknownMarket(m?: string) {
 	if (!m) return true;
 	const lc = m.trim().toLowerCase();
@@ -163,15 +207,21 @@ function Switch({
 			role="switch"
 			aria-checked={checked}
 			onClick={() => onChange(!checked)}
-			className={`relative inline-flex h-5 w-10 items-center rounded-full transition cursor-pointer ${
-				checked ? "bg-indigo-600" : "bg-slate-300"
-			}`}
+			className={[
+				"relative inline-flex h-5 w-10 items-center rounded-full transition-colors",
+				"focus:outline-none focus:ring-2 focus:ring-indigo-400/60 dark:focus:ring-indigo-400/40",
+				checked
+					? "bg-indigo-600 dark:bg-indigo-500"
+					: "bg-slate-300 dark:bg-slate-600"
+			].join(" ")}
 			title={label}
 		>
 			<span
-				className={`absolute top-[2px] left-[2px] h-4 w-4 rounded-full bg-white shadow transition-[left] ${
-					checked ? "left-[22px]" : "left-[2px]"
-				}`}
+				className={[
+					"absolute top-[2px] h-4 w-4 rounded-full shadow transition-[left,background-color]",
+					checked ? "left-[22px]" : "left-[2px]",
+					"bg-white dark:bg-slate-100"
+				].join(" ")}
 			/>
 			<span className="sr-only">{label}</span>
 		</button>
@@ -181,7 +231,7 @@ function Switch({
 /* ================= Page ================= */
 const HISTORY_KEY = "sol2ks.addressHistory";
 const HISTORY_MAX = 10;
-const NAMES_KEY = "sol2ks.walletNames"; // { [address]: name }
+const NAMES_KEY = "sol2ks.walletNames";
 
 export default function Home() {
 	const formRef = useRef<HTMLFormElement | null>(null);
@@ -219,13 +269,11 @@ export default function Home() {
 	const [dustThreshold, setDustThreshold] = useState<string>("0.001");
 	const [dustInterval, setDustInterval] = useState<DustInterval>("week");
 
-	// Overrides for symbol/market (used in preview & in the chip count here)
+	// Overrides
 	const [overrides, setOverrides] = useState<OverrideMaps>({
 		symbols: {},
 		markets: {}
 	});
-
-	// Highlight & preview-specific state moved into <Preview />
 
 	const previewContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -236,7 +284,7 @@ export default function Home() {
 		: "#";
 	const hasAddressInput = address.trim().length > 0;
 
-	// Apply overrides only for showing the “N transactions found” chip
+	// Apply overrides only for the “N transactions found” chip
 	const effectiveRows: KSPreviewRow[] = useMemo(() => {
 		if (!rows) return [];
 		const mapSym = overrides.symbols;
@@ -390,7 +438,6 @@ export default function Home() {
 		setRows(null);
 		cacheKeyRef.current = null;
 
-		// clear previous run log & open
 		clearLog();
 
 		const payload = buildPayload();
@@ -402,14 +449,11 @@ export default function Home() {
 			return;
 		}
 
-		// exact format: Ny sjekk "wallet name" "full address"
 		pushLog(`Ny sjekk ${q(payload.walletName)} ${q(payload.address)}`);
 		setLogOpen(true);
 
-		// Remember address + name
 		rememberAddress(parsed.data.address);
 
-		// Abort controller
 		const ctrl = new AbortController();
 		abortRef.current = ctrl;
 
@@ -439,7 +483,6 @@ export default function Home() {
 				if (done) break;
 				buf += decoder.decode(value, { stream: true });
 				let nlIndex: number;
-				// Process NDJSON lines
 				// eslint-disable-next-line no-cond-assign
 				while ((nlIndex = buf.indexOf("\n")) >= 0) {
 					const line = buf.slice(0, nlIndex).trim();
@@ -512,20 +555,40 @@ export default function Home() {
 		}
 	}
 
-	/* ========== Download CSV (uses server cache) — passed into <Preview> ========== */
+	/* ========== Download CSV ========== */
 	async function downloadCSV(currentOverrides: OverrideMaps) {
 		if (!lastPayloadRef.current) return;
 		setError(null);
 		try {
+			// Build a map of rowId -> full row fields (server will selectively merge)
+			const clientEdits: Record<string, Partial<KSRow>> = {};
+			for (const r of rows ?? []) {
+				if (!r?.rowId) continue;
+				clientEdits[r.rowId] = {
+					Tidspunkt: r.Tidspunkt,
+					Type: r.Type,
+					Inn: r.Inn,
+					"Inn-Valuta": r["Inn-Valuta"],
+					Ut: r.Ut,
+					"Ut-Valuta": r["Ut-Valuta"],
+					Gebyr: r.Gebyr,
+					"Gebyr-Valuta": r["Gebyr-Valuta"],
+					Marked: r.Marked,
+					Notat: r.Notat
+				};
+			}
+
 			const url = "/api/kryptosekken?useCache=1";
 			const res = await fetch(url, {
 				method: "POST",
 				headers: { "Content-Type": "application/json", Accept: "text/csv" },
 				body: JSON.stringify({
 					...lastPayloadRef.current,
-					overrides: currentOverrides
+					overrides: currentOverrides,
+					clientEdits // NEW
 				})
 			});
+
 			if (!res.ok) {
 				const j = await res.json().catch(() => ({ error: "Feil" }));
 				throw new Error(j.error || res.statusText);
@@ -539,7 +602,7 @@ export default function Home() {
 			a.click();
 			a.remove();
 			URL.revokeObjectURL(dlUrl);
-			pushLog("✅ CSV klar (cache).");
+			pushLog("✅ CSV klar (med redigeringer).");
 		} catch (err: unknown) {
 			const message =
 				err instanceof Error
@@ -607,80 +670,58 @@ export default function Home() {
 		}
 	}
 
-	const hasRows = rows !== null; // show preview card (even if 0 rows) once we've checked
+	const hasRows = rows !== null;
+
+	// Shared card class (proper light/dark)
+	const cardCn =
+		"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 ring-1 ring-slate-200/60 dark:ring-slate-800/60";
 
 	return (
-		<main className="min-h-screen ">
-			{/* Small UI tweaks */}
-			<style jsx global>{`
-				* {
-					scrollbar-width: thin;
-					scrollbar-color: #cbd5e1 #f8fafc;
-				}
-				*::-webkit-scrollbar {
-					width: 10px;
-					height: 10px;
-				}
-				*::-webkit-scrollbar-track {
-					background: #f8fafc;
-					border-radius: 8px;
-				}
-				*::-webkit-scrollbar-thumb {
-					background: #cbd5e1;
-					border-radius: 8px;
-					border: 2px solid #f8fafc;
-				}
-				*::-webkit-scrollbar-thumb:hover {
-					background: #94a3b8;
-				}
-				button {
-					cursor: pointer;
-				}
-				button:disabled {
-					cursor: not-allowed;
-				}
-				/* Smaller calendar */
-				.rdp {
-					--rdp-cell-size: 24px;
-					font-size: 12px;
-				}
-				.rdp-caption_label {
-					font-size: 12px;
-				}
-			`}</style>
-
-			<div className="mx-auto max-w-6xl px-4 py-10 sm:py-16 ">
-				{/* Header */}
+		<main className="min-h-screen">
+			<div className="mx-auto max-w-6xl px-4 py-10 sm:py-16">
+				{/* ====== Header with badge + title/subtitle (left) and logo (right) ====== */}
 				<header className="mb-8 sm:mb-12">
+					{/* Row: badge + theme pill at top */}
 					<div className="flex items-center justify-between">
-						<div className="inline-flex items-center gap-3 rounded-full bg-white/70 ring-1 ring-black/5 px-3 py-1 text-xs font-medium text-slate-600 shadow-sm backdrop-blur">
+						<div className="inline-flex items-center gap-3 rounded-full bg-white/70 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm">
 							<SiSolana className="h-4 w-4" aria-hidden />
 							Solana → Kryptosekken • CSV Generator
 						</div>
-						<Image
-							src="/Sol2KS_logo.svg"
-							alt="Sol2KS"
-							width={160}
-							height={160}
-							className="h-10 w-auto sm:h-14"
-							priority
-						/>
+						<ThemePill />
 					</div>
 
-					<h1 className="mt-4 text-balance text-3xl sm:text-4xl font-semibold tracking-tight">
-						<span className="bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">
-							Solana-transaksjoner gjort enklere
-						</span>
-					</h1>
+					<div className="mt-4 grid grid-cols-1 sm:grid-cols-[auto_minmax(0,1fr)] items-center gap-4 justify-items-start">
+						<div className="self-center">
+							{" "}
+							{/* removed justify-self-end */}
+							<Image
+								src="/Sol2KS_logo.svg"
+								alt="Sol2KS"
+								width={160}
+								height={160}
+								className="h-12 w-auto sm:h-24"
+								priority
+							/>
+						</div>
 
-					<p className="mt-2 max-w-prose text-sm sm:text-base text-slate-600">
-						Lim inn en Solana-adresse, velg tidsrom, <b>sjekk lommeboken</b> og
-						last ned en <b>CSV-fil</b> klar for import i Kryptosekken.
-					</p>
+						<div className="min-w-0">
+							{" "}
+							{/* optional: min-w-0 to avoid overflow */}
+							<h1 className="text-balance text-3xl sm:text-4xl font-semibold tracking-tight">
+								<span className="bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">
+									Solana-transaksjoner gjort enklere
+								</span>
+							</h1>
+							<p className="mt-2 max-w-prose text-sm sm:text-base text-slate-700 dark:text-slate-300">
+								Lim inn en Solana-adresse, velg tidsrom, <b>sjekk lommeboken</b>{" "}
+								og last ned en <b>CSV-fil</b> klar for import i Kryptosekken.
+							</p>
+						</div>
+					</div>
 				</header>
 
 				{/* ========= Card 1: Inputs / Settings / Log / Cache ========= */}
-				<div className="mt-4 rounded-3xl bg-white shadow-xl shadow-slate-900/5 ring-1 ring-slate-200/60">
+				<div className={cardCn}>
 					<ClientOnly>
 						<form
 							ref={formRef}
@@ -688,7 +729,7 @@ export default function Home() {
 							className="p-6 sm:p-10"
 						>
 							{/* Address + Name with history */}
-							<label className="block text-sm font-medium text-slate-700">
+							<label className="block mb-2 text-sm font-medium text-slate-800 dark:text-slate-200">
 								Lommebok
 							</label>
 							<div className="grid gap-3 sm:grid-cols-[1fr_280px]">
@@ -708,7 +749,7 @@ export default function Home() {
 										}}
 										onFocus={() => setAddrMenuOpen(true)}
 										onBlur={() => setTimeout(() => setAddrMenuOpen(false), 120)}
-										className="block w-full rounded-xl border border-slate-200 bg-white pl-11 pr-24 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+										className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-11 pr-24 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 									/>
 
 									{/* right-side actions: clear, history */}
@@ -724,7 +765,7 @@ export default function Home() {
 													setAddrMenuOpen(false);
 													setTimeout(() => addrInputRef.current?.focus(), 0);
 												}}
-												className="rounded-md p-1 text-slate-500 hover:bg-slate-100 h-6 w-6"
+												className="rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 h-6 w-6"
 												title="Tøm felt"
 											>
 												<FiX className="h-4 w-4" />
@@ -736,7 +777,7 @@ export default function Home() {
 											aria-label="Adressehistorikk"
 											onMouseDown={(e) => e.preventDefault()}
 											onClick={() => setAddrMenuOpen((v) => !v)}
-											className="rounded-md p-1 text-slate-500 hover:bg-slate-100 h-6 w-6"
+											className="rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 h-6 w-6"
 											title="Adressehistorikk"
 										>
 											<FiClock className="h-4 w-4" />
@@ -745,19 +786,19 @@ export default function Home() {
 
 									{/* Dropdown history */}
 									{addrMenuOpen && (addrHistory.length > 0 || address) && (
-										<div className="absolute z-30 mt-2 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+										<div className="absolute z-30 mt-2 w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl">
 											{filteredHistory.length > 0 ? (
 												<ul className="max-h-64 overflow-auto text-sm">
 													{filteredHistory.map((a) => (
 														<li
 															key={a}
-															className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-slate-50"
+															className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5"
 														>
 															<button
 																type="button"
 																onMouseDown={(e) => e.preventDefault()}
 																onClick={() => pickAddress(a)}
-																className="truncate text-left text-slate-700"
+																className="truncate text-left text-slate-700 dark:text-slate-200"
 																title={a}
 															>
 																{a}
@@ -765,7 +806,7 @@ export default function Home() {
 																{(() => {
 																	const nm = readNamesMap()[a];
 																	return nm ? (
-																		<span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+																		<span className="ml-2 rounded bg-slate-100 dark:bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-600 dark:text-slate-300">
 																			{nm}
 																		</span>
 																	) : null;
@@ -776,7 +817,7 @@ export default function Home() {
 																aria-label="Fjern fra historikk"
 																onMouseDown={(e) => e.preventDefault()}
 																onClick={() => removeAddress(a)}
-																className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+																className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-600"
 															>
 																<FiTrash2 className="h-4 w-4" />
 															</button>
@@ -784,17 +825,17 @@ export default function Home() {
 													))}
 												</ul>
 											) : (
-												<div className="px-3 py-2 text-sm text-slate-500">
+												<div className="px-3 py-2 text-sm text-slate-500 dark:text-slate-400">
 													Ingen treff i historikk
 												</div>
 											)}
-											<div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+											<div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-white/5 px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
 												<span>{addrHistory.length} lagret</span>
 												<button
 													type="button"
 													onMouseDown={(e) => e.preventDefault()}
 													onClick={clearHistory}
-													className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-white"
+													className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-white dark:hover:bg-white/10"
 												>
 													<FiTrash2 className="h-3 w-3" />
 													Tøm historikk
@@ -814,7 +855,7 @@ export default function Home() {
 											placeholder="Navn (valgfritt)"
 											value={walletName}
 											onChange={(e) => setWalletName(e.target.value)}
-											className="block w-full rounded-xl border border-slate-200 bg-white pl-11 pr-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+											className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-11 pr-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 										/>
 
 										{/* Solscan button */}
@@ -830,8 +871,8 @@ export default function Home() {
 											className={`inline-flex items-center gap-2 rounded-xl border  text-sm shadow-sm aspect-square p-2 h-[37px] w-[37px] justify-center
                         ${
 													canOpenExplorer
-														? "border-slate-200 bg-white text-indigo-700 hover:bg-slate-50"
-														: "border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed"
+														? "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-white/10"
+														: "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-white/5 text-slate-400 cursor-not-allowed"
 												}`}
 											title={
 												canOpenExplorer
@@ -843,7 +884,7 @@ export default function Home() {
 										</Link>
 									</div>
 
-									<p className="mt-1 text-[11px] text-slate-500">
+									<p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
 										Vises i <b>Notat</b> (eks. <b>MIN WALLET</b>).
 									</p>
 								</div>
@@ -852,10 +893,10 @@ export default function Home() {
 							{/* Timespan (dropdown calendar + presets) */}
 							<div className="mt-6">
 								<div className="flex items-center justify-between">
-									<label className="block text-sm font-medium text-slate-700">
+									<label className="block text-sm font-medium text-slate-800 dark:text-slate-200">
 										Tidsrom
 									</label>
-									<div className="text-[11px] text-slate-500">
+									<div className="text-[11px] text-slate-500 dark:text-slate-400">
 										Avgrenser transaksjoner i perioden. Standard:{" "}
 										<b>siste 30 dager</b>.
 									</div>
@@ -870,37 +911,37 @@ export default function Home() {
 												setCalOpen((v) => !v);
 												setCalMonth(range?.to ?? new Date());
 											}}
-											className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm hover:bg-slate-50"
+											className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10"
 										>
-											<FiCalendar className="h-4 w-4 text-slate-500" />
+											<FiCalendar className="h-4 w-4 text-slate-500 dark:text-slate-400" />
 											{formatRangeLabel(range)}
 											<FiChevronDown className="h-4 w-4 text-slate-400" />
 										</button>
 
 										{calOpen && (
-											<div className="absolute z-20 mt-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl min-w-[260px]">
+											<div className="absolute z-20 mt-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 shadow-xl min-w-[260px]">
 												{/* Legend */}
 												<div className="flex items-center justify-between px-1 pb-2">
 													<button
 														type="button"
-														className="text-[11px] text-slate-600"
+														className="text-[11px] text-slate-600 dark:text-slate-300"
 														onClick={() =>
 															range?.from && setCalMonth(range.from)
 														}
 														title="Gå til Fra-måned"
 													>
-														<span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 hover:bg-indigo-100">
+														<span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-400/10 px-2 py-0.5 hover:bg-indigo-100 dark:hover:bg-indigo-400/20">
 															<span className="h-2 w-2 rounded-full bg-indigo-600" />
 															Fra: <b>{nice(range?.from)}</b>
 														</span>
 													</button>
 													<button
 														type="button"
-														className="text-[11px] text-slate-600"
+														className="text-[11px] text-slate-600 dark:text-slate-300"
 														onClick={() => range?.to && setCalMonth(range.to)}
 														title="Gå til Til-måned"
 													>
-														<span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 hover:bg-emerald-100">
+														<span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-400/10 px-2 py-0.5 hover:bg-emerald-100 dark:hover:bg-emerald-400/20">
 															<span className="h-2 w-2 rounded-full bg-emerald-600" />
 															Til: <b>{nice(range?.to)}</b>
 														</span>
@@ -913,7 +954,6 @@ export default function Home() {
 													month={calMonth}
 													onMonthChange={setCalMonth}
 													onSelect={(r) => {
-														// ensure "Til" is never in the future
 														const now = new Date();
 														const bounded =
 															r?.to && r.to > now
@@ -929,7 +969,8 @@ export default function Home() {
 													modifiersClassNames={{
 														range_start:
 															"bg-indigo-600 text-white rounded-l-full",
-														range_middle: "bg-indigo-100 text-indigo-900",
+														range_middle:
+															"bg-indigo-100 text-indigo-900 dark:bg-indigo-400/20 dark:text-indigo-200",
 														range_end:
 															"bg-emerald-600 text-white rounded-r-full",
 														selected: "font-semibold",
@@ -940,7 +981,7 @@ export default function Home() {
 													<button
 														type="button"
 														onClick={() => setCalOpen(false)}
-														className="rounded-lg border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50"
+														className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 													>
 														Lukk
 													</button>
@@ -954,28 +995,28 @@ export default function Home() {
 										<button
 											type="button"
 											onClick={() => presetDays(7)}
-											className="rounded-full border border-slate-200 px-3 py-1.5 hover:bg-slate-50"
+											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 										>
 											Siste 7 dager
 										</button>
 										<button
 											type="button"
 											onClick={() => presetDays(30)}
-											className="rounded-full border border-slate-200 px-3 py-1.5 hover:bg-slate-50"
+											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 										>
 											Siste 30 dager
 										</button>
 										<button
 											type="button"
 											onClick={ytd}
-											className="rounded-full border border-slate-200 px-3 py-1.5 hover:bg-slate-50"
+											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 										>
 											YTD
 										</button>
 										<button
 											type="button"
 											onClick={clearDates}
-											className="rounded-full border border-slate-200 px-3 py-1.5 hover:bg-slate-50"
+											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 										>
 											Nullstill
 										</button>
@@ -983,16 +1024,16 @@ export default function Home() {
 								</div>
 
 								{/* Tidssone toggle */}
-								<div className="mt-3 inline-flex items-center gap-3">
+								<div className="mt-3 inline-flex flex-wrap items-center gap-3">
 									<Switch
 										checked={useOslo}
 										onChange={setUseOslo}
 										label="Norsk tid (Europe/Oslo)"
 									/>
-									<span className="text-sm font-medium text-slate-700">
+									<span className="text-sm font-medium text-slate-800 dark:text-slate-200">
 										Norsk tid (Europe/Oslo)
 									</span>
-									<span className="text-[11px] text-slate-500">
+									<span className="text-[11px] text-slate-500 dark:text-slate-400">
 										CSV tidsstempler skrives i{" "}
 										{useOslo ? "Norsk tid (UTC+01:00 Europe/Oslo)" : "UTC"}.
 									</span>
@@ -1000,7 +1041,7 @@ export default function Home() {
 							</div>
 
 							{/* NFT section */}
-							<div className="mt-6 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+							<div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-white/5 p-4">
 								<div className="flex items-center justify-between">
 									<div className="inline-flex items-center gap-3">
 										<Switch
@@ -1008,11 +1049,11 @@ export default function Home() {
 											onChange={setIncludeNFT}
 											label="Inkluder NFT-overføringer"
 										/>
-										<span className="text-sm font-medium text-slate-700">
+										<span className="text-sm font-medium text-slate-800 dark:text-slate-200">
 											Inkluder NFT-overføringer
 										</span>
 									</div>
-									<div className="text-[11px] text-slate-500">
+									<div className="text-[11px] text-slate-500 dark:text-slate-400">
 										Tar med bevegelser av NFT-er. (Ingen prising, kun
 										overføringer.)
 									</div>
@@ -1020,9 +1061,9 @@ export default function Home() {
 							</div>
 
 							{/* Dust section */}
-							<div className="mt-4 rounded-xl border border-slate-200 p-4">
+							<div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
 								<div className="mb-3 flex items-center justify-between">
-									<div className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
+									<div className="inline-flex items-center gap-2 text-sm font-medium text-slate-800 dark:text-slate-200">
 										<FiSliders className="h-4 w-4" />
 										Støvtransaksjoner
 									</div>
@@ -1031,18 +1072,18 @@ export default function Home() {
 										<button
 											type="button"
 											aria-label="Hvorfor får jeg så mye støv i SOL?"
-											className="rounded-full p-1 text-slate-500 hover:bg-slate-100 focus:bg-slate-100 focus:outline-none"
+											className="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 focus:outline-none"
 										>
 											<FiInfo className="h-4 w-4" />
 										</button>
 										<div
 											role="tooltip"
-											className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[22rem] rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-xl group-hover:block group-focus-within:block"
+											className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[22rem] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl group-hover:block group-focus-within:block"
 										>
 											<p className="mb-1 font-medium">
 												Hvorfor så mye “støv” i SOL?
 											</p>
-											<ul className="list-disc space-y-1 pl-4 text-slate-600">
+											<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
 												<li>
 													<b>Spam / dusting:</b> små innbetalinger for å lokke
 													klikk eller spore lommebøker.
@@ -1073,11 +1114,13 @@ export default function Home() {
 								<div className="grid gap-3 sm:grid-cols-3">
 									{/* Mode */}
 									<div className="flex flex-col gap-1">
-										<label className="text-xs text-slate-600">Modus</label>
+										<label className="text-xs text-slate-600 dark:text-slate-400">
+											Modus
+										</label>
 										<select
 											value={dustMode}
 											onChange={(e) => setDustMode(e.target.value as DustMode)}
-											className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+											className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 										>
 											<option value="off">Vis alle</option>
 											<option value="remove">Skjul</option>
@@ -1093,16 +1136,16 @@ export default function Home() {
 									{/* Threshold */}
 									{dustMode !== "off" && (
 										<div className="flex flex-col gap-1">
-											<label className="text-xs text-slate-600">
+											<label className="text-xs text-slate-600 dark:text-slate-400">
 												Grense (beløp)
 											</label>
 											<input
 												type="number"
-												step="any"
+												step="0.001"
 												inputMode="decimal"
 												value={dustThreshold}
 												onChange={(e) => setDustThreshold(e.target.value)}
-												className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+												className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 												placeholder="0.001"
 											/>
 										</div>
@@ -1112,13 +1155,15 @@ export default function Home() {
 									{(dustMode === "aggregate-period" ||
 										dustMode === "aggregate-signer") && (
 										<div className="flex flex-col gap-1">
-											<label className="text-xs text-slate-600">Periode</label>
+											<label className="text-xs text-slate-600 dark:text-slate-400">
+												Periode
+											</label>
 											<select
 												value={dustInterval}
 												onChange={(e) =>
 													setDustInterval(e.target.value as DustInterval)
 												}
-												className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+												className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 											>
 												<option value="day">Dag</option>
 												<option value="week">Uke</option>
@@ -1131,27 +1176,27 @@ export default function Home() {
 
 								{/* Info text – specific per mode */}
 								{dustMode === "off" && (
-									<p className="mt-2 text-[11px] text-slate-500">
+									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
 										<b>Vis alle:</b> Ingen støvbehandling.
 									</p>
 								)}
 								{dustMode === "remove" && (
-									<p className="mt-2 text-[11px] text-slate-500">
+									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
 										<b>Skjul:</b> Filtrerer vekk alle overføringer under
 										grensen.{" "}
 										<span className="text-amber-700">(Ikke anbefalt)</span>
 									</p>
 								)}
 								{dustMode === "aggregate-signer" && (
-									<p className="mt-2 text-[11px] text-slate-500">
+									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
 										<b>Slå sammen fra samme sender:</b> Slår sammen små{" "}
 										<code>Overføring-Inn/Ut</code> fra hver{" "}
-										<i>signer-adresse</i> til én linje<b> per valgt periode</b>.
+										<i>signer-adresse</i> til én linje <b>per valgt periode</b>.
 										Notatet viser hvem som sendte.
 									</p>
 								)}
 								{dustMode === "aggregate-period" && (
-									<p className="mt-2 text-[11px] text-slate-500">
+									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
 										<b>Slå sammen periodisk:</b> Slår sammen små{" "}
 										<code>Overføring-Inn/Ut</code> i én linje per valgt periode
 										(uavhengig av sender).
@@ -1164,7 +1209,7 @@ export default function Home() {
 								<button
 									type="submit"
 									disabled={loading}
-									className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
+									className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
 								>
 									{loading ? (
 										<FiLoader className="h-4 w-4 animate-spin" />
@@ -1177,7 +1222,7 @@ export default function Home() {
 									<button
 										type="button"
 										onClick={onCancel}
-										className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 shadow-sm hover:bg-red-100 active:scale-[0.99]"
+										className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 shadow-sm hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300 active:scale-[0.99]"
 									>
 										<FiX className="h-4 w-4" />
 										Avbryt
@@ -1186,7 +1231,7 @@ export default function Home() {
 								<button
 									type="button"
 									onClick={onReset}
-									className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 active:scale-[0.99]"
+									className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99]"
 								>
 									Nullstill
 								</button>
@@ -1200,7 +1245,7 @@ export default function Home() {
 									</span>
 								)}
 								{!error && effectiveRows && effectiveRows.length > 0 && (
-									<span className="text-sm text-emerald-700">
+									<span className="text-sm text-emerald-700 dark:text-emerald-400">
 										{effectiveRows.length} transaksjoner funnet ✅
 									</span>
 								)}
@@ -1208,7 +1253,7 @@ export default function Home() {
 								<button
 									type="button"
 									onClick={() => setLogOpen((v) => !v)}
-									className="ml-auto inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 shadow-sm hover:bg-slate-50"
+									className="ml-auto inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10"
 									title="Vis/skjul logg"
 								>
 									<FiActivity className="h-4 w-4" />
@@ -1220,10 +1265,12 @@ export default function Home() {
 							{logOpen && (
 								<div
 									ref={logRef}
-									className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 max-h-40 overflow-auto"
+									className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-white/5 p-3 text-xs text-slate-700 dark:text-slate-200 max-h-40 overflow-auto"
 								>
 									{logLines.length === 0 ? (
-										<div className="text-slate-500">Ingen hendelser ennå.</div>
+										<div className="text-slate-500 dark:text-slate-400">
+											Ingen hendelser ennå.
+										</div>
 									) : (
 										<ul className="space-y-1 font-mono">
 											{logLines.map((ln, i) => (
@@ -1234,9 +1281,9 @@ export default function Home() {
 								</div>
 							)}
 
-							{/* Cache banner (stays with top card) */}
+							{/* Cache banner */}
 							{cacheKeyRef.current && !loading && (
-								<div className="mt-3 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+								<div className="mt-3 flex items-center justify-between rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
 									<span>
 										Treff i cache for denne adressen/perioden. Du kan tømme
 										cache hvis du vil foreta et nytt sjekk.
@@ -1244,7 +1291,7 @@ export default function Home() {
 									<button
 										type="button"
 										onClick={clearCacheNow}
-										className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white/60 px-2 py-1 hover:bg-white whitespace-nowrap"
+										className="inline-flex items-center gap-1 rounded-md border border-amber-300 dark:border-amber-800 bg-white/60 dark:bg-white/10 px-2 py-1 hover:bg-white dark:hover:bg-white/15 whitespace-nowrap"
 										title="Tøm mellomlager for denne forespørselen"
 									>
 										<FiTrash2 className="h-4 w-4" />
@@ -1256,19 +1303,21 @@ export default function Home() {
 					</ClientOnly>
 				</div>
 
-				{/* ========= Card 2: Preview & below (tabs/table/attention/modal/download/help) ========= */}
+				{/* ========= Card 2: Preview ========= */}
 				{hasRows && (
-					<Preview
-						rows={rows}
-						setRows={setRows}
-						overrides={overrides}
-						setOverrides={setOverrides}
-						onDownloadCSV={downloadCSV}
-					/>
+					<div className="mt-6">
+						<Preview
+							rows={rows}
+							setRows={setRows}
+							overrides={overrides}
+							setOverrides={setOverrides}
+							onDownloadCSV={downloadCSV}
+						/>
+					</div>
 				)}
 
 				{/* Footer */}
-				<footer className="mt-6 text-xs text-slate-500">
+				<footer className="mt-6 text-xs text-slate-500 dark:text-slate-400">
 					Vi tar forbehold om feil. Kontroller resultatet i Kryptosekken etter
 					opplasting.
 				</footer>

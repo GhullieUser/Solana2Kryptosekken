@@ -1,4 +1,4 @@
-// app/preview.tsx
+// app/components/preview.tsx
 "use client";
 
 import { useMemo, useRef, useState, useEffect } from "react";
@@ -114,12 +114,15 @@ function MetaBox({
 }) {
 	const [copied, setCopied] = useState(false);
 	return (
-		<div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+		<div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 dark:border-white/10 dark:bg-white/5">
 			<div className="min-w-0">
-				<div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+				<div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
 					{label}
 				</div>
-				<div className="font-mono text-[12px] text-slate-800" title={value}>
+				<div
+					className="font-mono text-[12px] text-slate-800 dark:text-slate-200"
+					title={value}
+				>
 					{middleEllipsis(value)}
 				</div>
 			</div>
@@ -134,7 +137,7 @@ function MetaBox({
 							setTimeout(() => setCopied(false), 1200);
 						} catch {}
 					}}
-					className="rounded p-1 text-slate-600 hover:bg-white hover:text-slate-900 ring-1 ring-transparent hover:ring-slate-200"
+					className="rounded p-1 text-slate-600 hover:bg-white hover:text-slate-900 ring-1 ring-transparent hover:ring-slate-200 dark:text-slate-300 dark:hover:bg-white/5 dark:hover:text-slate-100"
 					aria-label="Kopier"
 					title={copied ? "Kopiert!" : "Kopier"}
 				>
@@ -146,7 +149,7 @@ function MetaBox({
 						href={link}
 						target="_blank"
 						rel="noopener noreferrer"
-						className="rounded p-1 text-indigo-600 hover:bg-white hover:text-indigo-700 ring-1 ring-transparent hover:ring-indigo-200"
+						className="rounded p-1 text-indigo-600 hover:bg-white hover:text-indigo-700 ring-1 ring-transparent hover:ring-indigo-200 dark:text-indigo-400 dark:hover:bg-white/5 dark:hover:text-indigo-300"
 						aria-label="Åpne i explorer"
 						title="Åpne i explorer"
 					>
@@ -204,7 +207,7 @@ function CellChrome({
 					: undefined
 			}
 		>
-			<span className="rounded pointer-events-none absolute -inset-x-2 top-1/2 -translate-y-1/2 h-10 z-0 ring-1 ring-transparent group-hover:ring-emerald-300/80 group-hover:bg-emerald-50/50 transition" />
+			<span className="rounded pointer-events-none absolute -inset-x-2 top-1/2 -translate-y-1/2 h-10 z-0 ring-1 ring-transparent group-hover:ring-emerald-300/80 group-hover:bg-emerald-50/50 dark:group-hover:ring-emerald-500/40 dark:group-hover:bg-emerald-500/10 transition" />
 			<div
 				className={`relative z-10 ${
 					align === "right" ? "font-mono tabular-nums" : ""
@@ -219,7 +222,7 @@ function CellChrome({
 						e.stopPropagation();
 						onEdit();
 					}}
-					className="absolute right-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover:flex items-center justify-center h-5 w-5 rounded bg-white shadow ring-1 ring-slate-300 text-slate-600 hover:bg-slate-50"
+					className="absolute right-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover:flex items-center justify-center h-5 w-5 rounded bg-white shadow ring-1 ring-slate-300 text-slate-600 hover:bg-slate-50 dark:bg-slate-900/60 dark:ring-white/10 dark:text-slate-300 dark:hover:bg-slate-800"
 					aria-label="Rediger"
 				>
 					<FiEdit className="h-3.5 w-3.5" />
@@ -254,7 +257,9 @@ function TidspunktCell({
 				<div className="leading-tight">
 					<div className="font-medium">{datePart || value}</div>
 					{timePart ? (
-						<div className="text-slate-500 text-[11px]">{timePart}</div>
+						<div className="text-slate-500 text-[11px] dark:text-slate-400">
+							{timePart}
+						</div>
 					) : null}
 				</div>
 			</CellChrome>
@@ -296,7 +301,7 @@ function EditableCell({
 				showButton={false}
 			>
 				<span
-					className="pointer-events-none select-none text-slate-400 italic"
+					className="pointer-events-none select-none text-slate-400 italic dark:text-slate-500"
 					aria-hidden="true"
 				>
 					—
@@ -759,146 +764,133 @@ export default function Preview({
 
 		return (
 			<th className="relative whitespace-nowrap">
-				{(() => {
-					const isOpen = openFilter === field;
-					const selected = filters[field];
-					const active = !!selected && selected.size > 0;
+				<>
+					{/* Plain header title + icons (no background pills) */}
+					<div className="inline-flex items-center gap-1">
+						<span className="pr-0.5">{label}</span>
 
-					const opts = (() => {
-						const m = optionCounts[field];
-						const arr = Array.from(m.entries());
-						arr.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-						return arr;
-					})();
+						{/* subtle active dot */}
+						{active && (
+							<span
+								className="ml-0.5 inline-block h-1.5 w-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400"
+								aria-hidden="true"
+							/>
+						)}
 
-					return (
-						<>
-							{/* Plain header title + icon(s) — no background pills */}
-							<div className="inline-flex items-center gap-1">
-								<span className="pr-0.5">{label}</span>
+						{/* Filter icon (color change only) */}
+						<button
+							type="button"
+							onClick={(e) => {
+								e.stopPropagation();
+								setOpenFilter((curr) => (curr === field ? null : field));
+							}}
+							className="p-0.5 -m-0.5"
+							aria-label={`Filtrer ${label}`}
+							aria-expanded={isOpen}
+							title={`Filtrer ${label}`}
+						>
+							<FiFilter
+								className={[
+									"h-4 w-4 transition-colors",
+									active
+										? "text-indigo-600 dark:text-indigo-400"
+										: "text-slate-400 dark:text-slate-500",
+									"hover:text-slate-700 dark:hover:text-slate-200 focus:text-slate-700 dark:focus:text-slate-200"
+								].join(" ")}
+							/>
+						</button>
 
-								{/* Filter icon (color change only) */}
+						{/* Header reset (X), color-only hover */}
+						{active && (
+							<button
+								type="button"
+								onClick={(e) => {
+									e.stopPropagation();
+									clearFilter(field);
+								}}
+								className="p-0.5 -m-0.5"
+								aria-label="Nullstill filter"
+								title="Nullstill filter"
+							>
+								<FiX className="h-4 w-4 text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 transition-colors" />
+							</button>
+						)}
+					</div>
+
+					{/* Popover */}
+					{isOpen && (
+						<div
+							className="absolute right-0 mt-2 z-30 w-72 max-h-72 overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-[#0f172a]/95 dark:backdrop-blur"
+							onClick={(e) => e.stopPropagation()}
+						>
+							<div className="mb-2 flex items-center justify-between">
+								<div className="text-xs font-medium text-slate-700 dark:text-slate-200">
+									Filtrer: {label}
+								</div>
 								<button
 									type="button"
-									onClick={(e) => {
-										e.stopPropagation();
-										setOpenFilter((curr) => (curr === field ? null : field));
-									}}
-									className="p-0.5 -m-0.5"
-									aria-label={`Filtrer ${label}`}
-									aria-expanded={isOpen}
-									title={`Filtrer ${label}`}
+									onClick={() => setOpenFilter(null)}
+									className="p-1 rounded text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+									aria-label="Lukk"
+									title="Lukk"
 								>
-									<FiFilter
-										className={[
-											"h-4 w-4 transition-colors",
-											active ? "text-indigo-600" : "text-slate-400",
-											"hover:text-slate-700 focus:text-slate-700"
-										].join(" ")}
-									/>
+									<FiX className="h-4 w-4" />
 								</button>
-
-								{/* Tiny active indicator (doesn't change title styling) */}
-								{/* {active && (
-									<span
-										className="ml-0.5 inline-block h-1.5 w-1.5 rounded-full bg-indigo-600"
-										aria-hidden="true"
-									/>
-								)} */}
-
-								{/* Header reset (X), color-only hover */}
-								{active && (
-									<button
-										type="button"
-										onClick={(e) => {
-											e.stopPropagation();
-											clearFilter(field);
-										}}
-										className="p-0.5 -m-0.5"
-										aria-label="Nullstill filter"
-										title="Nullstill filter"
-									>
-										<FiX className="h-4 w-4 text-slate-400 hover:text-slate-700 focus:text-slate-700 transition-colors" />
-									</button>
-								)}
 							</div>
 
-							{/* Popover */}
-							{isOpen && (
-								<div
-									className="absolute right-0 mt-2 z-30 w-72 max-h-72 overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl"
-									onClick={(e) => e.stopPropagation()}
-								>
-									<div className="mb-2 flex items-center justify-between">
-										<div className="text-xs font-medium text-slate-700">
-											Filtrer: {label}
-										</div>
-										<button
-											type="button"
-											onClick={() => setOpenFilter(null)}
-											className="p-1 rounded text-slate-500 hover:text-slate-700"
-											aria-label="Lukk"
-											title="Lukk"
-										>
-											<FiX className="h-4 w-4" />
-										</button>
-									</div>
-
-									{opts.length === 0 ? (
-										<div className="p-2 text-xs text-slate-500">
-											Ingen verdier.
-										</div>
-									) : (
-										<ul className="space-y-1">
-											{opts.map(([val, count]) => {
-												const checked = !!selected?.has(val);
-												return (
-													<li key={val}>
-														<label className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-slate-50">
-															<span
-																className="truncate text-xs text-slate-800"
-																title={val}
-															>
-																<input
-																	type="checkbox"
-																	className="mr-2 align-middle"
-																	checked={checked}
-																	onChange={() => toggleFilterValue(field, val)}
-																/>
-																{val}
-															</span>
-															<span className="text-[10px] text-slate-500">
-																{count}
-															</span>
-														</label>
-													</li>
-												);
-											})}
-										</ul>
-									)}
-
-									<div className="mt-2 flex items-center justify-between">
-										{/* Keep full-text reset in dropdown */}
-										<button
-											type="button"
-											onClick={() => clearFilter(field)}
-											className="rounded border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50"
-										>
-											Nullstill {label}
-										</button>
-										<button
-											type="button"
-											onClick={() => setOpenFilter(null)}
-											className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700"
-										>
-											Lukk
-										</button>
-									</div>
+							{opts.length === 0 ? (
+								<div className="p-2 text-xs text-slate-500 dark:text-slate-300">
+									Ingen verdier.
 								</div>
+							) : (
+								<ul className="space-y-1">
+									{opts.map(([val, count]) => {
+										const checked = !!selected?.has(val);
+										return (
+											<li key={val}>
+												<label className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-slate-50 dark:hover:bg-white/5">
+													<span
+														className="truncate text-xs text-slate-800 dark:text-slate-200"
+														title={val}
+													>
+														<input
+															type="checkbox"
+															className="mr-2 align-middle"
+															checked={checked}
+															onChange={() => toggleFilterValue(field, val)}
+														/>
+														{val}
+													</span>
+													<span className="text-[10px] text-slate-500 dark:text-slate-400">
+														{count}
+													</span>
+												</label>
+											</li>
+										);
+									})}
+								</ul>
 							)}
-						</>
-					);
-				})()}
+
+							<div className="mt-2 flex items-center justify-between">
+								{/* Keep full-text reset in dropdown */}
+								<button
+									type="button"
+									onClick={() => clearFilter(field)}
+									className="rounded border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+								>
+									Nullstill {label}
+								</button>
+								<button
+									type="button"
+									onClick={() => setOpenFilter(null)}
+									className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600"
+								>
+									Lukk
+								</button>
+							</div>
+						</div>
+					)}
+				</>
 			</th>
 		);
 	}
@@ -907,7 +899,7 @@ export default function Preview({
 	function PreviewTable() {
 		return (
 			<table className="min-w-full text-xs">
-				<thead className="sticky top-0 z-20 bg-white text-slate-700 shadow-sm">
+				<thead className="sticky top-0 z-20 bg-white dark:bg-[#0e1729] text-slate-700 dark:text-slate-200 shadow-sm">
 					<tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:text-left">
 						<th className="min-w-[4rem] whitespace-nowrap">Tidspunkt</th>
 						<HeaderWithFilter label="Type" field="Type" />
@@ -923,7 +915,7 @@ export default function Preview({
 					</tr>
 				</thead>
 
-				<tbody className="divide-y divide-slate-100 bg-white">
+				<tbody className="divide-y divide-slate-100 bg-white dark:bg-transparent dark:divide-white/10">
 					{displayed.map((it, i) => {
 						const r = it.r;
 						const idxOriginal = it.i;
@@ -938,8 +930,10 @@ export default function Preview({
 							<tr
 								key={rowKey}
 								data-sig={sig || undefined}
-								className={`odd:bg-white even:bg-black/8 [&>td]:px-3 [&>td]:py-2 transition-colors ${
-									highlight ? "[&>td]:bg-amber-50" : ""
+								className={`odd:bg-white even:bg-black/5 dark:odd:bg-white/[0.04] dark:even:bg-white/[0.06] [&>td]:px-3 [&>td]:py-2 transition-colors ${
+									highlight
+										? "[&>td]:bg-amber-50 dark:[&>td]:bg-amber-900/20"
+										: ""
 								}`}
 							>
 								<td className="font-medium whitespace-normal leading-tight">
@@ -1042,14 +1036,16 @@ export default function Preview({
 											href={solscan}
 											target="_blank"
 											rel="noopener noreferrer"
-											className="inline-flex items-center gap-1 text-indigo-600 hover:underline justify-center ml-4"
+											className="inline-flex items-center gap-1 text-indigo-600 hover:underline justify-center ml-4 dark:text-indigo-400"
 											title="Åpne i Solscan"
 										>
 											<FiExternalLink className="h-4 w-4" />
 											<span className="sr-only">Solscan</span>
 										</Link>
 									) : (
-										<span className="text-slate-400">—</span>
+										<span className="text-slate-400 dark:text-slate-500">
+											—
+										</span>
 									)}
 								</td>
 							</tr>
@@ -1058,7 +1054,10 @@ export default function Preview({
 
 					{displayed.length === 0 && (
 						<tr>
-							<td colSpan={11} className="px-3 py-6 text-center text-slate-500">
+							<td
+								colSpan={11}
+								className="px-3 py-6 text-center text-slate-500 dark:text-slate-400"
+							>
 								Ingen rader funnet for valgte kriterier.
 							</td>
 						</tr>
@@ -1071,10 +1070,10 @@ export default function Preview({
 	/* ===================== RENDER ===================== */
 	return (
 		<section className="mt-6">
-			<div className="rounded-3xl bg-white shadow-xl shadow-slate-900/5 ring-1 ring-slate-200/60">
+			<div className="rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 ring-1 ring-slate-200/60 dark:ring-slate-800/60">
 				<div className="p-6 sm:p-10">
 					{/* Tabs header */}
-					<div className="border-b border-slate-200 flex items-center gap-4">
+					<div className="border-b border-slate-200 dark:border-white/10 flex items-center gap-4">
 						<button
 							type="button"
 							onClick={() => {
@@ -1083,8 +1082,8 @@ export default function Preview({
 							}}
 							className={`px-3 py-2 text-sm -mb-px border-b-2 ${
 								activeTab === "preview"
-									? "border-indigo-600 text-indigo-700"
-									: "border-transparent text-slate-600 hover:text-slate-800"
+									? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
+									: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
 							}`}
 						>
 							Forhåndsvisning
@@ -1097,14 +1096,14 @@ export default function Preview({
 							}}
 							className={`px-3 py-2 text-sm -mb-px border-b-2 ${
 								activeTab === "attention"
-									? "border-indigo-600 text-indigo-700"
-									: "border-transparent text-slate-600 hover:text-slate-800"
+									? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
+									: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
 							}`}
 							title="Uavklarte elementer som bør navngis"
 						>
 							Trenger oppmerksomhet
 							{pendingIssuesCount > 0 && (
-								<span className="ml-2 inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-800 text-[11px] px-1.5 py-0.5">
+								<span className="ml-2 inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-800 text-[11px] px-1.5 py-0.5 dark:bg-amber-500/20 dark:text-amber-300">
 									{pendingIssuesCount}
 								</span>
 							)}
@@ -1113,9 +1112,9 @@ export default function Preview({
 
 					{/* Tabs content */}
 					{activeTab === "attention" ? (
-						<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 max-h-[80vh] overflow-y-auto overscroll-contain">
+						<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 max-h-[80vh] overflow-y-auto overscroll-contain dark:border-amber-900/40 dark:bg-amber-500/10">
 							{issues.length === 0 ? (
-								<div className="text-sm text-emerald-700">
+								<div className="text-sm text-emerald-700 dark:text-emerald-400">
 									Ingen uavklarte elementer 🎉
 								</div>
 							) : (
@@ -1129,15 +1128,15 @@ export default function Preview({
 
 										const statusBadge =
 											it.status === "pending" ? (
-												<span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800">
+												<span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
 													Avventer
 												</span>
 											) : it.status === "renamed" ? (
-												<span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-800">
+												<span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
 													Endret{it.newName ? ` → ${it.newName}` : ""}
 												</span>
 											) : (
-												<span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] text-slate-700">
+												<span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] text-slate-700 dark:bg-white/10 dark:text-slate-300">
 													Ignorert
 												</span>
 											);
@@ -1156,18 +1155,18 @@ export default function Preview({
 										return (
 											<li
 												key={`${it.kind}:${it.key}`}
-												className="rounded-lg bg-white p-3 ring-1 ring-slate-200"
+												className="rounded-lg bg-white p-3 ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
 											>
 												<div className="flex items-center justify-between gap-3">
 													<div className="space-y-1">
-														<div className="text-sm font-medium text-slate-800">
+														<div className="text-sm font-medium text-slate-800 dark:text-slate-100">
 															{it.kind === "unknown-token"
 																? "Ukjent token"
 																: "Ukjent marked"}
 															: <code className="font-mono">{it.key}</code>
 															{statusBadge}
 														</div>
-														<div className="text-xs text-slate-600">
+														<div className="text-xs text-slate-600 dark:text-slate-400">
 															{it.count} forekomster
 														</div>
 													</div>
@@ -1181,7 +1180,7 @@ export default function Preview({
 																	? "Ny tokensymbol (BTC, ETH, SOL...)"
 																	: "Nytt markedsnavn"
 															}
-															className="w-56 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+															className="w-56 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
 														/>
 														<button
 															type="button"
@@ -1193,14 +1192,14 @@ export default function Preview({
 																if (!val) return;
 																renameIssue(it.kind, it.key, val);
 															}}
-															className="rounded-md bg-indigo-600 text-white px-2 py-1 text-sm disabled:opacity-60"
+															className="rounded-md bg-indigo-600 text-white px-2 py-1 text-sm disabled:opacity-60 dark:bg-indigo-500"
 														>
 															Lagre
 														</button>
 														<button
 															type="button"
 															onClick={() => ignoreIssue(it.kind, it.key)}
-															className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+															className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
 															title={
 																it.status === "ignored"
 																	? "Angre ignorering"
@@ -1219,7 +1218,7 @@ export default function Preview({
 																	return next;
 																})
 															}
-															className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+															className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
 														>
 															{isOpen
 																? "Skjul forekomster"
@@ -1229,9 +1228,9 @@ export default function Preview({
 												</div>
 
 												{isOpen && (
-													<div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-2">
+													<div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-2 dark:border-white/10 dark:bg-white/5">
 														{occurrenceRows.length === 0 ? (
-															<div className="text-xs text-slate-600">
+															<div className="text-xs text-slate-600 dark:text-slate-400">
 																Ingen forekomster funnet.
 															</div>
 														) : (
@@ -1249,7 +1248,7 @@ export default function Preview({
 																	return (
 																		<li key={`${sig ?? "x"}-${idx}`}>
 																			<div
-																				className="w-full rounded-md bg-white px-2 py-1.5 text-xs shadow-sm ring-1 ring-slate-200"
+																				className="w-full rounded-md bg-white px-2 py-1.5 text-xs shadow-sm ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
 																				title={
 																					sig
 																						? "Gå til rad i forhåndsvisning eller åpne i Solscan"
@@ -1257,7 +1256,7 @@ export default function Preview({
 																				}
 																			>
 																				<div className="flex items-center justify-between gap-2">
-																					<span className="font-mono text-[11px] text-slate-600">
+																					<span className="font-mono text-[11px] text-slate-600 dark:text-slate-400">
 																						{r.Tidspunkt}
 																					</span>
 																					<div className="flex items-center gap-2">
@@ -1267,7 +1266,7 @@ export default function Preview({
 																								sig && jumpToSig(sig)
 																							}
 																							disabled={!sig}
-																							className="text-[10px] text-indigo-600 hover:underline disabled:opacity-60"
+																							className="text-[10px] text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400"
 																							title="Gå til rad"
 																						>
 																							Gå til rad
@@ -1277,7 +1276,7 @@ export default function Preview({
 																								href={solscan}
 																								target="_blank"
 																								rel="noopener noreferrer"
-																								className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:underline"
+																								className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:underline dark:text-indigo-400"
 																								title="Åpne i Solscan"
 																								onClick={(e) =>
 																									e.stopPropagation()
@@ -1290,10 +1289,10 @@ export default function Preview({
 																					</div>
 																				</div>
 																				<div className="mt-0.5">
-																					<span className="font-medium text-slate-800">
+																					<span className="font-medium text-slate-800 dark:text-slate-100">
 																						{r.Type}
 																					</span>{" "}
-																					<span className="text-slate-600">
+																					<span className="text-slate-600 dark:text-slate-400">
 																						• {tokenInfo}
 																					</span>
 																				</div>
@@ -1316,7 +1315,7 @@ export default function Preview({
 						<div className="mt-6">
 							{/* Top bar with sorter + maximize + reset filters */}
 							<div className="mb-2 flex items-center justify-between">
-								<div className="text-xs text-slate-600">
+								<div className="text-xs text-slate-600 dark:text-slate-400">
 									Viser {displayed.length} av {effectiveRows.length} rader
 									{filterHasAny ? " (filtrert)" : ""}.
 								</div>
@@ -1325,18 +1324,20 @@ export default function Preview({
 										<button
 											type="button"
 											onClick={clearAllFilters}
-											className="rounded-md border border-slate-200 bg-white px-2 py-1.5 shadow-sm hover:bg-slate-50"
+											className="rounded-md border border-slate-200 bg-white px-2 py-1.5 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
 											title="Nullstill alle filtre"
 										>
 											Nullstill filtre
 										</button>
 									)}
 
-									<span className="text-slate-600">Sorter:</span>
+									<span className="text-slate-600 dark:text-slate-300">
+										Sorter:
+									</span>
 									<select
 										value={sortOrder}
 										onChange={(e) => setSortOrder(e.target.value as SortOrder)}
-										className="min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+										className="min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 									>
 										<option value="desc">Nyeste først</option>
 										<option value="asc">Eldste først</option>
@@ -1346,7 +1347,7 @@ export default function Preview({
 									<button
 										type="button"
 										onClick={toggleMaximize}
-										className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm hover:bg-slate-50"
+										className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
 										title={isMaximized ? "Lukk maksimering" : "Maksimer"}
 										aria-pressed={isMaximized}
 									>
@@ -1364,7 +1365,7 @@ export default function Preview({
 								<>
 									<div
 										ref={previewContainerRef}
-										className="relative overflow-auto overscroll-contain rounded-t-xl ring-1 ring-slate-200 contain-content"
+										className="relative overflow-auto overscroll-contain rounded-t-xl ring-1 ring-slate-200 contain-content dark:ring-white/10"
 										style={{ height: previewHeight }}
 										onClick={() => setOpenFilter(null)}
 									>
@@ -1373,10 +1374,10 @@ export default function Preview({
 
 									<div
 										onMouseDown={onResizeStart}
-										className="flex items-center justify-center h-4 cursor-ns-resize bg-slate-50 border-x border-b border-slate-200 rounded-b-xl select-none"
+										className="flex items-center justify-center h-4 cursor-ns-resize bg-slate-50 border-x border-b border-slate-200 rounded-b-xl select-none dark:bg-white/5 dark:border-white/10"
 										title="Dra for å endre høyde"
 									>
-										<div className="h-1 w-12 rounded-full bg-slate-300" />
+										<div className="h-1 w-12 rounded-full bg-slate-300 dark:bg-slate-600" />
 									</div>
 								</>
 							)}
@@ -1384,13 +1385,13 @@ export default function Preview({
 							{/* Maximized overlay (fills the browser window; modals still work above) */}
 							{isMaximized && (
 								<div
-									className="fixed inset-0 z-40 bg-white"
+									className="fixed inset-0 z-40 bg-white dark:bg-[#0b1220]"
 									onClick={() => setOpenFilter(null)}
 								>
 									<div className="h-full flex flex-col p-4 sm:p-6">
 										{/* Sticky top bar inside overlay: re-use sorter and minimize */}
 										<div className="mb-3 flex items-center justify-between">
-											<div className="text-xs text-slate-600">
+											<div className="text-xs text-slate-600 dark:text-slate-400">
 												Viser {displayed.length} av {effectiveRows.length} rader
 												{filterHasAny ? " (filtrert)" : ""}.
 											</div>
@@ -1399,19 +1400,21 @@ export default function Preview({
 													<button
 														type="button"
 														onClick={clearAllFilters}
-														className="rounded-md border border-slate-200 bg-white px-2 py-1.5 shadow-sm hover:bg-slate-50"
+														className="rounded-md border border-slate-200 bg-white px-2 py-1.5 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
 														title="Nullstill alle filtre"
 													>
 														Nullstill filtre
 													</button>
 												)}
-												<span className="text-slate-600">Sorter:</span>
+												<span className="text-slate-600 dark:text-slate-300">
+													Sorter:
+												</span>
 												<select
 													value={sortOrder}
 													onChange={(e) =>
 														setSortOrder(e.target.value as SortOrder)
 													}
-													className="min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+													className="min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 												>
 													<option value="desc">Nyeste først</option>
 													<option value="asc">Eldste først</option>
@@ -1419,7 +1422,7 @@ export default function Preview({
 												<button
 													type="button"
 													onClick={toggleMaximize}
-													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm hover:bg-slate-50"
+													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
 													title="Lukk maksimering"
 												>
 													<FiMinimize className="h-4 w-4" />
@@ -1431,7 +1434,7 @@ export default function Preview({
 										<div className="flex-1 min-h-0">
 											<div
 												ref={previewContainerRef}
-												className="h-full overflow-auto overscroll-contain rounded-xl ring-1 ring-slate-200 contain-content"
+												className="h-full overflow-auto overscroll-contain rounded-xl ring-1 ring-slate-200 contain-content dark:ring-white/10"
 											>
 												<PreviewTable />
 											</div>
@@ -1451,12 +1454,14 @@ export default function Preview({
 										<button
 											type="button"
 											onClick={() => setActiveTab("attention")}
-											className="text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 hover:bg-amber-100"
+											className="text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 hover:bg-amber-100 dark:text-amber-300 dark:bg-amber-500/10 dark:border-amber-900/40 dark:hover:bg-amber-500/20"
 										>
 											Løs ‘Trenger oppmerksomhet’ først ({pendingIssuesCount})
 										</button>
 									) : (
-										<span className="text-emerald-700">Alt ser bra ut ✅</span>
+										<span className="text-emerald-700 dark:text-emerald-400">
+											Alt ser bra ut ✅
+										</span>
 									)}
 								</div>
 							)}
@@ -1466,7 +1471,7 @@ export default function Preview({
 									type="button"
 									onClick={() => onDownloadCSV(overrides)}
 									disabled={!rows || pendingIssuesCount > 0}
-									className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:shadow-lg active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
+									className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:shadow-lg active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed dark:from-indigo-500 dark:to-emerald-500"
 									title={
 										pendingIssuesCount > 0
 											? "Løs ‘Trenger oppmerksomhet’ først"
@@ -1483,22 +1488,22 @@ export default function Preview({
 					{/* Inline editor modal (z-50, appears above the z-40 maximized overlay) */}
 					{editOpen && editTarget && (
 						<div
-							className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4"
+							className="fixed inset-0 z-50 bg-black/30 dark:bg-black/40 flex items-center justify-center p-4"
 							onClick={() => setEditOpen(false)}
 						>
 							<div
-								className="w-full max-w-lg sm:max-w-2xl rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200 p-4"
+								className="w-full max-w-lg sm:max-w-2xl rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200 p-4 dark:bg-[linear-gradient(180deg,#0e1729_0%,#0b1220_100%)] dark:ring-white/10"
 								onClick={(e) => e.stopPropagation()}
 							>
 								<div className="flex items-center justify-between">
-									<h3 className="text-sm font-semibold text-slate-800">
+									<h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
 										Rediger felt:{" "}
 										<code className="font-mono">{editTarget.label}</code>
 									</h3>
 									<button
 										type="button"
 										onClick={() => setEditOpen(false)}
-										className="rounded-md p-1 text-slate-500 hover:bg-slate-100"
+										className="rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5"
 										aria-label="Lukk"
 									>
 										<FiX className="h-5 w-5" />
@@ -1528,7 +1533,7 @@ export default function Preview({
 										<select
 											value={editDraft}
 											onChange={(e) => setEditDraft(e.target.value)}
-											className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+											className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 										>
 											{TYPE_OPTIONS.map((t) => (
 												<option key={t} value={t}>
@@ -1542,14 +1547,14 @@ export default function Preview({
 											autoFocus
 											value={editDraft}
 											onChange={(e) => setEditDraft(e.target.value)}
-											className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words min-h-[7rem]"
+											className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words min-h-[7rem] dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 											placeholder="Ny verdi…"
 										/>
 									)}
 								</div>
 
 								<div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-									<div className="text-[11px] text-slate-500">
+									<div className="text-[11px] text-slate-500 dark:text-slate-400">
 										Velg hvor endringen skal gjelde.
 									</div>
 									<div className="flex flex-wrap items-center gap-2">
@@ -1559,7 +1564,7 @@ export default function Preview({
 											onChange={(e) =>
 												setEditScope(e.target.value as EditScope)
 											}
-											className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
+											className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 										>
 											<option value="one">Bare dette feltet</option>
 											<option
@@ -1602,13 +1607,13 @@ export default function Preview({
 											<button
 												type="button"
 												aria-label="Forklaring av alternativer"
-												className="rounded-full p-1 text-slate-500 hover:bg-slate-100 focus:bg-slate-100"
+												className="rounded-full p-1 text-slate-500 hover:bg-slate-100 focus:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:focus:bg-white/5"
 											>
 												<FiInfo className="h-4 w-4" />
 											</button>
 											<div
 												role="tooltip"
-												className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[22rem] rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-xl group-hover:block group-focus-within:block"
+												className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[22rem] rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-xl group-hover:block group-focus-within:block dark:border-white/10 dark:bg-[#0f172a]/95 dark:text-slate-200 dark:backdrop-blur"
 											>
 												<p className="mb-1 font-medium">Hva betyr valgene?</p>
 												<ul className="list-disc space-y-1 pl-4">
@@ -1642,7 +1647,7 @@ export default function Preview({
 												(editScope === "bySigner" && !editTarget?.signer) ||
 												(editScope === "bySignature" && !editTarget?.sig)
 											}
-											className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+											className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-indigo-500 dark:hover:bg-indigo-600"
 										>
 											Lagre
 										</button>
@@ -1653,7 +1658,7 @@ export default function Preview({
 					)}
 
 					{/* Help (belongs with preview card) */}
-					<div className="mt-6 rounded-xl bg-gradient-to-r from-emerald-50 to-indigo-50 p-4 text-xs text-slate-600 ring-1 ring-slate-200/70">
+					<div className="mt-6 rounded-xl bg-gradient-to-r from-emerald-50 to-indigo-50 p-4 text-xs text-slate-600 ring-1 ring-slate-200/70 dark:from-[#0b1220] dark:to-[#0b1220] dark:text-slate-300 dark:ring-white/10">
 						Mapper: <b>Swaps</b> → <code>Handel</code>, <b>SOL/SPL</b> →{" "}
 						<code>Overføring-Inn/Ut</code>, <b>Airdrops</b> →{" "}
 						<code>Erverv</code>, <b>staking</b> → <code>Inntekt</code>. Ukjente

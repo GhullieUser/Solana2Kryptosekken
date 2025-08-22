@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-
 import { Inter } from "next/font/google";
 import "./globals.css";
 
@@ -11,7 +10,6 @@ export const metadata: Metadata = {
 	icons: {
 		icon: [
 			{ url: "/Sol2KS_logo_512.png", type: "image/png", sizes: "512x512" },
-			// optional fallbacks:
 			{ url: "/favicon.ico", sizes: "any" }
 		],
 		apple: [{ url: "/Sol2KS_logo_512.png", sizes: "180x180" }],
@@ -21,14 +19,30 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
 	children
-}: Readonly<{
+}: {
 	children: React.ReactNode;
-}>) {
+}) {
 	return (
-		<html lang="no" className={inter.variable}>
-			<body className="min-h-dvh bg-gradient-to-b from-indigo-50 via-white to-emerald-50 font-sans antialiased">
-				{children}
-			</body>
+		<html lang="no" className={inter.variable} suppressHydrationWarning>
+			<head>
+				{/* Set initial theme class ASAP */}
+				<script
+					dangerouslySetInnerHTML={{
+						__html: `
+(function () {
+  try {
+    var saved = localStorage.getItem('theme');
+    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var dark = saved ? saved === 'dark' : prefersDark;
+    document.documentElement.classList.toggle('dark', dark);
+  } catch (e) {}
+})();
+          `
+					}}
+				/>
+			</head>
+			{/* No gradient utilities here; globals.css controls background/gradients */}
+			<body className="min-h-dvh font-sans antialiased">{children}</body>
 		</html>
 	);
 }

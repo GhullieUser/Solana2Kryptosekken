@@ -1,9 +1,10 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+	darkMode: "class", // class-based dark mode
 	content: [
 		"./src/app/**/*.{js,ts,jsx,tsx,mdx}",
 		"./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-		"./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
+		"./src/pages/**/*.{js,ts,jsx,tsx,mdx}"
 	],
 	theme: {
 		extend: {
@@ -15,10 +16,9 @@ module.exports = {
 					"Segoe UI",
 					"Roboto",
 					"Arial",
-					"sans-serif",
-				],
-			},
-		},
-	},
-	plugins: ["@tailwindcss/forms"],
+					"sans-serif"
+				]
+			}
+		}
+	}
 };

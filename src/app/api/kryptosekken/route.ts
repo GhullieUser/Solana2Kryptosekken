@@ -1544,6 +1544,24 @@ const parseDustThreshold = (v: unknown) =>
 
 const asISO = (v?: string) => (v ? new Date(v).toISOString() : undefined);
 
+/** Stable row id for *tagged* rows (wallet tag already injected into Notat). */
+function rowIdOfTagged(r: KSRow) {
+	const sig = extractSigFromNotat(r.Notat || "") || "";
+	const raw = [
+		r.Tidspunkt,
+		r.Type,
+		r.Inn,
+		r["Inn-Valuta"],
+		r.Ut,
+		r["Ut-Valuta"],
+		r.Gebyr,
+		r["Gebyr-Valuta"],
+		r.Marked,
+		sig
+	].join("|");
+	return crypto.createHash("sha1").update(raw).digest("hex");
+}
+
 const attachSigAndSigner = (
 	rows: KSRow[],
 	tag: string,
@@ -1557,9 +1575,23 @@ const attachSigAndSigner = (
 		const withTag = { ...r, Notat: `${tag} - ${r.Notat}` };
 		const sig = extractSigFromNotat(withTag.Notat || "");
 		const signer = sig ? map.get(sig) : undefined;
-		return { ...withTag, signature: sig, signer };
+		const rowId = rowIdOfTagged(withTag);
+		return { ...withTag, signature: sig, signer, rowId } as any;
 	});
 };
+
+/** Apply client-side edited patches by rowId (before overrides/CSV). */
+function applyClientEdits<T extends KSRow>(
+	rows: T[],
+	edits?: Record<string, Partial<KSRow>>
+): T[] {
+	if (!edits) return rows;
+	return rows.map((r) => {
+		const id = rowIdOfTagged(r);
+		const patch = edits[id];
+		return patch ? ({ ...r, ...patch } as T) : r;
+	});
+}
 
 const getOrNull = (key: string) => {
 	const v = getCache(key);
@@ -1812,6 +1844,8 @@ interface Body {
 	dustInterval?: DustInterval;
 	useOslo?: boolean;
 	overrides?: OverridesPayload;
+	/** map of rowId -> partial KSRow patches coming from client edits */
+	clientEdits?: Record<string, Partial<KSRow>>;
 }
 
 export async function POST(req: NextRequest) {
@@ -1843,7 +1877,8 @@ export async function POST(req: NextRequest) {
 		const sp = req.nextUrl?.searchParams;
 		const wantNDJSON = sp?.get("format")?.toLowerCase() === "ndjson";
 		const wantJSON = sp?.get("format")?.toLowerCase() === "json";
-		const useCache = sp?.get("useCache") === "1";
+		// Allow client to pass back the exact preview cacheKey
+		const cacheKeyParam = sp?.get("cacheKey") || undefined;
 
 		const ckey = mkCacheKey({
 			address,
@@ -1911,10 +1946,6 @@ export async function POST(req: NextRequest) {
 					}
 
 					try {
-						await send({
-							type: "log",
-							message: "Henter token-kontoer (ATAer) …"
-						});
 						const scan = await scanAddresses(address, fromISO, toISO, (p) =>
 							send(p)
 						);
@@ -1987,7 +2018,9 @@ export async function POST(req: NextRequest) {
 					walletTagStr,
 					cached.sigToSigner
 				);
-				const rowsOut = applyOverridesToRows(rowsOutRaw, body.overrides);
+				// Apply client edits BEFORE overrides so both JSON and CSV stay consistent
+				let rowsOut = applyClientEdits(rowsOutRaw, body.clientEdits);
+				rowsOut = applyOverridesToRows(rowsOut, body.overrides);
 				return NextResponse.json({
 					rows: rowsOut,
 					count: cached.count,
@@ -2024,7 +2057,9 @@ export async function POST(req: NextRequest) {
 				walletTagStr,
 				scan.sigToSigner
 			);
-			const rowsOut = applyOverridesToRows(rowsOutRaw, body.overrides);
+
+			let rowsOut = applyClientEdits(rowsOutRaw, body.clientEdits);
+			rowsOut = applyOverridesToRows(rowsOut, body.overrides);
 
 			return NextResponse.json({
 				rows: rowsOut,
@@ -2034,13 +2069,18 @@ export async function POST(req: NextRequest) {
 			});
 		}
 
-		/* ---------- CSV (use cache if available) ---------- */
-		const cached = useCache ? getOrNull(ckey) : null;
+		/* ---------- CSV (download uses existing preview cache only) ---------- */
+		const ckeyToUse = cacheKeyParam || ckey;
+		const cached = getOrNull(ckeyToUse);
 		if (cached) {
-			const rowsWithTag = cached.rowsProcessed.map((r) => ({
+			let rowsWithTag = cached.rowsProcessed.map((r) => ({
 				...r,
 				Notat: `${walletTagStr} - ${r.Notat}`
 			}));
+
+			// Apply client edits BEFORE overrides (so CSV matches what the user sees)
+			rowsWithTag = applyClientEdits(rowsWithTag, body.clientEdits);
+
 			const rowsForCsv = applyOverridesToRows(rowsWithTag, body.overrides);
 			const csv = rowsToCSV(rowsForCsv);
 			return new NextResponse(csv, {
@@ -2051,41 +2091,15 @@ export async function POST(req: NextRequest) {
 			});
 		}
 
-		// Fallback: compute once (no streaming)
-		const scan = await scanAddresses(address, fromISO, toISO);
-		const allTxs = [...scan.sigMap.values()].sort(
-			(a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
+		// No cache => DO NOT scan. Ask the client to open preview first.
+		return NextResponse.json(
+			{
+				error:
+					"Ingen bufret forhåndsvisning for denne forespørselen. Åpne forhåndsvisning først, deretter Last ned.",
+				cacheKey: ckeyToUse
+			},
+			{ status: 412 }
 		);
-
-		const { resolveSymDec } = await getResolver(collectMints(allTxs));
-		const rows = classifyAll({
-			allTxs,
-			address,
-			myATAs: scan.myATAs,
-			includeNFT,
-			useOslo,
-			resolveSymDec,
-			fromISO,
-			toISO
-		});
-
-		const result = postProcessAndCache(
-			ctx,
-			rows,
-			scan.sigMap /* fee payer via tx */
-		);
-		const rowsWithTag = result.rowsProcessed.map((r) => ({
-			...r,
-			Notat: `${walletTagStr} - ${r.Notat}`
-		}));
-		const rowsForCsv = applyOverridesToRows(rowsWithTag, body.overrides);
-		const csv = rowsToCSV(rowsForCsv);
-		return new NextResponse(csv, {
-			headers: {
-				"Content-Type": "text/csv; charset=utf-8",
-				"Content-Disposition": `attachment; filename=solana_${address}_kryptosekken.csv`
-			}
-		});
 	} catch (e: unknown) {
 		const msg = e instanceof Error ? e.message : "Unknown error";
 		return NextResponse.json({ error: msg }, { status: 500 });
