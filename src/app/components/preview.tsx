@@ -1,7 +1,7 @@
 // app/components/preview.tsx
 "use client";
 
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
 	FiExternalLink,
@@ -361,7 +361,6 @@ export default function Preview({
 		setIsMaximized((v) => !v);
 	}
 	useEffect(() => {
-		// Lock background scroll while maximized
 		if (isMaximized) {
 			const prev = document.body.style.overflow;
 			document.body.style.overflow = "hidden";
@@ -524,6 +523,19 @@ export default function Preview({
 			return next;
 		});
 	}
+	function ignoreAllPending() {
+		setIgnoredKeys((prev) => {
+			const next = new Set(prev);
+			for (const it of issues) {
+				if (it.status !== "pending") continue;
+				const id = `${it.kind === "unknown-token" ? "symbol" : "market"}:${
+					it.key
+				}`;
+				next.add(id);
+			}
+			return next;
+		});
+	}
 
 	// ===== inline editor state =====
 	type FieldKey = keyof KSRow;
@@ -537,6 +549,41 @@ export default function Preview({
 	} | null>(null);
 	const [editDraft, setEditDraft] = useState("");
 	const [editScope, setEditScope] = useState<EditScope>("one");
+
+	/* ====== Virtualization state ====== */
+	const [scrollTop, setScrollTop] = useState(0);
+	const [viewportH, setViewportH] = useState(0);
+	const [rowH, setRowH] = useState(40); // will be auto-measured
+	const overscan = 10;
+
+	// attach listeners to current scroll container (embedded OR maximized)
+	useEffect(() => {
+		const el = previewContainerRef.current;
+		if (!el) return;
+
+		const onScroll = () => setScrollTop(el.scrollTop);
+		el.addEventListener("scroll", onScroll, { passive: true });
+		setScrollTop(el.scrollTop);
+		setViewportH(el.clientHeight);
+
+		const ro = new ResizeObserver(() => {
+			setViewportH(el.clientHeight);
+		});
+		ro.observe(el);
+
+		return () => {
+			el.removeEventListener("scroll", onScroll);
+			ro.disconnect();
+		};
+	}, [isMaximized, previewHeight, activeTab]);
+
+	const handleMeasureRow = useCallback(
+		(h: number) => {
+			if (!h) return;
+			if (Math.abs(h - rowH) > 1) setRowH(h);
+		},
+		[rowH]
+	);
 
 	function openEditCell(
 		idxOriginal: number,
@@ -637,7 +684,7 @@ export default function Preview({
 		setEditDraft("");
 	}
 
-	// jump to a signature inside the table
+	// jump to a signature inside the table — works with virtualization
 	function jumpToSig(sig: string) {
 		if (!sig) return;
 		setActiveTab("preview");
@@ -646,14 +693,11 @@ export default function Preview({
 		setTimeout(() => {
 			const container = previewContainerRef.current;
 			if (!container) return;
-			const el = container.querySelector<HTMLElement>(`[data-sig="${sig}"]`);
-			if (!el) return;
-
-			const elRect = el.getBoundingClientRect();
-			const cRect = container.getBoundingClientRect();
-			const offsetTop = elRect.top - cRect.top + container.scrollTop;
-			const target = Math.max(0, offsetTop - container.clientHeight / 2);
-			container.scrollTo({ top: target, behavior: "smooth" });
+			const idx = displayed.findIndex(({ r }) => extractSig(r) === sig);
+			if (idx >= 0) {
+				const target = Math.max(0, idx * rowH - container.clientHeight / 2);
+				container.scrollTo({ top: target, behavior: "smooth" });
+			}
 		}, 60);
 
 		setTimeout(() => {
@@ -737,7 +781,7 @@ export default function Preview({
 		return sortOrder === "desc" ? tb - ta : ta - tb;
 	});
 	const filtered = sorted.filter(({ r }) => matchesFilters(r));
-	const displayed = filtered; // no row limit — show all
+	const displayed = filtered; // VIRTUALIZED rendering, no cap
 
 	const previewsReady =
 		Array.isArray(effectiveRows) && effectiveRows.length >= 0;
@@ -765,7 +809,7 @@ export default function Preview({
 		return (
 			<th className="relative whitespace-nowrap">
 				<>
-					{/* Plain header title + icons (no background pills) */}
+					{/* Plain header title + icons */}
 					<div className="inline-flex items-center gap-1">
 						<span className="pr-0.5">{label}</span>
 
@@ -777,7 +821,7 @@ export default function Preview({
 							/>
 						)}
 
-						{/* Filter icon (color change only) */}
+						{/* Filter icon */}
 						<button
 							type="button"
 							onClick={(e) => {
@@ -800,7 +844,7 @@ export default function Preview({
 							/>
 						</button>
 
-						{/* Header reset (X), color-only hover */}
+						{/* Header reset (X) */}
 						{active && (
 							<button
 								type="button"
@@ -820,7 +864,7 @@ export default function Preview({
 					{/* Popover */}
 					{isOpen && (
 						<div
-							className="absolute right-0 mt-2 z-30 w-72 max-h-72 overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-[#0f172a]/95 dark:backdrop-blur"
+							className="absolute right-0 mt-2 z-30 w-[min(92vw,18rem)] sm:w-72 max-h-[60vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-[#0f172a]/95 dark:backdrop-blur"
 							onClick={(e) => e.stopPropagation()}
 						>
 							<div className="mb-2 flex items-center justify-between">
@@ -872,7 +916,6 @@ export default function Preview({
 							)}
 
 							<div className="mt-2 flex items-center justify-between">
-								{/* Keep full-text reset in dropdown */}
 								<button
 									type="button"
 									onClick={() => clearFilter(field)}
@@ -895,12 +938,35 @@ export default function Preview({
 		);
 	}
 
-	/* ---------- reusable table renderer so we don't duplicate JSX ---------- */
-	function PreviewTable() {
+	/* ---------- reusable table renderer with virtualization ---------- */
+	function PreviewTable({
+		onMeasureRow
+	}: {
+		onMeasureRow: (h: number) => void;
+	}) {
+		// compute window
+		const total = displayed.length;
+		const startIndex = Math.max(0, Math.floor(scrollTop / rowH) - overscan);
+		const endIndex = Math.min(
+			total - 1,
+			Math.ceil((scrollTop + viewportH) / rowH) + overscan
+		);
+		const visible = total > 0 ? displayed.slice(startIndex, endIndex + 1) : [];
+
+		// measurement ref for the first visible row
+		const measureRowRef = useCallback(
+			(el: HTMLTableRowElement | null) => {
+				if (!el) return;
+				const h = el.getBoundingClientRect().height;
+				if (h) onMeasureRow(h);
+			},
+			[onMeasureRow]
+		);
+
 		return (
-			<table className="min-w-full text-xs">
+			<table className="min-w-[960px] sm:min-w-full text-[11px] sm:text-xs">
 				<thead className="sticky top-0 z-20 bg-white dark:bg-[#0e1729] text-slate-700 dark:text-slate-200 shadow-sm">
-					<tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:text-left">
+					<tr className="[&>th]:px-2 sm:[&>th]:px-3 [&>th]:py-2 [&>th]:text-left">
 						<th className="min-w-[4rem] whitespace-nowrap">Tidspunkt</th>
 						<HeaderWithFilter label="Type" field="Type" />
 						<th className="text-right whitespace-nowrap">Inn</th>
@@ -908,161 +974,186 @@ export default function Preview({
 						<th className="text-right whitespace-nowrap">Ut</th>
 						<HeaderWithFilter label="Ut-Valuta" field="Ut-Valuta" />
 						<th className="text-right whitespace-nowrap">Gebyr</th>
-						<th className="whitespace-nowrap">Gebyr-Valuta</th>
+						<th className="whitespace-nowrap hidden md:table-cell">
+							Gebyr-Valuta
+						</th>
 						<HeaderWithFilter label="Marked" field="Marked" />
 						<th className="whitespace-nowrap">Notat</th>
-						<th className="whitespace-nowrap">Explorer</th>
+						<th className="whitespace-nowrap hidden md:table-cell">Explorer</th>
 					</tr>
 				</thead>
 
-				<tbody className="divide-y divide-slate-100 bg-white dark:bg-transparent dark:divide-white/10">
-					{displayed.map((it, i) => {
-						const r = it.r;
-						const idxOriginal = it.i;
-						const sig = extractSig(r);
-						const solscan = sig ? `https://solscan.io/tx/${sig}` : undefined;
-						const rowKey = `${sig ?? "nosig"}-${r.Type}-${r["Inn-Valuta"]}-${
-							r["Ut-Valuta"]
-						}-${r.Inn}-${r.Ut}-${i}`;
-						const highlight = sig && highlightSig === sig;
-
-						return (
-							<tr
-								key={rowKey}
-								data-sig={sig || undefined}
-								className={`odd:bg-white even:bg-black/5 dark:odd:bg-white/[0.04] dark:even:bg-white/[0.06] [&>td]:px-3 [&>td]:py-2 transition-colors ${
-									highlight
-										? "[&>td]:bg-amber-50 dark:[&>td]:bg-amber-900/20"
-										: ""
-								}`}
-							>
-								<td className="font-medium whitespace-normal leading-tight">
-									<TidspunktCell
-										idxOriginal={idxOriginal}
-										value={r.Tidspunkt}
-										openEditCell={openEditCell}
-									/>
-								</td>
-
-								<td>
-									<EditableCell
-										idxOriginal={idxOriginal}
-										field={"Type"}
-										value={r.Type}
-										openEditCell={openEditCell}
-									/>
-								</td>
-
-								<td className="text-right">
-									<EditableCell
-										idxOriginal={idxOriginal}
-										field={"Inn"}
-										value={r.Inn}
-										align="right"
-										openEditCell={openEditCell}
-									/>
-								</td>
-
-								<td>
-									<EditableCell
-										idxOriginal={idxOriginal}
-										field={"Inn-Valuta"}
-										value={r["Inn-Valuta"]}
-										openEditCell={openEditCell}
-									/>
-								</td>
-
-								<td className="text-right">
-									<EditableCell
-										idxOriginal={idxOriginal}
-										field={"Ut"}
-										value={r.Ut}
-										align="right"
-										openEditCell={openEditCell}
-									/>
-								</td>
-
-								<td>
-									<EditableCell
-										idxOriginal={idxOriginal}
-										field={"Ut-Valuta"}
-										value={r["Ut-Valuta"]}
-										openEditCell={openEditCell}
-									/>
-								</td>
-
-								<td className="text-right">
-									<EditableCell
-										idxOriginal={idxOriginal}
-										field={"Gebyr"}
-										value={r.Gebyr}
-										align="right"
-										openEditCell={openEditCell}
-									/>
-								</td>
-
-								<td>
-									<EditableCell
-										idxOriginal={idxOriginal}
-										field={"Gebyr-Valuta"}
-										value={r["Gebyr-Valuta"]}
-										openEditCell={openEditCell}
-									/>
-								</td>
-
-								<td className="truncate max-w-[12rem]">
-									<EditableCell
-										idxOriginal={idxOriginal}
-										field={"Marked"}
-										value={r.Marked}
-										title={r.Marked}
-										openEditCell={openEditCell}
-									/>
-								</td>
-
-								<td className="truncate max-w-[14rem]">
-									<EditableCell
-										idxOriginal={idxOriginal}
-										field={"Notat"}
-										value={r.Notat}
-										title={r.Notat}
-										openEditCell={openEditCell}
-									/>
-								</td>
-
-								<td>
-									{solscan ? (
-										<Link
-											href={solscan}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="inline-flex items-center gap-1 text-indigo-600 hover:underline justify-center ml-4 dark:text-indigo-400"
-											title="Åpne i Solscan"
-										>
-											<FiExternalLink className="h-4 w-4" />
-											<span className="sr-only">Solscan</span>
-										</Link>
-									) : (
-										<span className="text-slate-400 dark:text-slate-500">
-											—
-										</span>
-									)}
-								</td>
-							</tr>
-						);
-					})}
-
-					{displayed.length === 0 && (
+				{/* Virtualized body */}
+				{total === 0 ? (
+					<tbody>
 						<tr>
 							<td
-								colSpan={11}
+								colSpan={1000}
 								className="px-3 py-6 text-center text-slate-500 dark:text-slate-400"
 							>
 								Ingen rader funnet for valgte kriterier.
 							</td>
 						</tr>
-					)}
-				</tbody>
+					</tbody>
+				) : (
+					<tbody className="bg-white dark:bg-transparent">
+						{/* top spacer (no border) */}
+						{startIndex > 0 && (
+							<tr style={{ height: startIndex * rowH }}>
+								<td colSpan={1000} />
+							</tr>
+						)}
+
+						{/* visible rows (use bottom border instead of zebra backgrounds) */}
+						{visible.map((it, idx) => {
+							const r = it.r;
+							const idxOriginal = it.i;
+							const sig = extractSig(r);
+							const solscan = sig ? `https://solscan.io/tx/${sig}` : undefined;
+							const rowKey = `${sig ?? "nosig"}-${r.Type}-${r["Inn-Valuta"]}-${
+								r["Ut-Valuta"]
+							}-${r.Inn}-${r.Ut}-${idxOriginal}`;
+							const highlight = sig && highlightSig === sig;
+
+							const attachMeasure = idx === 0 ? { ref: measureRowRef } : {};
+
+							return (
+								<tr
+									key={rowKey}
+									data-sig={sig || undefined}
+									className={[
+										"[&>td]:px-2 sm:[&>td]:px-3 [&>td]:py-2 transition-colors",
+										"border-b border-slate-100 dark:border-white/10",
+										highlight
+											? "[&>td]:bg-amber-50 dark:[&>td]:bg-amber-900/20"
+											: ""
+									].join(" ")}
+									{...attachMeasure}
+								>
+									<td className="font-medium whitespace-normal leading-tight">
+										<TidspunktCell
+											idxOriginal={idxOriginal}
+											value={r.Tidspunkt}
+											openEditCell={openEditCell}
+										/>
+									</td>
+
+									<td>
+										<EditableCell
+											idxOriginal={idxOriginal}
+											field={"Type"}
+											value={r.Type}
+											openEditCell={openEditCell}
+										/>
+									</td>
+
+									<td className="text-right">
+										<EditableCell
+											idxOriginal={idxOriginal}
+											field={"Inn"}
+											value={r.Inn}
+											align="right"
+											openEditCell={openEditCell}
+										/>
+									</td>
+
+									<td>
+										<EditableCell
+											idxOriginal={idxOriginal}
+											field={"Inn-Valuta"}
+											value={r["Inn-Valuta"]}
+											openEditCell={openEditCell}
+										/>
+									</td>
+
+									<td className="text-right">
+										<EditableCell
+											idxOriginal={idxOriginal}
+											field={"Ut"}
+											value={r.Ut}
+											align="right"
+											openEditCell={openEditCell}
+										/>
+									</td>
+
+									<td>
+										<EditableCell
+											idxOriginal={idxOriginal}
+											field={"Ut-Valuta"}
+											value={r["Ut-Valuta"]}
+											openEditCell={openEditCell}
+										/>
+									</td>
+
+									<td className="text-right">
+										<EditableCell
+											idxOriginal={idxOriginal}
+											field={"Gebyr"}
+											value={r.Gebyr}
+											align="right"
+											openEditCell={openEditCell}
+										/>
+									</td>
+
+									<td className="hidden md:table-cell">
+										<EditableCell
+											idxOriginal={idxOriginal}
+											field={"Gebyr-Valuta"}
+											value={r["Gebyr-Valuta"]}
+											openEditCell={openEditCell}
+										/>
+									</td>
+
+									<td className="truncate max-w-[9rem] sm:max-w-[12rem]">
+										<EditableCell
+											idxOriginal={idxOriginal}
+											field={"Marked"}
+											value={r.Marked}
+											title={r.Marked}
+											openEditCell={openEditCell}
+										/>
+									</td>
+
+									<td className="truncate max-w-[10rem] sm:max-w-[14rem]">
+										<EditableCell
+											idxOriginal={idxOriginal}
+											field={"Notat"}
+											value={r.Notat}
+											title={r.Notat}
+											openEditCell={openEditCell}
+										/>
+									</td>
+
+									<td className="hidden md:table-cell">
+										{solscan ? (
+											<Link
+												href={solscan}
+												target="_blank"
+												rel="noopener noreferrer"
+												className="inline-flex items-center gap-1 text-indigo-600 hover:underline justify-center ml-4 dark:text-indigo-400"
+												title="Åpne i Solscan"
+											>
+												<FiExternalLink className="h-4 w-4" />
+												<span className="sr-only">Solscan</span>
+											</Link>
+										) : (
+											<span className="text-slate-400 dark:text-slate-500">
+												—
+											</span>
+										)}
+									</td>
+								</tr>
+							);
+						})}
+
+						{/* bottom spacer (no border) */}
+						{endIndex < total - 1 && (
+							<tr style={{ height: (total - endIndex - 1) * rowH }}>
+								<td colSpan={1000} />
+							</tr>
+						)}
+					</tbody>
+				)}
 			</table>
 		);
 	}
@@ -1071,43 +1162,62 @@ export default function Preview({
 	return (
 		<section className="mt-6">
 			<div className="rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 ring-1 ring-slate-200/60 dark:ring-slate-800/60">
-				<div className="p-6 sm:p-10">
-					{/* Tabs header */}
-					<div className="border-b border-slate-200 dark:border-white/10 flex items-center gap-4">
-						<button
-							type="button"
-							onClick={() => {
-								setActiveTab("preview");
-								setOpenFilter(null);
-							}}
-							className={`px-3 py-2 text-sm -mb-px border-b-2 ${
-								activeTab === "preview"
-									? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
-									: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
-							}`}
+				<div className="p-4 sm:p-10">
+					{/* Tabs header (side-by-side, no scrolling) */}
+					<div className="border-b border-slate-200 dark:border-white/10">
+						<div
+							className="flex flex-nowrap items-end -mb-px"
+							role="tablist"
+							aria-label="Forhåndsvisning faner"
 						>
-							Forhåndsvisning
-						</button>
-						<button
-							type="button"
-							onClick={() => {
-								setActiveTab("attention");
-								setOpenFilter(null);
-							}}
-							className={`px-3 py-2 text-sm -mb-px border-b-2 ${
-								activeTab === "attention"
-									? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
-									: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
-							}`}
-							title="Uavklarte elementer som bør navngis"
-						>
-							Trenger oppmerksomhet
-							{pendingIssuesCount > 0 && (
-								<span className="ml-2 inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-800 text-[11px] px-1.5 py-0.5 dark:bg-amber-500/20 dark:text-amber-300">
-									{pendingIssuesCount}
+							<button
+								type="button"
+								role="tab"
+								aria-selected={activeTab === "preview"}
+								onClick={() => {
+									setActiveTab("preview");
+									setOpenFilter(null);
+								}}
+								className={[
+									"relative flex-1 min-w-0 text-center rounded-t-md",
+									"px-2 pr-6 py-1.5 text-[11px] leading-5 sm:px-3 sm:py-2 sm:text-sm",
+									"-mb-px border-b-2 transition-colors",
+									activeTab === "preview"
+										? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
+										: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
+								].join(" ")}
+							>
+								Forhåndsvisning
+							</button>
+
+							<button
+								type="button"
+								role="tab"
+								aria-selected={activeTab === "attention"}
+								onClick={() => {
+									setActiveTab("attention");
+									setOpenFilter(null);
+								}}
+								title="Uavklarte elementer som bør navngis"
+								className={[
+									"relative flex-1 min-w-0 text-center rounded-t-md",
+									"px-2 pr-8 py-1.5 text-[11px] leading-5 sm:px-3 sm:py-2 sm:text-sm",
+									"-mb-px border-b-2 transition-colors",
+									activeTab === "attention"
+										? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
+										: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
+								].join(" ")}
+							>
+								<span className="pointer-events-none">
+									Trenger oppmerksomhet
 								</span>
-							)}
-						</button>
+								{pendingIssuesCount > 0 && (
+									<span className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 dark:bg-amber-500/20 dark:text-amber-300">
+										{pendingIssuesCount}
+									</span>
+								)}
+							</button>
+						</div>
 					</div>
 
 					{/* Tabs content */}
@@ -1118,208 +1228,223 @@ export default function Preview({
 									Ingen uavklarte elementer 🎉
 								</div>
 							) : (
-								<ul className="space-y-3">
-									{issues.map((it) => {
-										const inputId = `issue-${it.kind}-${it.key.replace(
-											/[^a-z0-9\-]/gi,
-											"_"
-										)}`;
-										const isOpen = openIssues.has(inputId);
+								<>
+									{/* Mass action bar */}
+									<div className="mb-2 flex items-center justify-end">
+										<button
+											type="button"
+											onClick={ignoreAllPending}
+											disabled={!issues.some((i) => i.status === "pending")}
+											className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+											title="Ignorer alle uavklarte elementer"
+										>
+											Ignorer alle
+										</button>
+									</div>
 
-										const statusBadge =
-											it.status === "pending" ? (
-												<span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
-													Avventer
-												</span>
-											) : it.status === "renamed" ? (
-												<span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
-													Endret{it.newName ? ` → ${it.newName}` : ""}
-												</span>
-											) : (
-												<span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] text-slate-700 dark:bg-white/10 dark:text-slate-300">
-													Ignorert
-												</span>
-											);
+									<ul className="space-y-3">
+										{issues.map((it) => {
+											const inputId = `issue-${it.kind}-${it.key.replace(
+												/[^a-z0-9\-]/gi,
+												"_"
+											)}`;
+											const isOpen = openIssues.has(inputId);
 
-										const occurrenceRows =
-											rows?.filter((r) => {
-												if (it.kind === "unknown-token") {
-													return (
-														r["Inn-Valuta"] === it.key ||
-														r["Ut-Valuta"] === it.key
-													);
-												}
-												return r.Marked === it.key;
-											}) ?? [];
+											const statusBadge =
+												it.status === "pending" ? (
+													<span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
+														Avventer
+													</span>
+												) : it.status === "renamed" ? (
+													<span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
+														Endret{it.newName ? ` → ${it.newName}` : ""}
+													</span>
+												) : (
+													<span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] text-slate-700 dark:bg-white/10 dark:text-slate-300">
+														Ignorert
+													</span>
+												);
 
-										return (
-											<li
-												key={`${it.kind}:${it.key}`}
-												className="rounded-lg bg-white p-3 ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
-											>
-												<div className="flex items-center justify-between gap-3">
-													<div className="space-y-1">
-														<div className="text-sm font-medium text-slate-800 dark:text-slate-100">
-															{it.kind === "unknown-token"
-																? "Ukjent token"
-																: "Ukjent marked"}
-															: <code className="font-mono">{it.key}</code>
-															{statusBadge}
-														</div>
-														<div className="text-xs text-slate-600 dark:text-slate-400">
-															{it.count} forekomster
-														</div>
-													</div>
+											const occurrenceRows =
+												rows?.filter((r) => {
+													if (it.kind === "unknown-token") {
+														return (
+															r["Inn-Valuta"] === it.key ||
+															r["Ut-Valuta"] === it.key
+														);
+													}
+													return r.Marked === it.key;
+												}) ?? [];
 
-													<div className="flex items-center gap-2">
-														<input
-															id={inputId}
-															defaultValue={it.newName ?? ""}
-															placeholder={
-																it.kind === "unknown-token"
-																	? "Ny tokensymbol (BTC, ETH, SOL...)"
-																	: "Nytt markedsnavn"
-															}
-															className="w-56 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-														/>
-														<button
-															type="button"
-															onClick={() => {
-																const el = document.getElementById(
-																	inputId
-																) as HTMLInputElement | null;
-																const val = (el?.value ?? "").trim();
-																if (!val) return;
-																renameIssue(it.kind, it.key, val);
-															}}
-															className="rounded-md bg-indigo-600 text-white px-2 py-1 text-sm disabled:opacity-60 dark:bg-indigo-500"
-														>
-															Lagre
-														</button>
-														<button
-															type="button"
-															onClick={() => ignoreIssue(it.kind, it.key)}
-															className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-															title={
-																it.status === "ignored"
-																	? "Angre ignorering"
-																	: "Ignorer"
-															}
-														>
-															{it.status === "ignored" ? "Angre" : "Ignorer"}
-														</button>
-														<button
-															type="button"
-															onClick={() =>
-																setOpenIssues((prev) => {
-																	const next = new Set(prev);
-																	if (next.has(inputId)) next.delete(inputId);
-																	else next.add(inputId);
-																	return next;
-																})
-															}
-															className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-														>
-															{isOpen
-																? "Skjul forekomster"
-																: `Vis forekomster (${occurrenceRows.length})`}
-														</button>
-													</div>
-												</div>
-
-												{isOpen && (
-													<div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-2 dark:border-white/10 dark:bg-white/5">
-														{occurrenceRows.length === 0 ? (
-															<div className="text-xs text-slate-600 dark:text-slate-400">
-																Ingen forekomster funnet.
+											return (
+												<li
+													key={`${it.kind}:${it.key}`}
+													className="rounded-lg bg-white p-3 ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
+												>
+													<div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+														<div className="space-y-1">
+															<div className="text-sm font-medium text-slate-800 dark:text-slate-100">
+																{it.kind === "unknown-token"
+																	? "Ukjent token"
+																	: "Ukjent marked"}
+																: <code className="font-mono">{it.key}</code>
+																{statusBadge}
 															</div>
-														) : (
-															<ul className="grid gap-2 sm:grid-cols-1 md:grid-cols-2">
-																{occurrenceRows.map((r, idx) => {
-																	const sig = extractSig(r);
-																	const tokenInfo =
-																		[r["Inn-Valuta"], r["Ut-Valuta"]]
-																			.filter(Boolean)
-																			.join(" / ") || "—";
-																	const solscan = sig
-																		? `https://solscan.io/tx/${sig}`
-																		: undefined;
+															<div className="text-xs text-slate-600 dark:text-slate-400">
+																{it.count} forekomster
+															</div>
+														</div>
 
-																	return (
-																		<li key={`${sig ?? "x"}-${idx}`}>
-																			<div
-																				className="w-full rounded-md bg-white px-2 py-1.5 text-xs shadow-sm ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
-																				title={
-																					sig
-																						? "Gå til rad i forhåndsvisning eller åpne i Solscan"
-																						: "Ingen signatur funnet"
-																				}
-																			>
-																				<div className="flex items-center justify-between gap-2">
-																					<span className="font-mono text-[11px] text-slate-600 dark:text-slate-400">
-																						{r.Tidspunkt}
-																					</span>
-																					<div className="flex items-center gap-2">
-																						<button
-																							type="button"
-																							onClick={() =>
-																								sig && jumpToSig(sig)
-																							}
-																							disabled={!sig}
-																							className="text-[10px] text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400"
-																							title="Gå til rad"
-																						>
-																							Gå til rad
-																						</button>
-																						{sig && solscan && (
-																							<Link
-																								href={solscan}
-																								target="_blank"
-																								rel="noopener noreferrer"
-																								className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:underline dark:text-indigo-400"
-																								title="Åpne i Solscan"
-																								onClick={(e) =>
-																									e.stopPropagation()
+														<div className="flex flex-wrap items-center gap-2 sm:justify-end">
+															<input
+																id={inputId}
+																defaultValue={it.newName ?? ""}
+																placeholder={
+																	it.kind === "unknown-token"
+																		? "Ny tokensymbol (BTC, ETH, SOL...)"
+																		: "Nytt markedsnavn"
+																}
+																className="w-full sm:w-56 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+															/>
+															<button
+																type="button"
+																onClick={() => {
+																	const el = document.getElementById(
+																		inputId
+																	) as HTMLInputElement | null;
+																	const val = (el?.value ?? "").trim();
+																	if (!val) return;
+																	renameIssue(it.kind, it.key, val);
+																}}
+																className="rounded-md bg-indigo-600 text-white px-2 py-1 text-sm disabled:opacity-60 dark:bg-indigo-500"
+															>
+																Lagre
+															</button>
+															<button
+																type="button"
+																onClick={() => ignoreIssue(it.kind, it.key)}
+																className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+																title={
+																	it.status === "ignored"
+																		? "Angre ignorering"
+																		: "Ignorer"
+																}
+															>
+																{it.status === "ignored" ? "Angre" : "Ignorer"}
+															</button>
+															<button
+																type="button"
+																onClick={() =>
+																	setOpenIssues((prev) => {
+																		const next = new Set(prev);
+																		if (next.has(inputId)) next.delete(inputId);
+																		else next.add(inputId);
+																		return next;
+																	})
+																}
+																className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+															>
+																{isOpen
+																	? "Skjul forekomster"
+																	: `Vis forekomster (${occurrenceRows.length})`}
+															</button>
+														</div>
+													</div>
+
+													{isOpen && (
+														<div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-2 dark:border-white/10 dark:bg-white/5">
+															{occurrenceRows.length === 0 ? (
+																<div className="text-xs text-slate-600 dark:text-slate-400">
+																	Ingen forekomster funnet.
+																</div>
+															) : (
+																<ul className="grid gap-2 sm:grid-cols-1 md:grid-cols-2">
+																	{occurrenceRows.map((r, idx) => {
+																		const sig = extractSig(r);
+																		const tokenInfo =
+																			[r["Inn-Valuta"], r["Ut-Valuta"]]
+																				.filter(Boolean)
+																				.join(" / ") || "—";
+																		const solscan = sig
+																			? `https://solscan.io/tx/${sig}`
+																			: undefined;
+
+																		return (
+																			<li key={`${sig ?? "x"}-${idx}`}>
+																				<div
+																					className="w-full rounded-md bg-white px-2 py-1.5 text-xs shadow-sm ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
+																					title={
+																						sig
+																							? "Gå til rad i forhåndsvisning eller åpne i Solscan"
+																							: "Ingen signatur funnet"
+																					}
+																				>
+																					<div className="flex items-center justify-between gap-2">
+																						<span className="font-mono text-[11px] text-slate-600 dark:text-slate-400">
+																							{r.Tidspunkt}
+																						</span>
+																						<div className="flex items-center gap-2">
+																							<button
+																								type="button"
+																								onClick={() =>
+																									sig && jumpToSig(sig)
 																								}
+																								disabled={!sig}
+																								className="text-[10px] text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400"
+																								title="Gå til rad"
 																							>
-																								<FiExternalLink className="h-3.5 w-3.5" />
-																								Solscan
-																							</Link>
-																						)}
+																								Gå til rad
+																							</button>
+																							{sig && solscan && (
+																								<Link
+																									href={solscan}
+																									target="_blank"
+																									rel="noopener noreferrer"
+																									className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:underline dark:text-indigo-400"
+																									title="Åpne i Solscan"
+																									onClick={(e) =>
+																										e.stopPropagation()
+																									}
+																								>
+																									<FiExternalLink className="h-3.5 w-3.5" />
+																									Solscan
+																								</Link>
+																							)}
+																						</div>
+																					</div>
+																					<div className="mt-0.5">
+																						<span className="font-medium text-slate-800 dark:text-slate-100">
+																							{r.Type}
+																						</span>{" "}
+																						<span className="text-slate-600 dark:text-slate-400">
+																							• {tokenInfo}
+																						</span>
 																					</div>
 																				</div>
-																				<div className="mt-0.5">
-																					<span className="font-medium text-slate-800 dark:text-slate-100">
-																						{r.Type}
-																					</span>{" "}
-																					<span className="text-slate-600 dark:text-slate-400">
-																						• {tokenInfo}
-																					</span>
-																				</div>
-																			</div>
-																		</li>
-																	);
-																})}
-															</ul>
-														)}
-													</div>
-												)}
-											</li>
-										);
-									})}
-								</ul>
+																			</li>
+																		);
+																	})}
+																</ul>
+															)}
+														</div>
+													)}
+												</li>
+											);
+										})}
+									</ul>
+								</>
 							)}
 						</div>
 					) : (
 						/* PREVIEW TAB */
 						<div className="mt-6">
 							{/* Top bar with sorter + maximize + reset filters */}
-							<div className="mb-2 flex items-center justify-between">
+							<div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 								<div className="text-xs text-slate-600 dark:text-slate-400">
-									Viser {displayed.length} av {effectiveRows.length} rader
+									Viser {displayed.length} rader
 									{filterHasAny ? " (filtrert)" : ""}.
 								</div>
-								<div className="flex items-center gap-2 text-xs">
+								<div className="flex flex-wrap items-center gap-2 text-xs">
 									{filterHasAny && (
 										<button
 											type="button"
@@ -1337,7 +1462,7 @@ export default function Preview({
 									<select
 										value={sortOrder}
 										onChange={(e) => setSortOrder(e.target.value as SortOrder)}
-										className="min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+										className="min-w-[140px] sm:min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 									>
 										<option value="desc">Nyeste først</option>
 										<option value="asc">Eldste først</option>
@@ -1369,7 +1494,7 @@ export default function Preview({
 										style={{ height: previewHeight }}
 										onClick={() => setOpenFilter(null)}
 									>
-										<PreviewTable />
+										<PreviewTable onMeasureRow={handleMeasureRow} />
 									</div>
 
 									<div
@@ -1390,12 +1515,12 @@ export default function Preview({
 								>
 									<div className="h-full flex flex-col p-4 sm:p-6">
 										{/* Sticky top bar inside overlay: re-use sorter and minimize */}
-										<div className="mb-3 flex items-center justify-between">
+										<div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 											<div className="text-xs text-slate-600 dark:text-slate-400">
-												Viser {displayed.length} av {effectiveRows.length} rader
+												Viser {displayed.length} rader
 												{filterHasAny ? " (filtrert)" : ""}.
 											</div>
-											<div className="flex items-center gap-2 text-xs">
+											<div className="flex flex-wrap items-center gap-2 text-xs">
 												{filterHasAny && (
 													<button
 														type="button"
@@ -1414,7 +1539,7 @@ export default function Preview({
 													onChange={(e) =>
 														setSortOrder(e.target.value as SortOrder)
 													}
-													className="min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+													className="min-w-[140px] sm:min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 												>
 													<option value="desc">Nyeste først</option>
 													<option value="asc">Eldste først</option>
@@ -1436,7 +1561,7 @@ export default function Preview({
 												ref={previewContainerRef}
 												className="h-full overflow-auto overscroll-contain rounded-xl ring-1 ring-slate-200 contain-content dark:ring-white/10"
 											>
-												<PreviewTable />
+												<PreviewTable onMeasureRow={handleMeasureRow} />
 											</div>
 										</div>
 									</div>
@@ -1447,7 +1572,7 @@ export default function Preview({
 
 					{/* ===== Global actions & help (belong to preview card) ===== */}
 					{previewsReady && (
-						<div className="mt-4 flex items-center justify-between">
+						<div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 							{rows && (
 								<div className="text-sm">
 									{pendingIssuesCount > 0 ? (
@@ -1466,12 +1591,12 @@ export default function Preview({
 								</div>
 							)}
 
-							<div>
+							<div className="w-full sm:w-auto">
 								<button
 									type="button"
 									onClick={() => onDownloadCSV(overrides)}
 									disabled={!rows || pendingIssuesCount > 0}
-									className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:shadow-lg active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed dark:from-indigo-500 dark:to-emerald-500"
+									className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:shadow-lg active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed dark:from-indigo-500 dark:to-emerald-500"
 									title={
 										pendingIssuesCount > 0
 											? "Løs ‘Trenger oppmerksomhet’ først"
@@ -1485,174 +1610,93 @@ export default function Preview({
 						</div>
 					)}
 
-					{/* Inline editor modal (z-50, appears above the z-40 maximized overlay) */}
+					{/* Inline editor modal (centered, rounded on all breakpoints) */}
 					{editOpen && editTarget && (
 						<div
-							className="fixed inset-0 z-50 bg-black/30 dark:bg-black/40 flex items-center justify-center p-4"
+							className="fixed inset-0 z-50 bg-black/30 dark:bg-black/40 flex items-center justify-center p-3 sm:p-4"
 							onClick={() => setEditOpen(false)}
+							role="dialog"
+							aria-modal="true"
+							aria-labelledby="edit-dialog-title"
 						>
 							<div
-								className="w-full max-w-lg sm:max-w-2xl rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200 p-4 dark:bg-[linear-gradient(180deg,#0e1729_0%,#0b1220_100%)] dark:ring-white/10"
+								className="w-full max-w-[min(100vw-1rem,44rem)] sm:max-w-2xl rounded-2xl overflow-hidden bg-white shadow-2xl ring-1 ring-slate-200 dark:bg-[linear-gradient(180deg,#0e1729_0%,#0b1220_100%)] dark:ring-white/10 flex flex-col max-h-[90vh]"
 								onClick={(e) => e.stopPropagation()}
 							>
-								<div className="flex items-center justify-between">
-									<h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+								{/* Sticky header */}
+								<div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#0e1729]/80">
+									<h3
+										id="edit-dialog-title"
+										className="text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-100"
+									>
 										Rediger felt:{" "}
 										<code className="font-mono">{editTarget.label}</code>
 									</h3>
 									<button
 										type="button"
 										onClick={() => setEditOpen(false)}
-										className="rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5"
+										className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5"
 										aria-label="Lukk"
 									>
 										<FiX className="h-5 w-5" />
 									</button>
 								</div>
 
-								{(editTarget.sig || editTarget.signer) && (
-									<div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-										{editTarget.sig && (
-											<MetaBox
-												label="Signatur"
-												value={editTarget.sig}
-												link={`https://solscan.io/tx/${editTarget.sig}`}
-											/>
-										)}
-										{editTarget.signer && (
-											<MetaBox
-												label="Signer-adresse"
-												value={editTarget.signer}
-												link={`https://solscan.io/address/${editTarget.signer}`}
-											/>
-										)}
-									</div>
-								)}
-								<div className="mt-3">
-									{editTarget.field === "Type" ? (
-										<select
-											value={editDraft}
-											onChange={(e) => setEditDraft(e.target.value)}
-											className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
-										>
-											{TYPE_OPTIONS.map((t) => (
-												<option key={t} value={t}>
-													{t}
-												</option>
-											))}
-										</select>
-									) : (
-										<textarea
-											rows={6}
-											autoFocus
-											value={editDraft}
-											onChange={(e) => setEditDraft(e.target.value)}
-											className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words min-h-[7rem] dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
-											placeholder="Ny verdi…"
-										/>
-									)}
-								</div>
-
-								<div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-									<div className="text-[11px] text-slate-500 dark:text-slate-400">
-										Velg hvor endringen skal gjelde.
-									</div>
-									<div className="flex flex-wrap items-center gap-2">
-										{/* Dropdown */}
-										<select
-											value={editScope}
-											onChange={(e) =>
-												setEditScope(e.target.value as EditScope)
-											}
-											className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
-										>
-											<option value="one">Bare dette feltet</option>
-											<option
-												value="bySigner"
-												disabled={!editTarget?.signer}
-												title={
-													editTarget?.signer
-														? ""
-														: "Ingen underskriver-adresse tilgjengelig"
-												}
-											>
-												Alle med samme underskriver-adresse
-											</option>
-											<option
-												value="bySignature"
-												disabled={!editTarget?.sig}
-												title={
-													editTarget?.sig ? "" : "Ingen signatur tilgjengelig"
-												}
-											>
-												Alle med samme signatur
-											</option>
-											<option
-												value="byMarked"
-												disabled={
-													!rows?.[editTarget?.idxOriginal ?? 0]?.Marked?.trim()
-												}
-												title={
-													rows?.[editTarget?.idxOriginal ?? 0]?.Marked?.trim()
-														? ""
-														: "Ingen Marked på valgt rad"
-												}
-											>
-												Alle fra samme marked
-											</option>
-										</select>
-
-										{/* Info tooltip */}
-										<div className="relative group">
-											<button
-												type="button"
-												aria-label="Forklaring av alternativer"
-												className="rounded-full p-1 text-slate-500 hover:bg-slate-100 focus:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:focus:bg-white/5"
-											>
-												<FiInfo className="h-4 w-4" />
-											</button>
-											<div
-												role="tooltip"
-												className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[22rem] rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-xl group-hover:block group-focus-within:block dark:border-white/10 dark:bg-[#0f172a]/95 dark:text-slate-200 dark:backdrop-blur"
-											>
-												<p className="mb-1 font-medium">Hva betyr valgene?</p>
-												<ul className="list-disc space-y-1 pl-4">
-													<li>
-														<b>Bare dette feltet</b> – endrer kun denne cellen
-														(én rad).
-													</li>
-													<li>
-														<b>Alle fra samme underskriver-adresse</b> – endrer
-														alle rader der samme underskriver (signer) har
-														signert.
-													</li>
-													<li>
-														<b>Alle med samme signatur</b> – endrer alle rader
-														som tilhører samme transaksjon (signatur).
-													</li>
-													<li>
-														<b>Alle fra samme marked</b> – endrer alle rader med
-														samme verdi i<code className="ml-1">Marked</code>
-														-feltet.
-													</li>
-												</ul>
-											</div>
+								{/* Scrollable content */}
+								<div className="px-3 sm:px-4 py-3 sm:py-4 overflow-y-auto">
+									{(editTarget.sig || editTarget.signer) && (
+										<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+											{editTarget.sig && (
+												<MetaBox
+													label="Signatur"
+													value={editTarget.sig}
+													link={`https://solscan.io/tx/${editTarget.sig}`}
+												/>
+											)}
+											{editTarget.signer && (
+												<MetaBox
+													label="Signer-adresse"
+													value={editTarget.signer}
+													link={`https://solscan.io/address/${editTarget.signer}`}
+												/>
+											)}
 										</div>
+									)}
 
-										{/* Lagre */}
-										<button
-											type="button"
-											onClick={() => applyEdit(editScope)}
-											disabled={
-												(editScope === "bySigner" && !editTarget?.signer) ||
-												(editScope === "bySignature" && !editTarget?.sig)
-											}
-											className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-indigo-500 dark:hover:bg-indigo-600"
-										>
-											Lagre
-										</button>
+									<div className="mt-3">
+										{editTarget.field === "Type" ? (
+											<select
+												value={editDraft}
+												onChange={(e) => setEditDraft(e.target.value)}
+												className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+											>
+												{TYPE_OPTIONS.map((t) => (
+													<option key={t} value={t}>
+														{t}
+													</option>
+												))}
+											</select>
+										) : (
+											<textarea
+												rows={6}
+												autoFocus
+												value={editDraft}
+												onChange={(e) => setEditDraft(e.target.value)}
+												className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words min-h-[7rem] dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+												placeholder="Ny verdi…"
+											/>
+										)}
 									</div>
 								</div>
+
+								{/* Sticky action bar with centered tooltip */}
+								<ModalActions
+									editScope={editScope}
+									setEditScope={setEditScope}
+									editTarget={editTarget}
+									rows={rows}
+									applyEdit={applyEdit}
+								/>
 							</div>
 						</div>
 					)}
@@ -1667,5 +1711,153 @@ export default function Preview({
 				</div>
 			</div>
 		</section>
+	);
+}
+
+/* ===== Modal actions extracted (kept centered tooltip) ===== */
+function ModalActions({
+	editScope,
+	setEditScope,
+	editTarget,
+	rows,
+	applyEdit
+}: {
+	editScope: "one" | "bySigner" | "bySignature" | "byMarked";
+	setEditScope: (v: "one" | "bySigner" | "bySignature" | "byMarked") => void;
+	editTarget: {
+		idxOriginal: number;
+		field: keyof KSRow;
+		sig?: string;
+		signer?: string;
+		label: string;
+	} | null;
+	rows: KSPreviewRow[] | null;
+	applyEdit: (mode: "one" | "bySigner" | "bySignature" | "byMarked") => void;
+}) {
+	const [tipOpen, setTipOpen] = useState(false);
+	const [tipTop, setTipTop] = useState<number | null>(null);
+	const infoBtnRef = useRef<HTMLButtonElement | null>(null);
+
+	const placeTip = useCallback(() => {
+		const r = infoBtnRef.current?.getBoundingClientRect();
+		if (r) setTipTop(r.bottom + 8);
+	}, []);
+
+	useEffect(() => {
+		if (!tipOpen) return;
+		placeTip();
+		const onScroll = () => placeTip();
+		const onResize = () => placeTip();
+		window.addEventListener("scroll", onScroll, true);
+		window.addEventListener("resize", onResize);
+		return () => {
+			window.removeEventListener("scroll", onScroll, true);
+			window.removeEventListener("resize", onResize);
+		};
+	}, [tipOpen, placeTip]);
+
+	return (
+		<div className="sticky bottom-0 z-10 px-3 sm:px-4 py-2.5 sm:py-3 border-t border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#0e1729]/80">
+			<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+				<div className="text-[11px] text-slate-500 dark:text-slate-400">
+					Velg hvor endringen skal gjelde.
+				</div>
+
+				<div className="flex flex-wrap items-center gap-2">
+					<select
+						value={editScope}
+						onChange={(e) =>
+							setEditScope(
+								e.target.value as
+									| "one"
+									| "bySigner"
+									| "bySignature"
+									| "byMarked"
+							)
+						}
+						className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+					>
+						<option value="one">Bare dette feltet</option>
+						<option value="bySigner" disabled={!editTarget?.signer}>
+							Alle med samme underskriver-adresse
+						</option>
+						<option value="bySignature" disabled={!editTarget?.sig}>
+							Alle med samme signatur
+						</option>
+						<option
+							value="byMarked"
+							disabled={!rows?.[editTarget?.idxOriginal ?? 0]?.Marked?.trim()}
+						>
+							Alle fra samme marked
+						</option>
+					</select>
+
+					{/* Info button + viewport-centered tooltip */}
+					<div className="relative">
+						<button
+							ref={infoBtnRef}
+							type="button"
+							aria-label="Forklaring av alternativer"
+							onMouseEnter={() => {
+								setTipOpen(true);
+								placeTip();
+							}}
+							onMouseLeave={() => setTipOpen(false)}
+							onFocus={() => {
+								setTipOpen(true);
+								placeTip();
+							}}
+							onBlur={() => setTipOpen(false)}
+							onClick={() => {
+								setTipOpen((v) => !v);
+								placeTip();
+							}}
+							className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:focus:bg-white/5"
+						>
+							<FiInfo className="h-4 w-4" />
+						</button>
+
+						{tipOpen && tipTop !== null && (
+							<div
+								role="tooltip"
+								className="fixed left-1/2 -translate-x-1/2 z-[60] w-[min(92vw,22rem)] rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-xl dark:border-white/10 dark:bg-[#0f172a]/95 dark:text-slate-200 dark:backdrop-blur"
+								style={{ top: tipTop }}
+							>
+								<p className="mb-1 font-medium">Hva betyr valgene?</p>
+								<ul className="list-disc space-y-1 pl-4">
+									<li>
+										<b>Bare dette feltet</b> – endrer kun denne cellen (én rad).
+									</li>
+									<li>
+										<b>Alle fra samme underskriver-adresse</b> – endrer alle
+										rader der samme underskriver (signer) har signert.
+									</li>
+									<li>
+										<b>Alle med samme signatur</b> – endrer alle rader som
+										tilhører samme transaksjon (signatur).
+									</li>
+									<li>
+										<b>Alle fra samme marked</b> – endrer alle rader med samme
+										verdi i<code className="ml-1">Marked</code>-feltet.
+									</li>
+								</ul>
+							</div>
+						)}
+					</div>
+
+					<button
+						type="button"
+						onClick={() => applyEdit(editScope)}
+						disabled={
+							(editScope === "bySigner" && !editTarget?.signer) ||
+							(editScope === "bySignature" && !editTarget?.sig)
+						}
+						className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-indigo-500 dark:hover:bg-indigo-600"
+					>
+						Lagre
+					</button>
+				</div>
+			</div>
+		</div>
 	);
 }

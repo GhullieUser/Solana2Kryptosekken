@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { z } from "zod";
 import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
@@ -28,6 +28,7 @@ import Link from "next/link";
 
 // ⬇️ Preview card
 import Preview from "@/app/components/preview";
+import WalletHoldings from "@/app/components/WalletHoldings";
 
 /* ================= Client-only guard ================= */
 function ClientOnly({ children }: { children: React.ReactNode }) {
@@ -75,7 +76,7 @@ function ThemePill() {
 		<button
 			type="button"
 			onClick={toggle}
-			className="inline-flex items-center gap-2 rounded-full bg-white/70 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-white/90 dark:hover:bg-white/10 transition"
+			className="self-end sm:self-auto inline-flex h-[24px] items-center gap-2 rounded-full bg-white/70 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-white/90 dark:hover:bg-white/10 transition"
 			title="Bytt lys/mørk"
 			aria-label="Bytt lys/mørk"
 		>
@@ -301,18 +302,61 @@ export default function Home() {
 	const [logOpen, setLogOpen] = useState(false);
 	const [logLines, setLogLines] = useState<string[]>([]);
 	const logRef = useRef<HTMLDivElement | null>(null);
-	const pushLog = (s: string) =>
+
+	const pushLog = useCallback((s: string) => {
 		setLogLines((prev) => [
 			...prev,
 			`${new Date().toLocaleTimeString()}  ${s}`
 		]);
-	const clearLog = () => setLogLines([]);
+	}, []);
+
+	const clearLog = useCallback(() => setLogLines([]), []);
 
 	useEffect(() => {
 		if (logRef.current) {
 			logRef.current.scrollTop = logRef.current.scrollHeight;
 		}
 	}, [logLines]);
+
+	useEffect(() => {
+		const onStart = (e: any) => {
+			pushLog(
+				e?.detail?.address
+					? `Henter beholdning for ${e.detail.address} …`
+					: "Henter beholdning …"
+			);
+		};
+		const onSuccess = (e: any) => {
+			const n = e?.detail?.count ?? 0;
+			pushLog(`Beholdning oppdatert: ${n} aktiva.`);
+		};
+		const onError = (e: any) => {
+			const msg = e?.detail?.error || "Ukjent feil";
+			pushLog(`❌ Beholdning-feil: ${msg}`);
+		};
+
+		window.addEventListener("sol2ks:holdings:start", onStart as EventListener);
+		window.addEventListener(
+			"sol2ks:holdings:success",
+			onSuccess as EventListener
+		);
+		window.addEventListener("sol2ks:holdings:error", onError as EventListener);
+
+		return () => {
+			window.removeEventListener(
+				"sol2ks:holdings:start",
+				onStart as EventListener
+			);
+			window.removeEventListener(
+				"sol2ks:holdings:success",
+				onSuccess as EventListener
+			);
+			window.removeEventListener(
+				"sol2ks:holdings:error",
+				onError as EventListener
+			);
+		};
+	}, [pushLog]);
 
 	// Calendar popover
 	const [calOpen, setCalOpen] = useState(false);
@@ -681,19 +725,34 @@ export default function Home() {
 			<div className="mx-auto max-w-6xl px-4 py-10 sm:py-16">
 				{/* ====== Header with badge + title/subtitle (left) and logo (right) ====== */}
 				<header className="mb-8 sm:mb-12">
-					{/* Row: badge + theme pill at top */}
-					<div className="flex items-center justify-between">
+					{/* Row: badge + theme pill */}
+					<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 						<div className="inline-flex items-center gap-3 rounded-full bg-white/70 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm">
 							<SiSolana className="h-4 w-4" aria-hidden />
 							Solana → Kryptosekken • CSV Generator
 						</div>
-						<ThemePill />
+						<div className="self-end sm:self-auto">
+							<ThemePill />
+						</div>
 					</div>
 
-					<div className="mt-4 grid grid-cols-1 sm:grid-cols-[auto_minmax(0,1fr)] items-center gap-4 justify-items-start">
-						<div className="self-center">
-							{" "}
-							{/* removed justify-self-end */}
+					{/* Main: headline + logo (headline first on mobile) */}
+					<div className="mt-4 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] items-center gap-4 justify-items-center sm:justify-items-start">
+						{/* Headline + sub */}
+						<div className="order-1 sm:order-none min-w-0 text-center sm:text-left">
+							<h1 className="text-balance text-3xl sm:text-4xl font-semibold tracking-tight">
+								<span className="bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">
+									Solana-transaksjoner gjort enklere
+								</span>
+							</h1>
+							<p className="mt-2 text-balance leading-relaxed max-w-[65ch] text-sm sm:text-base text-slate-700 dark:text-slate-300">
+								Lim inn en Solana-adresse, velg tidsrom, <b>sjekk lommeboken</b>{" "}
+								og last ned en <b>CSV-fil</b> klar for import i Kryptosekken.
+							</p>
+						</div>
+
+						{/* Logo */}
+						<div className="order-0 sm:order-none self-center">
 							<Image
 								src="/Sol2KS_logo.svg"
 								alt="Sol2KS"
@@ -702,20 +761,6 @@ export default function Home() {
 								className="h-12 w-auto sm:h-24"
 								priority
 							/>
-						</div>
-
-						<div className="min-w-0">
-							{" "}
-							{/* optional: min-w-0 to avoid overflow */}
-							<h1 className="text-balance text-3xl sm:text-4xl font-semibold tracking-tight">
-								<span className="bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">
-									Solana-transaksjoner gjort enklere
-								</span>
-							</h1>
-							<p className="mt-2 max-w-prose text-sm sm:text-base text-slate-700 dark:text-slate-300">
-								Lim inn en Solana-adresse, velg tidsrom, <b>sjekk lommeboken</b>{" "}
-								og last ned en <b>CSV-fil</b> klar for import i Kryptosekken.
-							</p>
 						</div>
 					</div>
 				</header>
@@ -726,7 +771,7 @@ export default function Home() {
 						<form
 							ref={formRef}
 							onSubmit={onCheckWallet}
-							className="p-6 sm:p-10"
+							className="p-4 sm:p-10"
 						>
 							{/* Address + Name with history */}
 							<label className="block mb-2 text-sm font-medium text-slate-800 dark:text-slate-200">
@@ -753,7 +798,7 @@ export default function Home() {
 									/>
 
 									{/* right-side actions: clear, history */}
-									<div className="absolute inset-y-0 right-3 sm:top-[-19px] flex items-center gap-1">
+									<div className="absolute inset-y-0 right-3 flex items-center sm:top-[-19px] gap-1">
 										{/* quick clear */}
 										{hasAddressInput && (
 											<button
@@ -786,7 +831,7 @@ export default function Home() {
 
 									{/* Dropdown history */}
 									{addrMenuOpen && (addrHistory.length > 0 || address) && (
-										<div className="absolute z-30 mt-2 w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl">
+										<div className="absolute z-30 mt-2 w-full max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl">
 											{filteredHistory.length > 0 ? (
 												<ul className="max-h-64 overflow-auto text-sm">
 													{filteredHistory.map((a) => (
@@ -892,7 +937,7 @@ export default function Home() {
 
 							{/* Timespan (dropdown calendar + presets) */}
 							<div className="mt-6">
-								<div className="flex items-center justify-between">
+								<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
 									<label className="block text-sm font-medium text-slate-800 dark:text-slate-200">
 										Tidsrom
 									</label>
@@ -904,22 +949,26 @@ export default function Home() {
 
 								<div className="mt-2 flex flex-wrap items-center gap-3">
 									{/* Trigger */}
-									<div className="relative">
+									<div className="relative w-full sm:w-auto">
 										<button
 											type="button"
 											onClick={() => {
 												setCalOpen((v) => !v);
 												setCalMonth(range?.to ?? new Date());
 											}}
-											className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10"
+											aria-expanded={calOpen}
+											className="inline-flex w-full sm:w-auto items-center justify-between sm:justify-start gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10"
 										>
-											<FiCalendar className="h-4 w-4 text-slate-500 dark:text-slate-400" />
-											{formatRangeLabel(range)}
+											<span className="inline-flex items-center gap-2">
+												<FiCalendar className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+												{formatRangeLabel(range)}
+											</span>
 											<FiChevronDown className="h-4 w-4 text-slate-400" />
 										</button>
 
+										{/* Popover dropdown (same on mobile & desktop) */}
 										{calOpen && (
-											<div className="absolute z-20 mt-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 shadow-xl min-w-[260px]">
+											<div className="absolute z-30 mt-2 w-full sm:w-[360px] max-w-[92vw] rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 shadow-xl">
 												{/* Legend */}
 												<div className="flex items-center justify-between px-1 pb-2">
 													<button
@@ -977,6 +1026,7 @@ export default function Home() {
 														today: "ring-1 ring-indigo-500"
 													}}
 												/>
+
 												<div className="mt-2 flex justify-end gap-2">
 													<button
 														type="button"
@@ -990,7 +1040,7 @@ export default function Home() {
 										)}
 									</div>
 
-									{/* Presets */}
+									{/* Presets (wrap on small screens) */}
 									<div className="flex flex-wrap gap-2 text-xs">
 										<button
 											type="button"
@@ -1042,7 +1092,7 @@ export default function Home() {
 
 							{/* NFT section */}
 							<div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-white/5 p-4">
-								<div className="flex items-center justify-between">
+								<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 									<div className="inline-flex items-center gap-3">
 										<Switch
 											checked={includeNFT}
@@ -1078,7 +1128,7 @@ export default function Home() {
 										</button>
 										<div
 											role="tooltip"
-											className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[22rem] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl group-hover:block group-focus-within:block"
+											className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl group-hover:block group-focus-within:block"
 										>
 											<p className="mb-1 font-medium">
 												Hvorfor så mye “støv” i SOL?
@@ -1205,11 +1255,11 @@ export default function Home() {
 							</div>
 
 							{/* Actions */}
-							<div className="mt-6 flex flex-wrap items-center gap-3">
+							<div className="mt-6 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3">
 								<button
 									type="submit"
 									disabled={loading}
-									className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed"
+									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
 								>
 									{loading ? (
 										<FiLoader className="h-4 w-4 animate-spin" />
@@ -1222,43 +1272,47 @@ export default function Home() {
 									<button
 										type="button"
 										onClick={onCancel}
-										className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 shadow-sm hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300 active:scale-[0.99]"
+										className="inline-flex  items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 shadow-sm hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300 active:scale-[0.99] w-full sm:w-auto"
 									>
 										<FiX className="h-4 w-4" />
 										Avbryt
 									</button>
-								)}{" "}
+								)}
 								<button
 									type="button"
 									onClick={onReset}
-									className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99]"
+									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] w-full sm:w-auto"
 								>
 									Nullstill
 								</button>
+
 								{error && (
 									<span
 										role="status"
 										aria-live="polite"
-										className="text-sm text-red-600"
+										className="sm:ml-2 text-sm text-red-600"
 									>
 										{error}
 									</span>
 								)}
 								{!error && effectiveRows && effectiveRows.length > 0 && (
-									<span className="text-sm text-emerald-700 dark:text-emerald-400">
+									<span className="sm:ml-2 text-sm text-emerald-700 dark:text-emerald-400">
 										{effectiveRows.length} transaksjoner funnet ✅
 									</span>
 								)}
+
 								{/* Live log toggle */}
-								<button
-									type="button"
-									onClick={() => setLogOpen((v) => !v)}
-									className="ml-auto inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10"
-									title="Vis/skjul logg"
-								>
-									<FiActivity className="h-4 w-4" />
-									{logOpen ? "Skjul logg" : "Vis logg"}
-								</button>
+								<div className="sm:ml-auto">
+									<button
+										type="button"
+										onClick={() => setLogOpen((v) => !v)}
+										className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto justify-center"
+										title="Vis/skjul logg"
+									>
+										<FiActivity className="h-4 w-4" />
+										{logOpen ? "Skjul logg" : "Vis logg"}
+									</button>
+								</div>
 							</div>
 
 							{/* Live log panel */}
@@ -1283,7 +1337,7 @@ export default function Home() {
 
 							{/* Cache banner */}
 							{cacheKeyRef.current && !loading && (
-								<div className="mt-3 flex items-center justify-between rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+								<div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
 									<span>
 										Treff i cache for denne adressen/perioden. Du kan tømme
 										cache hvis du vil foreta et nytt sjekk.
@@ -1291,7 +1345,7 @@ export default function Home() {
 									<button
 										type="button"
 										onClick={clearCacheNow}
-										className="inline-flex items-center gap-1 rounded-md border border-amber-300 dark:border-amber-800 bg-white/60 dark:bg-white/10 px-2 py-1 hover:bg-white dark:hover:bg-white/15 whitespace-nowrap"
+										className="inline-flex items-center gap-1 rounded-md border border-amber-300 dark:border-amber-800 bg-white/60 dark:bg-white/10 px-2 py-1 hover:bg-white dark:hover:bg-white/15 whitespace-nowrap w-full sm:w-auto justify-center"
 										title="Tøm mellomlager for denne forespørselen"
 									>
 										<FiTrash2 className="h-4 w-4" />
@@ -1303,9 +1357,16 @@ export default function Home() {
 					</ClientOnly>
 				</div>
 
+				{/* ========= Card: Current holdings (now always shows even if empty/error) ========= */}
+				{address?.trim() && (
+					<div className="mt-6">
+						<WalletHoldings address={address} includeNFT={false} enabled={ok} />
+					</div>
+				)}
+
 				{/* ========= Card 2: Preview ========= */}
 				{hasRows && (
-					<div className="mt-6">
+					<div className="mt-6" ref={previewContainerRef}>
 						<Preview
 							rows={rows}
 							setRows={setRows}

@@ -932,7 +932,7 @@ function detectLiquidityEvent(
 ): LiquidityDetection | null {
 	const srcU = String(source || "").toUpperCase();
 
-	// Never classify aggregator flows OR Pump.fun swaps as liquidity
+	// Never classify aggregator flows or GMGN as liquidity
 	if (
 		srcU.includes("JUPITER") ||
 		srcU.includes("AGGREGATOR") ||
@@ -954,7 +954,7 @@ function detectLiquidityEvent(
 	const fIn = tokenTransfers.filter((t) => ownsTo(t) && !isLikelyNFT(t));
 	const fOut = tokenTransfers.filter((t) => ownsFrom(t) && !isLikelyNFT(t));
 
-	// Detect if SOL is already represented as token (WSOL), then ignore native legs to avoid ATA rent noise
+	// Detect if SOL is present as token (WSOL) -> ignore native legs to avoid ATA rent noise
 	let hasTokenSOL = false;
 	for (const t of [...fIn, ...fOut]) {
 		const { symbol } = amountFromTransfer(t, resolveSymDec);
@@ -1004,6 +1004,27 @@ function detectLiquidityEvent(
 
 	const protocol = protocolFromSource(source);
 	const modelCLMM = looksCLMM(source);
+	const isKnownAMM =
+		protocol === "RAYDIUM" ||
+		protocol === "ORCA" ||
+		protocol === "METEORA" ||
+		protocol === "SABER" ||
+		protocol === "PUMPFUN";
+
+	// --- Strong signals
+	const lpIn = fIn.filter((t) =>
+		amountFromTransfer(t, resolveSymDec).symbol.includes("LP")
+	);
+	const lpOut = fOut.filter((t) =>
+		amountFromTransfer(t, resolveSymDec).symbol.includes("LP")
+	);
+	const hasLPToken = lpIn.length > 0 || lpOut.length > 0;
+	const hasLPNFT = nftIn.length > 0 || nftOut.length > 0;
+
+	// If the protocol is UNKNOWN and there is no LP token/NFT evidence, don't mark as liquidity.
+	if (!isKnownAMM && !hasLPToken && !hasLPNFT) {
+		return null;
+	}
 
 	// --- Preferred: explicit CLMM (when NFT is visible)
 	if (nftIn.length >= 1 && distinctOuts >= 2) {
@@ -1026,35 +1047,8 @@ function detectLiquidityEvent(
 		};
 	}
 
-	// Fungible LP heuristics
-	const lpIn = fIn.filter((t) => {
-		const { symbol } = amountFromTransfer(t, resolveSymDec);
-		return symbol.includes("LP");
-	});
-	const lpOut = fOut.filter((t) => {
-		const { symbol } = amountFromTransfer(t, resolveSymDec);
-		return symbol.includes("LP");
-	});
-
+	// Fungible LP heuristics (works for CPMM and some CLMM with fungible LP)
 	if (lpIn.length >= 1 && distinctOuts >= 2) {
-		return {
-			kind: modelCLMM ? "clmm-add" : "cpmm-add",
-			protocol: srcU.includes("PUMP") ? "PUMPFUN" : protocol,
-			note: "LIQUIDITY ADD",
-			outs
-		};
-	}
-	if (lpOut.length >= 1 && distinctIns >= 2) {
-		return {
-			kind: modelCLMM ? "clmm-remove" : "cpmm-remove",
-			protocol: srcU.includes("PUMP") ? "PUMPFUN" : protocol,
-			note: "LIQUIDITY REMOVE",
-			ins
-		};
-	}
-
-	// Strict leg patterns (prevents swaps from matching)
-	if (distinctOuts >= 2 && distinctIns === 0) {
 		return {
 			kind: modelCLMM ? "clmm-add" : "cpmm-add",
 			protocol,
@@ -1062,7 +1056,25 @@ function detectLiquidityEvent(
 			outs
 		};
 	}
-	if (distinctIns >= 2 && distinctOuts === 0) {
+	if (lpOut.length >= 1 && distinctIns >= 2) {
+		return {
+			kind: modelCLMM ? "clmm-remove" : "cpmm-remove",
+			protocol,
+			note: "LIQUIDITY REMOVE",
+			ins
+		};
+	}
+
+	// --- Strict leg patterns: only allow when we positively recognize a known AMM
+	if (isKnownAMM && distinctOuts >= 2 && distinctIns === 0) {
+		return {
+			kind: modelCLMM ? "clmm-add" : "cpmm-add",
+			protocol,
+			note: "LIQUIDITY ADD",
+			outs
+		};
+	}
+	if (isKnownAMM && distinctIns >= 2 && distinctOuts === 0) {
 		return {
 			kind: modelCLMM ? "clmm-remove" : "cpmm-remove",
 			protocol,
@@ -1923,7 +1935,7 @@ export async function POST(req: NextRequest) {
 					const cached = getOrNull(ckey);
 					if (cached) {
 						const rowsPreview = attachSigAndSigner(
-							cached.rowsProcessed.slice(0, 500),
+							cached.rowsProcessed,
 							walletTagStr,
 							cached.sigToSigner
 						);
@@ -1976,7 +1988,7 @@ export async function POST(req: NextRequest) {
 							scan.sigToSigner
 						);
 						const rowsPreview = attachSigAndSigner(
-							result.rowsProcessed.slice(0, 500),
+							result.rowsProcessed,
 							walletTagStr,
 							scan.sigToSigner
 						);
