@@ -2,6 +2,7 @@
 "use client";
 
 import { useMemo, useRef, useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
 	FiExternalLink,
@@ -95,7 +96,53 @@ function extractSig(row: KSPreviewRow): string | undefined {
 
 type SortOrder = "desc" | "asc";
 
-/* ---------- small UI bits used inside this component ---------- */
+/** Columns in the preview table, in visual order */
+type ColKey =
+	| "tidspunkt"
+	| "type"
+	| "inn"
+	| "innValuta"
+	| "ut"
+	| "utValuta"
+	| "gebyr"
+	| "gebyrValuta"
+	| "marked"
+	| "notat"
+	| "explorer";
+
+/** Single source of truth: default widths in px. */
+const DEFAULT_COL_WIDTHS: Record<ColKey, number> = {
+	tidspunkt: 95,
+	type: 115,
+	inn: 140,
+	innValuta: 120,
+	ut: 140,
+	utValuta: 120,
+	gebyr: 140,
+	gebyrValuta: 120,
+	marked: 140,
+	notat: 300,
+	explorer: 120
+};
+
+const MIN_COL_WIDTH = 60;
+const MAX_COL_WIDTH = 700;
+
+const COL_ORDER: ColKey[] = [
+	"tidspunkt",
+	"type",
+	"inn",
+	"innValuta",
+	"ut",
+	"utValuta",
+	"gebyr",
+	"gebyrValuta",
+	"marked",
+	"notat",
+	"explorer"
+];
+
+/* ---------- tiny utils ---------- */
 function middleEllipsis(s: string, start = 10, end = 8) {
 	if (!s) return "";
 	return s.length <= start + end + 1
@@ -103,6 +150,7 @@ function middleEllipsis(s: string, start = 10, end = 8) {
 		: `${s.slice(0, start)}…${s.slice(-end)}`;
 }
 
+/* ---------- Meta box (unchanged) ---------- */
 function MetaBox({
 	label,
 	value,
@@ -161,7 +209,14 @@ function MetaBox({
 	);
 }
 
-/* full-bleed hover chrome + edit affordance */
+/* ---------- Shared padded wrapper for cells (padding here, td/th are padding:0) ---------- */
+function CellPad({ children }: { children: React.ReactNode }) {
+	return (
+		<div className="relative px-2 sm:px-3 py-2 overflow-hidden">{children}</div>
+	);
+}
+
+/* ---------- Edit chrome (hover highlight now perfectly aligned) ---------- */
 function CellChrome({
 	children,
 	onEdit,
@@ -207,7 +262,8 @@ function CellChrome({
 					: undefined
 			}
 		>
-			<span className="rounded pointer-events-none absolute -inset-x-2 top-1/2 -translate-y-1/2 h-10 z-0 ring-1 ring-transparent group-hover:ring-emerald-300/80 group-hover:bg-emerald-50/50 dark:group-hover:ring-emerald-500/40 dark:group-hover:bg-emerald-500/10 transition" />
+			{/* full cell hover (no negative insets -> perfect align with column) */}
+			<span className="pointer-events-none absolute inset-[-5px] z-0 rounded ring-1 ring-transparent group-hover:ring-emerald-300/80 group-hover:bg-emerald-50/60 dark:group-hover:ring-emerald-500/40 dark:group-hover:bg-emerald-500/10 transition" />
 			<div
 				className={`relative z-10 ${
 					align === "right" ? "font-mono tabular-nums" : ""
@@ -248,22 +304,22 @@ function TidspunktCell({
 	const [datePart, timePart = ""] = (value || "").split(" ");
 	const canEdit = !!String(value ?? "").trim();
 	return (
-		<div className="min-w-[4rem]">
+		<CellPad>
 			<CellChrome
 				onEdit={() => openEditCell(idxOriginal, "Tidspunkt", value ?? "")}
 				title={value}
 				canEdit={canEdit}
 			>
-				<div className="leading-tight">
-					<div className="font-medium">{datePart || value}</div>
+				<div className="leading-tight overflow-hidden">
+					<div className="font-medium truncate">{datePart || value}</div>
 					{timePart ? (
-						<div className="text-slate-500 text-[11px] dark:text-slate-400">
+						<div className="text-slate-500 text-[11px] dark:text-slate-400 truncate">
 							{timePart}
 						</div>
 					) : null}
 				</div>
 			</CellChrome>
-		</div>
+		</CellPad>
 	);
 }
 
@@ -292,34 +348,35 @@ function EditableCell({
 
 	if (isValutaField && isEmpty) {
 		return (
-			<CellChrome
-				onEdit={() => {}}
-				align={align}
-				title={title}
-				canEdit={false}
-				clickToEdit={false}
-				showButton={false}
-			>
-				<span
-					className="pointer-events-none select-none text-slate-400 italic dark:text-slate-500"
-					aria-hidden="true"
+			<CellPad>
+				<CellChrome
+					onEdit={() => {}}
+					align={align}
+					title={title}
+					canEdit={false}
+					clickToEdit={false}
+					showButton={false}
 				>
-					—
-				</span>
-			</CellChrome>
+					<span className="pointer-events-none select-none text-slate-400 italic dark:text-slate-500">
+						—
+					</span>
+				</CellChrome>
+			</CellPad>
 		);
 	}
 
 	const canEdit = !!String(value ?? "").trim();
 	return (
-		<CellChrome
-			onEdit={() => openEditCell(idxOriginal, field, value ?? "")}
-			align={align}
-			title={title || value}
-			canEdit={canEdit}
-		>
-			{value || ""}
-		</CellChrome>
+		<CellPad>
+			<CellChrome
+				onEdit={() => openEditCell(idxOriginal, field, value ?? "")}
+				align={align}
+				title={title || value}
+				canEdit={canEdit}
+			>
+				<div className="truncate">{value || ""}</div>
+			</CellChrome>
+		</CellPad>
 	);
 }
 
@@ -348,14 +405,115 @@ export default function Preview({
 	);
 	const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
 
+	/** Column width state (persisted to localStorage) */
+	const [colWidths, setColWidths] = useState<Record<ColKey, number>>(() => ({
+		...DEFAULT_COL_WIDTHS
+	}));
+	const tableColsWidth = useMemo(
+		() => COL_ORDER.reduce((acc, k) => acc + (colWidths[k] || 0), 0),
+		[colWidths]
+	);
+
+	/** Current visible container width (for stretch column) */
+	const [containerWidth, setContainerWidth] = useState<number>(0);
+	const stretchWidth = Math.max(0, containerWidth - tableColsWidth);
+	const hasStretch = stretchWidth > 0;
+
+	/** visual lock while dragging (cursor + user-select) */
+	const [isResizingCol, setIsResizingCol] = useState(false);
+
+	/** Load saved widths on mount (if any), merge with defaults */
+	useEffect(() => {
+		try {
+			const raw = localStorage.getItem("ks_preview_colwidths");
+			if (!raw) return;
+			const saved = JSON.parse(raw) as Partial<Record<ColKey, number>>;
+			const next: Record<ColKey, number> = { ...DEFAULT_COL_WIDTHS };
+			for (const k of COL_ORDER) {
+				const w = saved[k];
+				if (typeof w === "number" && isFinite(w)) {
+					next[k] = Math.min(MAX_COL_WIDTH, Math.max(MIN_COL_WIDTH, w));
+				}
+			}
+			setColWidths(next);
+		} catch {}
+	}, []);
+
+	/** Persist widths when they change */
+	useEffect(() => {
+		try {
+			localStorage.setItem("ks_preview_colwidths", JSON.stringify(colWidths));
+		} catch {}
+	}, [colWidths]);
+
+	/** Resizing (drag) handling */
+	const resizingRef = useRef<{
+		key: ColKey;
+		startX: number;
+		startW: number;
+	} | null>(null);
+
+	const startResize = useCallback(
+		(key: ColKey, clientX: number) => {
+			resizingRef.current = { key, startX: clientX, startW: colWidths[key] };
+			setIsResizingCol(true);
+			try {
+				document.body.style.cursor = "col-resize";
+				(document.body.style as any).userSelect = "none";
+			} catch {}
+		},
+		[colWidths]
+	);
+
+	useEffect(() => {
+		function onMove(e: MouseEvent) {
+			const r = resizingRef.current;
+			if (!r) return;
+			const dx = e.clientX - r.startX;
+			const next = Math.min(
+				MAX_COL_WIDTH,
+				Math.max(MIN_COL_WIDTH, r.startW + dx)
+			);
+			setColWidths((prev) => ({ ...prev, [r.key]: next }));
+			e.preventDefault();
+		}
+		function onUp() {
+			resizingRef.current = null;
+			setIsResizingCol(false);
+			try {
+				document.body.style.cursor = "";
+				(document.body.style as any).userSelect = "";
+			} catch {}
+		}
+		window.addEventListener("mousemove", onMove);
+		window.addEventListener("mouseup", onUp);
+		return () => {
+			window.removeEventListener("mousemove", onMove);
+			window.removeEventListener("mouseup", onUp);
+		};
+	}, []);
+
+	const handleResizerMouseDown = useCallback(
+		(key: ColKey, e: React.MouseEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			startResize(key, e.clientX);
+		},
+		[startResize]
+	);
+
+	const resetWidthToDefault = useCallback((key: ColKey) => {
+		setColWidths((prev) => ({ ...prev, [key]: DEFAULT_COL_WIDTHS[key] }));
+	}, []);
+
 	// filters
 	const [filters, setFilters] = useState<Filters>({});
 	const [openFilter, setOpenFilter] = useState<FilterableField | null>(null);
 
-	// This ref always points to the currently visible scroll area (normal OR maximized)
+	// Current scroll container
 	const previewContainerRef = useRef<HTMLDivElement | null>(null);
 
-	// “Maximize” = take up the whole browser window (not Fullscreen API)
+	// “Maximize”
 	const [isMaximized, setIsMaximized] = useState(false);
 	function toggleMaximize() {
 		setIsMaximized((v) => !v);
@@ -406,6 +564,29 @@ export default function Preview({
 			window.removeEventListener("mouseup", onResizeEnd);
 		};
 	}, []);
+
+	// observe container size (height + width)
+	useEffect(() => {
+		const el = previewContainerRef.current;
+		if (!el) return;
+
+		const onScroll = () => setScrollTop(el.scrollTop);
+		el.addEventListener("scroll", onScroll, { passive: true });
+		setScrollTop(el.scrollTop);
+		setViewportH(el.clientHeight);
+		setContainerWidth(el.clientWidth);
+
+		const ro = new ResizeObserver(() => {
+			setViewportH(el.clientHeight);
+			setContainerWidth(el.clientWidth);
+		});
+		ro.observe(el);
+
+		return () => {
+			el.removeEventListener("scroll", onScroll);
+			ro.disconnect();
+		};
+	}, [isMaximized, previewHeight, activeTab]);
 
 	// Effective rows with overrides applied (only for display)
 	const effectiveRows: KSPreviewRow[] = useMemo(() => {
@@ -485,7 +666,6 @@ export default function Preview({
 			});
 		}
 
-		// sort: pending first, then by count desc
 		return out.sort((a, b) => {
 			if (a.status !== b.status) {
 				if (a.status === "pending") return -1;
@@ -553,29 +733,8 @@ export default function Preview({
 	/* ====== Virtualization state ====== */
 	const [scrollTop, setScrollTop] = useState(0);
 	const [viewportH, setViewportH] = useState(0);
-	const [rowH, setRowH] = useState(40); // will be auto-measured
+	const [rowH, setRowH] = useState(40);
 	const overscan = 10;
-
-	// attach listeners to current scroll container (embedded OR maximized)
-	useEffect(() => {
-		const el = previewContainerRef.current;
-		if (!el) return;
-
-		const onScroll = () => setScrollTop(el.scrollTop);
-		el.addEventListener("scroll", onScroll, { passive: true });
-		setScrollTop(el.scrollTop);
-		setViewportH(el.clientHeight);
-
-		const ro = new ResizeObserver(() => {
-			setViewportH(el.clientHeight);
-		});
-		ro.observe(el);
-
-		return () => {
-			el.removeEventListener("scroll", onScroll);
-			ro.disconnect();
-		};
-	}, [isMaximized, previewHeight, activeTab]);
 
 	const handleMeasureRow = useCallback(
 		(h: number) => {
@@ -592,19 +751,12 @@ export default function Preview({
 	) {
 		const sig = rows ? extractSig(rows[idxOriginal]) : undefined;
 		const signer = rows?.[idxOriginal]?.signer;
-		setEditTarget({
-			idxOriginal,
-			field,
-			sig,
-			signer,
-			label: field
-		});
+		setEditTarget({ idxOriginal, field, sig, signer, label: field });
 		setEditDraft(
 			field === "Type" && !TYPE_OPTIONS.includes(currentValue as KSType)
 				? TYPE_OPTIONS[0]
 				: currentValue ?? ""
 		);
-
 		setEditScope("one");
 		setEditOpen(true);
 	}
@@ -626,12 +778,10 @@ export default function Preview({
 				next[idxOriginal] = row;
 				return next;
 			}
-
 			if (mode === "bySigner") {
 				if (!signer) return prev;
 				for (let i = 0; i < next.length; i++) {
-					const rowSigner = next[i]?.signer;
-					if (rowSigner && rowSigner === signer) {
+					if (next[i]?.signer && next[i]?.signer === signer) {
 						const row = { ...next[i] } as any;
 						row[field] = newVal;
 						next[i] = row;
@@ -639,7 +789,6 @@ export default function Preview({
 				}
 				return next;
 			}
-
 			if (mode === "bySignature") {
 				if (!sig) return prev;
 				for (let i = 0; i < next.length; i++) {
@@ -652,7 +801,6 @@ export default function Preview({
 				}
 				return next;
 			}
-
 			if (mode === "byMarked") {
 				if (!originalMarket) return prev;
 				for (let i = 0; i < next.length; i++) {
@@ -664,7 +812,6 @@ export default function Preview({
 				}
 				return next;
 			}
-
 			return next;
 		});
 
@@ -684,7 +831,7 @@ export default function Preview({
 		setEditDraft("");
 	}
 
-	// jump to a signature inside the table — works with virtualization
+	// jump to sig
 	function jumpToSig(sig: string) {
 		if (!sig) return;
 		setActiveTab("preview");
@@ -707,7 +854,6 @@ export default function Preview({
 
 	/* ===================== FILTERS ===================== */
 	const optionCounts = useMemo(() => {
-		// counts over ALL effective rows (pre-filter), based on overrides
 		const counts: Record<FilterableField, Map<string, number>> = {
 			Type: new Map(),
 			"Inn-Valuta": new Map(),
@@ -755,7 +901,6 @@ export default function Preview({
 		setOpenFilter(null);
 	}
 
-	// apply filters
 	const matchesFilters = (r: KSPreviewRow) => {
 		const fields: FilterableField[] = [
 			"Type",
@@ -781,24 +926,43 @@ export default function Preview({
 		return sortOrder === "desc" ? tb - ta : ta - tb;
 	});
 	const filtered = sorted.filter(({ r }) => matchesFilters(r));
-	const displayed = filtered; // VIRTUALIZED rendering, no cap
+	const displayed = filtered;
 
 	const previewsReady =
 		Array.isArray(effectiveRows) && effectiveRows.length >= 0;
 
-	/* ---------- header cell with filter popover ---------- */
+	/* ---------- Resizer (exactly on column boundary) ---------- */
+	function Resizer({ colKey }: { colKey: ColKey }) {
+		return (
+			<div
+				role="separator"
+				aria-orientation="vertical"
+				title="Dra for å endre kolonnebredde (dbl-klikk: reset)"
+				onMouseDown={(e) => handleResizerMouseDown(colKey, e)}
+				onDoubleClick={() => resetWidthToDefault(colKey)}
+				className="group/resize absolute top-0 right-0 h-full w-4 cursor-col-resize select-none z-10"
+				style={{ touchAction: "none" }}
+			>
+				{/* The visible divider */}
+				<div className="pointer-events-none ml-[calc(50%-0.5px)] h-full w-px bg-slate-200 dark:bg-white/10 group-hover/resize:bg-slate-400 dark:group-hover/resize:bg-white/30" />
+			</div>
+		);
+	}
+
+	/* ---------- Header with filter + resizer (padding inside, overflow hidden) ---------- */
 	function HeaderWithFilter({
 		label,
-		field
+		field,
+		colKey
 	}: {
 		label: string;
 		field: FilterableField;
+		colKey: ColKey;
 	}) {
 		const isOpen = openFilter === field;
 		const selected = filters[field];
 		const active = !!selected && selected.size > 0;
 
-		// options sorted by count desc, then alpha
 		const opts = useMemo(() => {
 			const m = optionCounts[field];
 			const arr = Array.from(m.entries());
@@ -807,28 +971,22 @@ export default function Preview({
 		}, [field, optionCounts]);
 
 		return (
-			<th className="relative whitespace-nowrap">
-				<>
-					{/* Plain header title + icons */}
-					<div className="inline-flex items-center gap-1">
-						<span className="pr-0.5">{label}</span>
+			<th className="relative" style={{ width: colWidths[colKey], padding: 0 }}>
+				<CellPad>
+					<div className="inline-flex items-center gap-1 select-none overflow-hidden">
+						<span className="pr-0.5 truncate">{label}</span>
 
-						{/* subtle active dot */}
 						{active && (
-							<span
-								className="ml-0.5 inline-block h-1.5 w-1.5 rounded-full bg-indigo-600 dark:bg-indigo-400"
-								aria-hidden="true"
-							/>
+							<span className="ml-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-600 dark:bg-indigo-400" />
 						)}
 
-						{/* Filter icon */}
 						<button
 							type="button"
 							onClick={(e) => {
 								e.stopPropagation();
 								setOpenFilter((curr) => (curr === field ? null : field));
 							}}
-							className="p-0.5 -m-0.5"
+							className="p-0.5 -m-0.5 shrink-0"
 							aria-label={`Filtrer ${label}`}
 							aria-expanded={isOpen}
 							title={`Filtrer ${label}`}
@@ -844,7 +1002,6 @@ export default function Preview({
 							/>
 						</button>
 
-						{/* Header reset (X) */}
 						{active && (
 							<button
 								type="button"
@@ -852,7 +1009,7 @@ export default function Preview({
 									e.stopPropagation();
 									clearFilter(field);
 								}}
-								className="p-0.5 -m-0.5"
+								className="p-0.5 -m-0.5 shrink-0"
 								aria-label="Nullstill filter"
 								title="Nullstill filter"
 							>
@@ -860,91 +1017,114 @@ export default function Preview({
 							</button>
 						)}
 					</div>
+				</CellPad>
 
-					{/* Popover */}
-					{isOpen && (
-						<div
-							className="absolute right-0 mt-2 z-30 w-[min(92vw,18rem)] sm:w-72 max-h-[60vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-[#0f172a]/95 dark:backdrop-blur"
-							onClick={(e) => e.stopPropagation()}
-						>
-							<div className="mb-2 flex items-center justify-between">
-								<div className="text-xs font-medium text-slate-700 dark:text-slate-200">
-									Filtrer: {label}
-								</div>
-								<button
-									type="button"
-									onClick={() => setOpenFilter(null)}
-									className="p-1 rounded text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-									aria-label="Lukk"
-									title="Lukk"
-								>
-									<FiX className="h-4 w-4" />
-								</button>
+				<Resizer colKey={colKey} />
+
+				{isOpen && (
+					<div
+						className="absolute right-0 mt-2 z-30 w-[min(92vw,18rem)] sm:w-72 max-h-[60vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-[#0f172a]/95 dark:backdrop-blur"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<div className="mb-2 flex items-center justify-between">
+							<div className="text-xs font-medium text-slate-700 dark:text-slate-200">
+								Filtrer: {label}
 							</div>
-
-							{opts.length === 0 ? (
-								<div className="p-2 text-xs text-slate-500 dark:text-slate-300">
-									Ingen verdier.
-								</div>
-							) : (
-								<ul className="space-y-1">
-									{opts.map(([val, count]) => {
-										const checked = !!selected?.has(val);
-										return (
-											<li key={val}>
-												<label className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-slate-50 dark:hover:bg-white/5">
-													<span
-														className="truncate text-xs text-slate-800 dark:text-slate-200"
-														title={val}
-													>
-														<input
-															type="checkbox"
-															className="mr-2 align-middle"
-															checked={checked}
-															onChange={() => toggleFilterValue(field, val)}
-														/>
-														{val}
-													</span>
-													<span className="text-[10px] text-slate-500 dark:text-slate-400">
-														{count}
-													</span>
-												</label>
-											</li>
-										);
-									})}
-								</ul>
-							)}
-
-							<div className="mt-2 flex items-center justify-between">
-								<button
-									type="button"
-									onClick={() => clearFilter(field)}
-									className="rounded border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-								>
-									Nullstill {label}
-								</button>
-								<button
-									type="button"
-									onClick={() => setOpenFilter(null)}
-									className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600"
-								>
-									Lukk
-								</button>
-							</div>
+							<button
+								type="button"
+								onClick={() => setOpenFilter(null)}
+								className="p-1 rounded text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+								aria-label="Lukk"
+								title="Lukk"
+							>
+								<FiX className="h-4 w-4" />
+							</button>
 						</div>
-					)}
-				</>
+
+						{opts.length === 0 ? (
+							<div className="p-2 text-xs text-slate-500 dark:text-slate-300">
+								Ingen verdier.
+							</div>
+						) : (
+							<ul className="space-y-1">
+								{opts.map(([val, count]) => {
+									const checked = !!selected?.has(val);
+									return (
+										<li key={val}>
+											<label className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-slate-50 dark:hover:bg-white/5">
+												<span
+													className="truncate text-xs text-slate-800 dark:text-slate-200"
+													title={val}
+												>
+													<input
+														type="checkbox"
+														className="mr-2 align-middle"
+														checked={checked}
+														onChange={() => toggleFilterValue(field, val)}
+													/>
+													{val}
+												</span>
+												<span className="text-[10px] text-slate-500 dark:text-slate-400">
+													{count}
+												</span>
+											</label>
+										</li>
+									);
+								})}
+							</ul>
+						)}
+
+						<div className="mt-2 flex items-center justify-between">
+							<button
+								type="button"
+								onClick={() => clearFilter(field)}
+								className="rounded border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+							>
+								Nullstill {label}
+							</button>
+							<button
+								type="button"
+								onClick={() => setOpenFilter(null)}
+								className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600"
+							>
+								Lukk
+							</button>
+						</div>
+					</div>
+				)}
 			</th>
 		);
 	}
 
-	/* ---------- reusable table renderer with virtualization ---------- */
+	/* ---------- simple header ---------- */
+	function PlainHeader({
+		label,
+		colKey,
+		extraClass = ""
+	}: {
+		label: string;
+		colKey: ColKey;
+		extraClass?: string;
+	}) {
+		return (
+			<th
+				className={`relative ${extraClass}`}
+				style={{ width: colWidths[colKey], padding: 0 }}
+			>
+				<CellPad>
+					<div className="select-none overflow-hidden truncate">{label}</div>
+				</CellPad>
+				<Resizer colKey={colKey} />
+			</th>
+		);
+	}
+
+	/* ---------- table renderer (td/th have padding:0; all overflow handled inside) ---------- */
 	function PreviewTable({
 		onMeasureRow
 	}: {
 		onMeasureRow: (h: number) => void;
 	}) {
-		// compute window
 		const total = displayed.length;
 		const startIndex = Math.max(0, Math.floor(scrollTop / rowH) - overscan);
 		const endIndex = Math.min(
@@ -953,7 +1133,6 @@ export default function Preview({
 		);
 		const visible = total > 0 ? displayed.slice(startIndex, endIndex + 1) : [];
 
-		// measurement ref for the first visible row
 		const measureRowRef = useCallback(
 			(el: HTMLTableRowElement | null) => {
 				if (!el) return;
@@ -964,26 +1143,69 @@ export default function Preview({
 		);
 
 		return (
-			<table className="min-w-[960px] sm:min-w-full text-[11px] sm:text-xs">
+			<table
+				className="table-fixed border-separate border-spacing-0 text-[11px] sm:text-xs"
+				/* Width = sum of defined columns + optional stretch filler. Prevents any unplanned stretching. */
+				style={{ width: tableColsWidth + (hasStretch ? stretchWidth : 0) }}
+			>
+				<colgroup>
+					{COL_ORDER.map((k) => (
+						<col key={k} style={{ width: colWidths[k] }} />
+					))}
+					{hasStretch && <col style={{ width: stretchWidth }} />}
+				</colgroup>
+
 				<thead className="sticky top-0 z-20 bg-white dark:bg-[#0e1729] text-slate-700 dark:text-slate-200 shadow-sm">
-					<tr className="[&>th]:px-2 sm:[&>th]:px-3 [&>th]:py-2 [&>th]:text-left">
-						<th className="min-w-[4rem] whitespace-nowrap">Tidspunkt</th>
-						<HeaderWithFilter label="Type" field="Type" />
-						<th className="text-right whitespace-nowrap">Inn</th>
-						<HeaderWithFilter label="Inn-Valuta" field="Inn-Valuta" />
-						<th className="text-right whitespace-nowrap">Ut</th>
-						<HeaderWithFilter label="Ut-Valuta" field="Ut-Valuta" />
-						<th className="text-right whitespace-nowrap">Gebyr</th>
-						<th className="whitespace-nowrap hidden md:table-cell">
-							Gebyr-Valuta
+					<tr>
+						<PlainHeader label="Tidspunkt" colKey="tidspunkt" />
+						<HeaderWithFilter label="Type" field="Type" colKey="type" />
+						<PlainHeader label="Inn" colKey="inn" extraClass="text-right" />
+						<HeaderWithFilter
+							label="Inn-Valuta"
+							field="Inn-Valuta"
+							colKey="innValuta"
+						/>
+						<PlainHeader label="Ut" colKey="ut" extraClass="text-right" />
+						<HeaderWithFilter
+							label="Ut-Valuta"
+							field="Ut-Valuta"
+							colKey="utValuta"
+						/>
+						<PlainHeader label="Gebyr" colKey="gebyr" extraClass="text-right" />
+						<th
+							className="relative hidden md:table-cell"
+							style={{ width: colWidths.gebyrValuta, padding: 0 }}
+						>
+							<CellPad>
+								<div className="select-none overflow-hidden truncate">
+									Gebyr-Valuta
+								</div>
+							</CellPad>
+							<Resizer colKey="gebyrValuta" />
 						</th>
-						<HeaderWithFilter label="Marked" field="Marked" />
-						<th className="whitespace-nowrap">Notat</th>
-						<th className="whitespace-nowrap hidden md:table-cell">Explorer</th>
+						<HeaderWithFilter label="Marked" field="Marked" colKey="marked" />
+						<PlainHeader label="Notat" colKey="notat" />
+						<th
+							className="relative whitespace-nowrap text-center hidden md:table-cell"
+							style={{ width: colWidths.explorer }}
+						>
+							<CellPad>
+								<div className="select-none overflow-hidden truncate">
+									Explorer
+								</div>
+							</CellPad>
+							<Resizer colKey="explorer" />
+						</th>
+						{/* stretch header cell (no content, no resizer) */}
+						{hasStretch && (
+							<th
+								style={{ width: stretchWidth, padding: 0 }}
+								aria-hidden="true"
+							/>
+						)}
 					</tr>
 				</thead>
 
-				{/* Virtualized body */}
 				{total === 0 ? (
 					<tbody>
 						<tr>
@@ -997,14 +1219,12 @@ export default function Preview({
 					</tbody>
 				) : (
 					<tbody className="bg-white dark:bg-transparent">
-						{/* top spacer (no border) */}
 						{startIndex > 0 && (
 							<tr style={{ height: startIndex * rowH }}>
 								<td colSpan={1000} />
 							</tr>
 						)}
 
-						{/* visible rows (use bottom border instead of zebra backgrounds) */}
 						{visible.map((it, idx) => {
 							const r = it.r;
 							const idxOriginal = it.i;
@@ -1022,7 +1242,6 @@ export default function Preview({
 									key={rowKey}
 									data-sig={sig || undefined}
 									className={[
-										"[&>td]:px-2 sm:[&>td]:px-3 [&>td]:py-2 transition-colors",
 										"border-b border-slate-100 dark:border-white/10",
 										highlight
 											? "[&>td]:bg-amber-50 dark:[&>td]:bg-amber-900/20"
@@ -1030,7 +1249,7 @@ export default function Preview({
 									].join(" ")}
 									{...attachMeasure}
 								>
-									<td className="font-medium whitespace-normal leading-tight">
+									<td style={{ padding: 0 }}>
 										<TidspunktCell
 											idxOriginal={idxOriginal}
 											value={r.Tidspunkt}
@@ -1038,7 +1257,7 @@ export default function Preview({
 										/>
 									</td>
 
-									<td>
+									<td style={{ padding: 0 }}>
 										<EditableCell
 											idxOriginal={idxOriginal}
 											field={"Type"}
@@ -1047,7 +1266,7 @@ export default function Preview({
 										/>
 									</td>
 
-									<td className="text-right">
+									<td style={{ padding: 0 }}>
 										<EditableCell
 											idxOriginal={idxOriginal}
 											field={"Inn"}
@@ -1057,7 +1276,7 @@ export default function Preview({
 										/>
 									</td>
 
-									<td>
+									<td style={{ padding: 0 }}>
 										<EditableCell
 											idxOriginal={idxOriginal}
 											field={"Inn-Valuta"}
@@ -1066,7 +1285,7 @@ export default function Preview({
 										/>
 									</td>
 
-									<td className="text-right">
+									<td style={{ padding: 0 }}>
 										<EditableCell
 											idxOriginal={idxOriginal}
 											field={"Ut"}
@@ -1076,7 +1295,7 @@ export default function Preview({
 										/>
 									</td>
 
-									<td>
+									<td style={{ padding: 0 }}>
 										<EditableCell
 											idxOriginal={idxOriginal}
 											field={"Ut-Valuta"}
@@ -1085,7 +1304,7 @@ export default function Preview({
 										/>
 									</td>
 
-									<td className="text-right">
+									<td style={{ padding: 0 }}>
 										<EditableCell
 											idxOriginal={idxOriginal}
 											field={"Gebyr"}
@@ -1095,7 +1314,7 @@ export default function Preview({
 										/>
 									</td>
 
-									<td className="hidden md:table-cell">
+									<td className="hidden md:table-cell" style={{ padding: 0 }}>
 										<EditableCell
 											idxOriginal={idxOriginal}
 											field={"Gebyr-Valuta"}
@@ -1104,7 +1323,7 @@ export default function Preview({
 										/>
 									</td>
 
-									<td className="truncate max-w-[9rem] sm:max-w-[12rem]">
+									<td style={{ padding: 0 }}>
 										<EditableCell
 											idxOriginal={idxOriginal}
 											field={"Marked"}
@@ -1114,7 +1333,7 @@ export default function Preview({
 										/>
 									</td>
 
-									<td className="truncate max-w-[10rem] sm:max-w-[14rem]">
+									<td style={{ padding: 0 }}>
 										<EditableCell
 											idxOriginal={idxOriginal}
 											field={"Notat"}
@@ -1123,14 +1342,13 @@ export default function Preview({
 											openEditCell={openEditCell}
 										/>
 									</td>
-
-									<td className="hidden md:table-cell">
+									<td className="text-center hidden md:table-cell">
 										{solscan ? (
 											<Link
 												href={solscan}
 												target="_blank"
 												rel="noopener noreferrer"
-												className="inline-flex items-center gap-1 text-indigo-600 hover:underline justify-center ml-4 dark:text-indigo-400"
+												className="inline-flex items-center justify-center gap-1 text-indigo-600 hover:underline dark:text-indigo-400"
 												title="Åpne i Solscan"
 											>
 												<FiExternalLink className="h-4 w-4" />
@@ -1142,11 +1360,18 @@ export default function Preview({
 											</span>
 										)}
 									</td>
+
+									{/* stretch body cell to ensure rows fill container width when needed */}
+									{hasStretch && (
+										<td
+											style={{ width: stretchWidth, padding: 0 }}
+											aria-hidden="true"
+										/>
+									)}
 								</tr>
 							);
 						})}
 
-						{/* bottom spacer (no border) */}
 						{endIndex < total - 1 && (
 							<tr style={{ height: (total - endIndex - 1) * rowH }}>
 								<td colSpan={1000} />
@@ -1158,12 +1383,19 @@ export default function Preview({
 		);
 	}
 
-	/* ===================== RENDER ===================== */
+	/* ============== RENDER ============== */
+	const modalCardRef = useRef<HTMLDivElement | null>(null);
+
 	return (
 		<section className="mt-6">
-			<div className="rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 ring-1 ring-slate-200/60 dark:ring-slate-800/60">
+			<div
+				className={[
+					"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 ring-1 ring-slate-200/60 dark:ring-slate-800/60",
+					isResizingCol ? "select-none cursor-col-resize" : ""
+				].join(" ")}
+			>
 				<div className="p-4 sm:p-10">
-					{/* Tabs header (side-by-side, no scrolling) */}
+					{/* Tabs header */}
 					<div className="border-b border-slate-200 dark:border-white/10">
 						<div
 							className="flex flex-nowrap items-end -mb-px"
@@ -1222,7 +1454,7 @@ export default function Preview({
 
 					{/* Tabs content */}
 					{activeTab === "attention" ? (
-						<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 max-h-[80vh] overflow-y-auto overscroll-contain dark:border-amber-900/40 dark:bg-amber-500/10">
+						<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 max-h:[80vh] overflow-y-auto overscroll-contain dark:border-amber-900/40 dark:bg-amber-500/10">
 							{issues.length === 0 ? (
 								<div className="text-sm text-emerald-700 dark:text-emerald-400">
 									Ingen uavklarte elementer 🎉
@@ -1402,9 +1634,6 @@ export default function Preview({
 																									rel="noopener noreferrer"
 																									className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:underline dark:text-indigo-400"
 																									title="Åpne i Solscan"
-																									onClick={(e) =>
-																										e.stopPropagation()
-																									}
 																								>
 																									<FiExternalLink className="h-3.5 w-3.5" />
 																									Solscan
@@ -1436,9 +1665,8 @@ export default function Preview({
 							)}
 						</div>
 					) : (
-						/* PREVIEW TAB */
 						<div className="mt-6">
-							{/* Top bar with sorter + maximize + reset filters */}
+							{/* Top bar */}
 							<div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 								<div className="text-xs text-slate-600 dark:text-slate-400">
 									Viser {displayed.length} rader
@@ -1468,7 +1696,6 @@ export default function Preview({
 										<option value="asc">Eldste først</option>
 									</select>
 
-									{/* Maximize toggle (window fill, not Fullscreen API) */}
 									<button
 										type="button"
 										onClick={toggleMaximize}
@@ -1485,12 +1712,15 @@ export default function Preview({
 								</div>
 							</div>
 
-							{/* Normal (embedded) preview */}
+							{/* Embedded preview */}
 							{!isMaximized && (
 								<>
 									<div
 										ref={previewContainerRef}
-										className="relative overflow-auto overscroll-contain rounded-t-xl ring-1 ring-slate-200 contain-content dark:ring-white/10"
+										className={[
+											"relative overflow-auto overscroll-contain rounded-t-xl ring-1 ring-slate-200 contain-content dark:ring-white/10",
+											isResizingCol ? "select-none cursor-col-resize" : ""
+										].join(" ")}
 										style={{ height: previewHeight }}
 										onClick={() => setOpenFilter(null)}
 									>
@@ -1507,14 +1737,13 @@ export default function Preview({
 								</>
 							)}
 
-							{/* Maximized overlay (fills the browser window; modals still work above) */}
+							{/* Maximized overlay */}
 							{isMaximized && (
 								<div
 									className="fixed inset-0 z-40 bg-white dark:bg-[#0b1220]"
 									onClick={() => setOpenFilter(null)}
 								>
 									<div className="h-full flex flex-col p-4 sm:p-6">
-										{/* Sticky top bar inside overlay: re-use sorter and minimize */}
 										<div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 											<div className="text-xs text-slate-600 dark:text-slate-400">
 												Viser {displayed.length} rader
@@ -1555,11 +1784,13 @@ export default function Preview({
 											</div>
 										</div>
 
-										{/* Scroll area fills remaining height */}
 										<div className="flex-1 min-h-0">
 											<div
 												ref={previewContainerRef}
-												className="h-full overflow-auto overscroll-contain rounded-xl ring-1 ring-slate-200 contain-content dark:ring-white/10"
+												className={[
+													"h-full overflow-auto overscroll-contain rounded-xl ring-1 ring-slate-200 contain-content dark:ring-white/10",
+													isResizingCol ? "select-none cursor-col-resize" : ""
+												].join(" ")}
 											>
 												<PreviewTable onMeasureRow={handleMeasureRow} />
 											</div>
@@ -1570,26 +1801,24 @@ export default function Preview({
 						</div>
 					)}
 
-					{/* ===== Global actions & help (belong to preview card) ===== */}
+					{/* Actions & help */}
 					{previewsReady && (
 						<div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-							{rows && (
-								<div className="text-sm">
-									{pendingIssuesCount > 0 ? (
-										<button
-											type="button"
-											onClick={() => setActiveTab("attention")}
-											className="text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 hover:bg-amber-100 dark:text-amber-300 dark:bg-amber-500/10 dark:border-amber-900/40 dark:hover:bg-amber-500/20"
-										>
-											Løs ‘Trenger oppmerksomhet’ først ({pendingIssuesCount})
-										</button>
-									) : (
-										<span className="text-emerald-700 dark:text-emerald-400">
-											Alt ser bra ut ✅
-										</span>
-									)}
-								</div>
-							)}
+							<div className="text-sm">
+								{pendingIssuesCount > 0 ? (
+									<button
+										type="button"
+										onClick={() => setActiveTab("attention")}
+										className="text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 hover:bg-amber-100 dark:text-amber-300 dark:bg-amber-500/10 dark:border-amber-900/40 dark:hover:bg-amber-500/20"
+									>
+										Løs ‘Trenger oppmerksomhet’ først ({pendingIssuesCount})
+									</button>
+								) : (
+									<span className="text-emerald-700 dark:text-emerald-400">
+										Alt ser bra ut ✅
+									</span>
+								)}
+							</div>
 
 							<div className="w-full sm:w-auto">
 								<button
@@ -1610,7 +1839,7 @@ export default function Preview({
 						</div>
 					)}
 
-					{/* Inline editor modal (centered, rounded on all breakpoints) */}
+					{/* Inline editor modal + tooltip */}
 					{editOpen && editTarget && (
 						<div
 							className="fixed inset-0 z-50 bg-black/30 dark:bg-black/40 flex items-center justify-center p-3 sm:p-4"
@@ -1620,10 +1849,10 @@ export default function Preview({
 							aria-labelledby="edit-dialog-title"
 						>
 							<div
+								ref={modalCardRef}
 								className="w-full max-w-[min(100vw-1rem,44rem)] sm:max-w-2xl rounded-2xl overflow-hidden bg-white shadow-2xl ring-1 ring-slate-200 dark:bg-[linear-gradient(180deg,#0e1729_0%,#0b1220_100%)] dark:ring-white/10 flex flex-col max-h-[90vh]"
 								onClick={(e) => e.stopPropagation()}
 							>
-								{/* Sticky header */}
 								<div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#0e1729]/80">
 									<h3
 										id="edit-dialog-title"
@@ -1642,7 +1871,6 @@ export default function Preview({
 									</button>
 								</div>
 
-								{/* Scrollable content */}
 								<div className="px-3 sm:px-4 py-3 sm:py-4 overflow-y-auto">
 									{(editTarget.sig || editTarget.signer) && (
 										<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1689,19 +1917,18 @@ export default function Preview({
 									</div>
 								</div>
 
-								{/* Sticky action bar with centered tooltip */}
 								<ModalActions
 									editScope={editScope}
 									setEditScope={setEditScope}
 									editTarget={editTarget}
 									rows={rows}
 									applyEdit={applyEdit}
+									modalRef={modalCardRef}
 								/>
 							</div>
 						</div>
 					)}
 
-					{/* Help (belongs with preview card) */}
 					<div className="mt-6 rounded-xl bg-gradient-to-r from-emerald-50 to-indigo-50 p-4 text-xs text-slate-600 ring-1 ring-slate-200/70 dark:from-[#0b1220] dark:to-[#0b1220] dark:text-slate-300 dark:ring-white/10">
 						Mapper: <b>Swaps</b> → <code>Handel</code>, <b>SOL/SPL</b> →{" "}
 						<code>Overføring-Inn/Ut</code>, <b>Airdrops</b> →{" "}
@@ -1714,13 +1941,14 @@ export default function Preview({
 	);
 }
 
-/* ===== Modal actions extracted (kept centered tooltip) ===== */
+/* ===== Modal actions (tooltip via PORTAL so it always shows) ===== */
 function ModalActions({
 	editScope,
 	setEditScope,
 	editTarget,
 	rows,
-	applyEdit
+	applyEdit,
+	modalRef
 }: {
 	editScope: "one" | "bySigner" | "bySignature" | "byMarked";
 	setEditScope: (v: "one" | "bySigner" | "bySignature" | "byMarked") => void;
@@ -1733,37 +1961,121 @@ function ModalActions({
 	} | null;
 	rows: KSPreviewRow[] | null;
 	applyEdit: (mode: "one" | "bySigner" | "bySignature" | "byMarked") => void;
+	modalRef: React.RefObject<HTMLDivElement | null>;
 }) {
-	const [tipOpen, setTipOpen] = useState(false);
-	const [tipTop, setTipTop] = useState<number | null>(null);
+	const [open, setOpen] = useState(false);
 	const infoBtnRef = useRef<HTMLButtonElement | null>(null);
+	const tooltipRef = useRef<HTMLDivElement | null>(null);
+	const [coords, setCoords] = useState<{
+		top: number;
+		left: number;
+		width: number;
+	} | null>(null);
 
-	const placeTip = useCallback(() => {
-		const r = infoBtnRef.current?.getBoundingClientRect();
-		if (r) setTipTop(r.bottom + 8);
-	}, []);
+	const computePosition = useCallback(() => {
+		if (!open) return;
+		const desktop = window.matchMedia("(min-width: 640px)").matches;
+		if (desktop && infoBtnRef.current) {
+			const r = infoBtnRef.current.getBoundingClientRect();
+			setCoords({
+				top: r.bottom + 8,
+				left: r.left + r.width / 2,
+				width: Math.min(352, Math.floor(window.innerWidth * 0.9))
+			});
+		} else if (!desktop && modalRef.current) {
+			const r = modalRef.current.getBoundingClientRect();
+			setCoords({
+				top: r.bottom + 8,
+				left: window.innerWidth / 2,
+				width: Math.min(360, Math.floor(window.innerWidth - 24))
+			});
+		}
+	}, [open, modalRef]);
 
 	useEffect(() => {
-		if (!tipOpen) return;
-		placeTip();
-		const onScroll = () => placeTip();
-		const onResize = () => placeTip();
+		if (!open) return;
+		computePosition();
+		const onScroll = () => computePosition();
+		const onResize = () => computePosition();
 		window.addEventListener("scroll", onScroll, true);
 		window.addEventListener("resize", onResize);
 		return () => {
 			window.removeEventListener("scroll", onScroll, true);
 			window.removeEventListener("resize", onResize);
 		};
-	}, [tipOpen, placeTip]);
+	}, [open, computePosition]);
+
+	useEffect(() => {
+		function onDown(e: MouseEvent) {
+			if (!open) return;
+			const t = e.target as Node;
+			if (
+				tooltipRef.current &&
+				!tooltipRef.current.contains(t) &&
+				infoBtnRef.current &&
+				!infoBtnRef.current.contains(t)
+			) {
+				setOpen(false);
+			}
+		}
+		function onKey(e: KeyboardEvent) {
+			if (e.key === "Escape") setOpen(false);
+		}
+		document.addEventListener("mousedown", onDown);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			document.removeEventListener("mousedown", onDown);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [open]);
+
+	const tooltipNode =
+		open && coords
+			? createPortal(
+					<div
+						ref={tooltipRef}
+						role="tooltip"
+						style={{
+							position: "fixed",
+							top: coords.top,
+							left: coords.left,
+							transform: "translateX(-50%)",
+							width: coords.width,
+							zIndex: 100000
+						}}
+						className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-xl dark:border-white/10 dark:bg-[#0f172a] dark:text-slate-200"
+					>
+						<p className="mb-1 font-medium">Hva betyr valgene?</p>
+						<ul className="list-disc space-y-1 pl-4">
+							<li>
+								<b>Bare dette feltet</b> – endrer kun denne cellen (én rad).
+							</li>
+							<li>
+								<b>Alle fra samme underskriver-adresse</b> – endrer alle rader
+								der samme underskriver (signer) har signert.
+							</li>
+							<li>
+								<b>Alle med samme signatur</b> – endrer alle rader som tilhører
+								samme transaksjon (signatur).
+							</li>
+							<li>
+								<b>Alle fra samme marked</b> – endrer alle rader med samme verdi
+								i <code className="ml-1">Marked</code>-feltet.
+							</li>
+						</ul>
+					</div>,
+					document.body
+			  )
+			: null;
 
 	return (
 		<div className="sticky bottom-0 z-10 px-3 sm:px-4 py-2.5 sm:py-3 border-t border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#0e1729]/80">
-			<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+			<div className="flex flex-col sm:flex-row sm:items-center gap-3">
 				<div className="text-[11px] text-slate-500 dark:text-slate-400">
 					Velg hvor endringen skal gjelde.
 				</div>
 
-				<div className="flex flex-wrap items-center gap-2">
+				<div className="flex w-full items-center gap-2 sm:gap-3">
 					<select
 						value={editScope}
 						onChange={(e) =>
@@ -1792,58 +2104,18 @@ function ModalActions({
 						</option>
 					</select>
 
-					{/* Info button + viewport-centered tooltip */}
-					<div className="relative">
-						<button
-							ref={infoBtnRef}
-							type="button"
-							aria-label="Forklaring av alternativer"
-							onMouseEnter={() => {
-								setTipOpen(true);
-								placeTip();
-							}}
-							onMouseLeave={() => setTipOpen(false)}
-							onFocus={() => {
-								setTipOpen(true);
-								placeTip();
-							}}
-							onBlur={() => setTipOpen(false)}
-							onClick={() => {
-								setTipOpen((v) => !v);
-								placeTip();
-							}}
-							className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:focus:bg-white/5"
-						>
-							<FiInfo className="h-4 w-4" />
-						</button>
+					<button
+						ref={infoBtnRef}
+						type="button"
+						aria-label="Forklaring av alternativer"
+						onClick={() => setOpen((v) => !v)}
+						className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:focus:bg-white/5"
+					>
+						<FiInfo className="h-4 w-4" />
+					</button>
 
-						{tipOpen && tipTop !== null && (
-							<div
-								role="tooltip"
-								className="fixed left-1/2 -translate-x-1/2 z-[60] w-[min(92vw,22rem)] rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-xl dark:border-white/10 dark:bg-[#0f172a]/95 dark:text-slate-200 dark:backdrop-blur"
-								style={{ top: tipTop }}
-							>
-								<p className="mb-1 font-medium">Hva betyr valgene?</p>
-								<ul className="list-disc space-y-1 pl-4">
-									<li>
-										<b>Bare dette feltet</b> – endrer kun denne cellen (én rad).
-									</li>
-									<li>
-										<b>Alle fra samme underskriver-adresse</b> – endrer alle
-										rader der samme underskriver (signer) har signert.
-									</li>
-									<li>
-										<b>Alle med samme signatur</b> – endrer alle rader som
-										tilhører samme transaksjon (signatur).
-									</li>
-									<li>
-										<b>Alle fra samme marked</b> – endrer alle rader med samme
-										verdi i<code className="ml-1">Marked</code>-feltet.
-									</li>
-								</ul>
-							</div>
-						)}
-					</div>
+					{/* push 'Lagre' right */}
+					<div className="ml-auto" />
 
 					<button
 						type="button"
@@ -1858,6 +2130,8 @@ function ModalActions({
 					</button>
 				</div>
 			</div>
+
+			{tooltipNode}
 		</div>
 	);
 }

@@ -36,6 +36,9 @@ type ApiResponse = {
 	error?: string;
 };
 
+type SortKey = "token" | "amount" | "mint" | "usd";
+type SortDir = "asc" | "desc";
+
 export default function WalletHoldings({
 	address,
 	includeNFT = false,
@@ -47,7 +50,18 @@ export default function WalletHoldings({
 	const [justCopied, setJustCopied] = useState<"wallet" | string | null>(null);
 	const [collapsed, setCollapsed] = useState(false);
 
-	// --- NEW: refs + computed max height for 10 rows ---
+	// Sorting: default is token amount, descending
+	const [sortKey, setSortKey] = useState<SortKey>("amount");
+	const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+	// Snapshot of the last "checked" inputs (set on rising-edge of `enabled`)
+	const [committed, setCommitted] = useState<{
+		address: string;
+		includeNFT: boolean;
+	} | null>(null);
+	const prevEnabled = useRef<boolean>(enabled);
+
+	// --- refs + computed max height for 10 rows ---
 	const headerRef = useRef<HTMLTableSectionElement | null>(null);
 	const firstRowRef = useRef<HTMLTableRowElement | null>(null);
 	const [maxTableHeightPx, setMaxTableHeightPx] = useState<number | null>(null);
@@ -59,7 +73,6 @@ export default function WalletHoldings({
 			setJustCopied(key);
 			setTimeout(() => setJustCopied((k) => (k === key ? null : k)), 1500);
 		} catch {
-			// Fallback for older browsers
 			const ta = document.createElement("textarea");
 			ta.value = txt;
 			ta.style.position = "fixed";
@@ -76,9 +89,25 @@ export default function WalletHoldings({
 		}
 	}, []);
 
+	/* ================== Commit (freeze) inputs on "Sjekk lommebok" ================== */
 	useEffect(() => {
 		const addr = address?.trim();
-		if (!enabled || !addr) return;
+		const rising = enabled && !prevEnabled.current;
+		const needsInitialCommit = enabled && !!addr && committed === null;
+
+		if ((rising || needsInitialCommit) && addr) {
+			setCommitted({ address: addr, includeNFT });
+		}
+
+		prevEnabled.current = enabled;
+	}, [enabled, address, includeNFT, committed]);
+
+	/* ================== Fetch when committed snapshot changes ================== */
+	useEffect(() => {
+		if (!committed) return;
+
+		// Destructure now so the closure captures non-null values (fixes TS)
+		const { address: cAddress, includeNFT: cIncludeNFT } = committed;
 
 		let cancelled = false;
 		const ctrl = new AbortController();
@@ -90,7 +119,7 @@ export default function WalletHoldings({
 				const res = await fetch("/api/kryptosekken/holdings", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ address: addr, includeNFT }),
+					body: JSON.stringify({ address: cAddress, includeNFT: cIncludeNFT }),
 					signal: ctrl.signal
 				});
 
@@ -108,7 +137,7 @@ export default function WalletHoldings({
 
 				// Client-side safety filter
 				const filtered = (
-					includeNFT ? list : list.filter((h) => !h.isNFT)
+					cIncludeNFT ? list : list.filter((h) => !h.isNFT)
 				).filter((h) => {
 					const n =
 						typeof h.amount === "number"
@@ -130,7 +159,7 @@ export default function WalletHoldings({
 			cancelled = true;
 			ctrl.abort();
 		};
-	}, [address, includeNFT, enabled]);
+	}, [committed]);
 
 	const fmt = useMemo(
 		() => new Intl.NumberFormat("no-NO", { maximumFractionDigits: 12 }),
@@ -147,14 +176,47 @@ export default function WalletHoldings({
 	);
 
 	const shown = useMemo(() => {
-		const byValue = [...holdings].sort((a, b) => {
-			const av = toNum(b.valueUSD); // sort desc; compare b-a (we’ll swap below)
-			const bv = toNum(a.valueUSD);
-			if (av !== bv) return av - bv; // because we flipped a/b
-			return (a.symbol || "").localeCompare(b.symbol || "");
+		const by = [...holdings];
+
+		const numAmount = (h: Holding) =>
+			typeof h.amount === "number"
+				? Number.isFinite(h.amount)
+					? h.amount
+					: 0
+				: toNum(h.amountText);
+
+		by.sort((a, b) => {
+			let diff = 0;
+
+			if (sortKey === "token") {
+				const as = (a.symbol || "").toUpperCase();
+				const bs = (b.symbol || "").toUpperCase();
+				diff = as.localeCompare(bs, "nb", { sensitivity: "base" });
+			} else if (sortKey === "amount") {
+				diff = numAmount(b) - numAmount(a); // default desc
+			} else if (sortKey === "usd") {
+				diff = toNum(b.valueUSD) - toNum(a.valueUSD); // default desc
+			} else if (sortKey === "mint") {
+				diff = (a.mint || "").localeCompare(b.mint || "", "nb", {
+					sensitivity: "base"
+				});
+			}
+
+			// Apply direction
+			if (sortDir === "asc") diff = -diff;
+
+			// Tie-breaker
+			if (diff === 0) {
+				const as = (a.symbol || "").toUpperCase();
+				const bs = (b.symbol || "").toUpperCase();
+				return as.localeCompare(bs, "nb", { sensitivity: "base" });
+			}
+
+			return diff;
 		});
-		return byValue;
-	}, [holdings]);
+
+		return by;
+	}, [holdings, sortKey, sortDir]);
 
 	const totalValueUsdNum = useMemo(
 		() => shown.reduce((acc, h) => acc + toNum(h.valueUSD), 0),
@@ -164,9 +226,8 @@ export default function WalletHoldings({
 		Number.isFinite(totalValueUsdNum) ? totalValueUsdNum : 0
 	);
 
-	// --- NEW: Measure header/row to cap height at ~ 10 rows when needed ---
+	// --- Measure header/row to cap height at ~ 10 rows when needed ---
 	useEffect(() => {
-		// Only calculate when visible (not collapsed), not loading, no error, and there are more than targetRows.
 		if (collapsed || loading || err || shown.length <= targetRows) {
 			setMaxTableHeightPx(null);
 			return;
@@ -175,18 +236,42 @@ export default function WalletHoldings({
 			const headerH = headerRef.current?.getBoundingClientRect().height ?? 0;
 			const rowH = firstRowRef.current?.getBoundingClientRect().height ?? 0;
 			if (rowH > 0) {
-				// A small extra padding to account for borders
 				const fudge = 2;
 				setMaxTableHeightPx(Math.round(headerH + rowH * targetRows + fudge));
 			}
 		};
-		// Wait a frame to ensure layout has settled
 		const raf = requestAnimationFrame(measure);
 		return () => cancelAnimationFrame(raf);
-	}, [shown.length, collapsed, loading, err]);
+	}, [shown.length, collapsed, loading, err, sortKey, sortDir]);
 
-	// Only gate on "enabled" and address. We still render the card even if empty/error.
-	if (!enabled || !address?.trim()) return null;
+	// Only render after a check has been performed (enabled + snapshot present)
+	if (!enabled || !committed || !committed.address) return null;
+
+	// Sorting header helpers
+	const handleSort = (key: SortKey) => {
+		if (key === sortKey) {
+			setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+		} else {
+			setSortKey(key);
+			setSortDir(key === "token" || key === "mint" ? "asc" : "desc");
+		}
+	};
+
+	const ariaSortFor = (key: SortKey): React.AriaAttributes["aria-sort"] => {
+		if (key !== sortKey) return "none";
+		return sortDir === "asc" ? "ascending" : "descending";
+	};
+
+	const SortIcon = ({ active }: { active: boolean }) =>
+		active ? (
+			sortDir === "asc" ? (
+				<FiChevronUp className="h-4 w-4" />
+			) : (
+				<FiChevronDown className="h-4 w-4" />
+			)
+		) : (
+			<span className="inline-block w-4" />
+		);
 
 	return (
 		<section
@@ -213,20 +298,20 @@ export default function WalletHoldings({
 								Nåværende beholdning
 							</h2>
 
-							{/* Row 2: address + copy (+ token count on sm+) */}
+							{/* Row 2: committed address + copy (+ token count on sm+) */}
 							<div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 min-w-0">
 								<span
 									className="truncate font-mono text-[11px] sm:text-[12px] max-w-[28ch] sm:max-w-[50ch]"
-									title={address}
+									title={committed.address}
 								>
-									{address}
+									{committed.address}
 								</span>
 
 								{/* Copy button */}
 								<button
 									type="button"
-									onClick={() => copyText(address || "", "wallet")}
-									disabled={!address}
+									onClick={() => copyText(committed.address || "", "wallet")}
+									disabled={!committed.address}
 									className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] ring-1 ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-white/10 disabled:opacity-50"
 									title="Kopier adresse"
 									aria-label="Kopier adresse"
@@ -325,14 +410,72 @@ export default function WalletHoldings({
 									className="sticky top-0 bg-white dark:bg-[#0e1729] z-10 text-left text-slate-500 dark:text-slate-400"
 								>
 									<tr>
-										<th className="py-2 pr-4 font-medium">Token</th>
-										<th className="py-2 pr-4 font-medium">Mengde</th>
-										<th className="py-2 pr-4 font-medium hidden sm:table-cell">
-											Mint
+										<th
+											scope="col"
+											aria-sort={ariaSortFor("token")}
+											className="py-2 pr-4 font-medium"
+										>
+											<button
+												type="button"
+												onClick={() => handleSort("token")}
+												className="inline-flex items-center gap-1 hover:underline underline-offset-2"
+												title="Sorter alfabetisk"
+											>
+												Token
+												<SortIcon active={sortKey === "token"} />
+											</button>
 										</th>
-										<th className="py-2 pr-0 font-medium text-right">Verdi</th>
+
+										<th
+											scope="col"
+											aria-sort={ariaSortFor("amount")}
+											className="py-2 pr-4 font-medium"
+										>
+											<button
+												type="button"
+												onClick={() => handleSort("amount")}
+												className="inline-flex items-center gap-1 hover:underline underline-offset-2"
+												title="Sorter etter mengde"
+											>
+												Mengde
+												<SortIcon active={sortKey === "amount"} />
+											</button>
+										</th>
+
+										<th
+											scope="col"
+											aria-sort={ariaSortFor("mint")}
+											className="py-2 pr-4 font-medium hidden sm:table-cell"
+										>
+											<button
+												type="button"
+												onClick={() => handleSort("mint")}
+												className="inline-flex items-center gap-1 hover:underline underline-offset-2"
+												title="Sorter etter mint"
+											>
+												Mint
+												<SortIcon active={sortKey === "mint"} />
+											</button>
+										</th>
+
+										<th
+											scope="col"
+											aria-sort={ariaSortFor("usd")}
+											className="py-2 pr-0 font-medium text-right"
+										>
+											<button
+												type="button"
+												onClick={() => handleSort("usd")}
+												className="inline-flex items-center gap-1 hover:underline underline-offset-2"
+												title="Sorter etter verdi (USD)"
+											>
+												Verdi
+												<SortIcon active={sortKey === "usd"} />
+											</button>
+										</th>
 									</tr>
 								</thead>
+
 								<tbody>
 									{shown.map((h, idx) => {
 										const amount =

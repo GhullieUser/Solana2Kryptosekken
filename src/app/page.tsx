@@ -798,7 +798,7 @@ export default function Home() {
 									/>
 
 									{/* right-side actions: clear, history */}
-									<div className="absolute inset-y-0 right-3 flex items-center sm:top-[-19px] gap-1">
+									<div className="absolute inset-y-0 right-3 flex items-center top-[-19px] gap-1">
 										{/* quick clear */}
 										{hasAddressInput && (
 											<button
