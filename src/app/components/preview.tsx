@@ -566,6 +566,8 @@ export default function Preview({
 	}, []);
 
 	// observe container size (height + width)
+	const [scrollTop, setScrollTop] = useState(0);
+	const [viewportH, setViewportH] = useState(0);
 	useEffect(() => {
 		const el = previewContainerRef.current;
 		if (!el) return;
@@ -731,8 +733,6 @@ export default function Preview({
 	const [editScope, setEditScope] = useState<EditScope>("one");
 
 	/* ====== Virtualization state ====== */
-	const [scrollTop, setScrollTop] = useState(0);
-	const [viewportH, setViewportH] = useState(0);
 	const [rowH, setRowH] = useState(40);
 	const overscan = 10;
 
@@ -840,6 +840,7 @@ export default function Preview({
 		setTimeout(() => {
 			const container = previewContainerRef.current;
 			if (!container) return;
+			// find in the filtered+sorted 'displayed'
 			const idx = displayed.findIndex(({ r }) => extractSig(r) === sig);
 			if (idx >= 0) {
 				const target = Math.max(0, idx * rowH - container.clientHeight / 2);
@@ -1051,7 +1052,7 @@ export default function Preview({
 									const checked = !!selected?.has(val);
 									return (
 										<li key={val}>
-											<label className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-slate-50 dark:hover:bg-white/5">
+											<label className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-slate-50 dark:hover:bg:white/5">
 												<span
 													className="truncate text-xs text-slate-800 dark:text-slate-200"
 													title={val}
@@ -1220,7 +1221,7 @@ export default function Preview({
 				) : (
 					<tbody className="bg-white dark:bg-transparent">
 						{startIndex > 0 && (
-							<tr style={{ height: startIndex * rowH }}>
+							<tr aria-hidden="true" style={{ height: startIndex * rowH }}>
 								<td colSpan={1000} />
 							</tr>
 						)}
@@ -1235,6 +1236,13 @@ export default function Preview({
 							}-${r.Inn}-${r.Ut}-${idxOriginal}`;
 							const highlight = sig && highlightSig === sig;
 
+							// ✅ Stable zebra based on absolute index in the displayed list
+							const globalIndex = startIndex + idx;
+							const zebraClass =
+								globalIndex % 2 === 1
+									? "[&>td]:bg-black/10 dark:[&>td]:bg-white/5"
+									: "";
+
 							const attachMeasure = idx === 0 ? { ref: measureRowRef } : {};
 
 							return (
@@ -1243,6 +1251,8 @@ export default function Preview({
 									data-sig={sig || undefined}
 									className={[
 										"border-b border-slate-100 dark:border-white/10",
+										zebraClass,
+										// highlight overrides zebra
 										highlight
 											? "[&>td]:bg-amber-50 dark:[&>td]:bg-amber-900/20"
 											: ""
@@ -1373,7 +1383,10 @@ export default function Preview({
 						})}
 
 						{endIndex < total - 1 && (
-							<tr style={{ height: (total - endIndex - 1) * rowH }}>
+							<tr
+								aria-hidden="true"
+								style={{ height: (total - endIndex - 1) * rowH }}
+							>
 								<td colSpan={1000} />
 							</tr>
 						)}
@@ -1467,7 +1480,7 @@ export default function Preview({
 											type="button"
 											onClick={ignoreAllPending}
 											disabled={!issues.some((i) => i.status === "pending")}
-											className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+											className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 dark:border:white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
 											title="Ignorer alle uavklarte elementer"
 										>
 											Ignorer alle
@@ -1488,7 +1501,7 @@ export default function Preview({
 														Avventer
 													</span>
 												) : it.status === "renamed" ? (
-													<span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
+													<span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text:[11px] text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
 														Endret{it.newName ? ` → ${it.newName}` : ""}
 													</span>
 												) : (
@@ -1668,22 +1681,24 @@ export default function Preview({
 						<div className="mt-6">
 							{/* Top bar */}
 							<div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-								<div className="text-xs text-slate-600 dark:text-slate-400">
-									Viser {displayed.length} rader
-									{filterHasAny ? " (filtrert)" : ""}.
-								</div>
-								<div className="flex flex-wrap items-center gap-2 text-xs">
+								<div className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-2">
+									<span>
+										Viser {displayed.length} av {effectiveRows.length} rader
+										{filterHasAny ? " (filtrert)" : ""}.
+									</span>
+
 									{filterHasAny && (
 										<button
 											type="button"
 											onClick={clearAllFilters}
-											className="rounded-md border border-slate-200 bg-white px-2 py-1.5 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+											className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
 											title="Nullstill alle filtre"
 										>
 											Nullstill filtre
 										</button>
 									)}
-
+								</div>
+								<div className="flex flex-wrap items-center gap-2 text-xs">
 									<span className="text-slate-600 dark:text-slate-300">
 										Sorter:
 									</span>
@@ -1746,7 +1761,8 @@ export default function Preview({
 									<div className="h-full flex flex-col p-4 sm:p-6">
 										<div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 											<div className="text-xs text-slate-600 dark:text-slate-400">
-												Viser {displayed.length} rader
+												{/* ✅ also show "av {effectiveRows.length}" here */}
+												Viser {displayed.length} av {effectiveRows.length} rader
 												{filterHasAny ? " (filtrert)" : ""}.
 											</div>
 											<div className="flex flex-wrap items-center gap-2 text-xs">
@@ -1768,7 +1784,7 @@ export default function Preview({
 													onChange={(e) =>
 														setSortOrder(e.target.value as SortOrder)
 													}
-													className="min-w-[140px] sm:min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+													className="min-w-[140px] sm:min-w-[180px] pr-8 rounded-lg border border-slate-200 bg:white px-2.5 py-1.5 text-xs shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border:white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 												>
 													<option value="desc">Nyeste først</option>
 													<option value="asc">Eldste først</option>
@@ -1850,7 +1866,7 @@ export default function Preview({
 						>
 							<div
 								ref={modalCardRef}
-								className="w-full max-w-[min(100vw-1rem,44rem)] sm:max-w-2xl rounded-2xl overflow-hidden bg-white shadow-2xl ring-1 ring-slate-200 dark:bg-[linear-gradient(180deg,#0e1729_0%,#0b1220_100%)] dark:ring-white/10 flex flex-col max-h-[90vh]"
+								className="w-full max-w:[min(100vw-1rem,44rem)] sm:max-w-2xl rounded-2xl overflow-hidden bg-white shadow-2xl ring-1 ring-slate-200 dark:bg-[linear-gradient(180deg,#0e1729_0%,#0b1220_100%)] dark:ring-white/10 flex flex-col max-h-[90vh]"
 								onClick={(e) => e.stopPropagation()}
 							>
 								<div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#0e1729]/80">
