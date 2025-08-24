@@ -326,7 +326,7 @@ export default function WalletHoldings({
 
 	return (
 		<section
-			className="mt-6 rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 ring-1 ring-slate-200/60 dark:ring-slate-800/60"
+			className="mt-6 rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 dark:shadow-black/15 ring-1 ring-slate-200/60 dark:ring-slate-800/60"
 			aria-label="Beholdning"
 		>
 			{/* Header */}
@@ -393,7 +393,7 @@ export default function WalletHoldings({
 						<button
 							type="button"
 							onClick={() => setCollapsed((v) => !v)}
-							className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto shrink-0"
+							className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto shrink-0"
 							aria-expanded={!collapsed}
 							aria-controls="wallet-holdings-content"
 						>

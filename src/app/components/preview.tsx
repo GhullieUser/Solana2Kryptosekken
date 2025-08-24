@@ -515,7 +515,21 @@ export default function Preview({
 
 	// “Maximize”
 	const [isMaximized, setIsMaximized] = useState(false);
+	// remember preview scroll (normal vs maximized)
+	const savedScrollRef = useRef<{ normal: number; maximized: number }>({
+		normal: 0,
+		maximized: 0
+	});
+	const persistPreviewScroll = useCallback(() => {
+		const el = previewContainerRef.current;
+		if (!el) return;
+		if (isMaximized) savedScrollRef.current.maximized = el.scrollTop;
+		else savedScrollRef.current.normal = el.scrollTop;
+	}, [isMaximized]);
+
 	function toggleMaximize() {
+		// save current mode’s scroll so we can restore when coming back
+		persistPreviewScroll();
 		setIsMaximized((v) => !v);
 	}
 	useEffect(() => {
@@ -572,7 +586,14 @@ export default function Preview({
 		const el = previewContainerRef.current;
 		if (!el) return;
 
-		const onScroll = () => setScrollTop(el.scrollTop);
+		const onScroll = () => {
+			setScrollTop(el.scrollTop);
+			// keep latest scroll saved while we’re on preview
+			if (activeTab === "preview") {
+				if (isMaximized) savedScrollRef.current.maximized = el.scrollTop;
+				else savedScrollRef.current.normal = el.scrollTop;
+			}
+		};
 		el.addEventListener("scroll", onScroll, { passive: true });
 		setScrollTop(el.scrollTop);
 		setViewportH(el.clientHeight);
@@ -830,25 +851,34 @@ export default function Preview({
 		setEditTarget(null);
 		setEditDraft("");
 	}
+	// highlight/jump helpers
+	const lastHighlightTimerRef = useRef<number | null>(null);
+	const lastSnapSigRef = useRef<string | null>(null);
 
-	// jump to sig
 	function jumpToSig(sig: string) {
 		if (!sig) return;
+
+		// show the table
 		setActiveTab("preview");
+		setOpenFilter(null);
+
+		// Try with current filters; only clear if the row is not found
+		const foundInCurrent = displayed.some(({ r }) => extractSig(r) === sig);
+		if (!foundInCurrent) {
+			setFilters({}); // widen view if needed
+		}
+
+		// set highlight
 		setHighlightSig(sig);
 
-		setTimeout(() => {
-			const container = previewContainerRef.current;
-			if (!container) return;
-			// find in the filtered+sorted 'displayed'
-			const idx = displayed.findIndex(({ r }) => extractSig(r) === sig);
-			if (idx >= 0) {
-				const target = Math.max(0, idx * rowH - container.clientHeight / 2);
-				container.scrollTo({ top: target, behavior: "smooth" });
-			}
-		}, 60);
+		// ensure we will snap for this new sig
+		lastSnapSigRef.current = null;
 
-		setTimeout(() => {
+		// schedule highlight removal (no locking)
+		if (lastHighlightTimerRef.current) {
+			window.clearTimeout(lastHighlightTimerRef.current);
+		}
+		lastHighlightTimerRef.current = window.setTimeout(() => {
 			setHighlightSig((curr) => (curr === sig ? null : curr));
 		}, 6000);
 	}
@@ -949,6 +979,94 @@ export default function Preview({
 			</div>
 		);
 	}
+
+	// Snap-to-highlighted row (only once per sig)
+	useEffect(() => {
+		if (activeTab !== "preview" || !highlightSig) return;
+
+		const container = previewContainerRef.current;
+		if (!container) return;
+
+		// If we already snapped for this sig, do nothing (prevents jitter)
+		if (lastSnapSigRef.current === highlightSig) return;
+
+		const centerOn = (top: number) => {
+			const target = Math.max(0, top - Math.floor(container.clientHeight / 2));
+			container.scrollTop = target; // snap (no smooth)
+		};
+
+		const safeAttr = (sig: string) => {
+			const esc = (window as any).CSS?.escape
+				? (window as any).CSS.escape(sig)
+				: sig.replace(/"/g, '\\"');
+			return `tr[data-sig="${esc}"]`;
+		};
+
+		const trySnapToRow = (): boolean => {
+			const row = container.querySelector<HTMLTableRowElement>(
+				safeAttr(highlightSig)
+			);
+			if (!row) return false;
+			centerOn(row.offsetTop);
+			lastSnapSigRef.current = highlightSig; // mark done (don’t re-run)
+			return true;
+		};
+
+		// 1) Try with current (displayed) list
+		let idx = displayed.findIndex(({ r }) => extractSig(r) === highlightSig);
+
+		// 2) If not found (e.g. filters), try the full sorted list so we can still
+		//    estimate and force the row to mount (baseIndexed is effectiveRows with indices)
+		if (idx < 0) {
+			const allSorted = [...baseIndexed].sort((a, b) => {
+				const ta = parseTidspunkt(a.r.Tidspunkt);
+				const tb = parseTidspunkt(b.r.Tidspunkt);
+				return sortOrder === "desc" ? tb - ta : ta - tb;
+			});
+			idx = allSorted.findIndex(({ r }) => extractSig(r) === highlightSig);
+		}
+
+		if (idx >= 0) {
+			// First, jump near the estimated position so virtualization mounts the row
+			centerOn(idx * rowH);
+
+			// Then snap precisely to the actual row once it exists
+			let tries = 0;
+			const tick = () => {
+				if (trySnapToRow()) return;
+				if (tries++ < 30) requestAnimationFrame(tick);
+			};
+			requestAnimationFrame(tick);
+		} else {
+			// Unknown to us (shouldn't happen). Try a few frames anyway.
+			let tries = 0;
+			const tick = () => {
+				if (trySnapToRow()) return;
+				if (tries++ < 30) requestAnimationFrame(tick);
+			};
+			requestAnimationFrame(tick);
+		}
+		// Safe deps: we allow re-run when the displayed list or row height changes,
+		// but snap will still only happen once because of lastSnapSigRef.
+	}, [highlightSig, activeTab, displayed, baseIndexed, rowH, sortOrder]);
+
+	// Restore saved scroll when (re)entering preview (unless we're about to snap)
+	useEffect(() => {
+		if (activeTab !== "preview") return;
+		const el = previewContainerRef.current;
+		if (!el) return;
+		// If we’re going to snap to a highlight, let that effect own the scroll.
+		if (highlightSig && lastSnapSigRef.current !== highlightSig) return;
+
+		const saved = isMaximized
+			? savedScrollRef.current.maximized
+			: savedScrollRef.current.normal;
+
+		requestAnimationFrame(() => {
+			el.scrollTop = saved;
+			setScrollTop(saved);
+		});
+	}, [activeTab, isMaximized, highlightSig]);
 
 	/* ---------- Header with filter + resizer (padding inside, overflow hidden) ---------- */
 	function HeaderWithFilter({
@@ -1052,7 +1170,7 @@ export default function Preview({
 									const checked = !!selected?.has(val);
 									return (
 										<li key={val}>
-											<label className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-slate-50 dark:hover:bg:white/5">
+											<label className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-slate-50 dark:hover:bg-white/5">
 												<span
 													className="truncate text-xs text-slate-800 dark:text-slate-200"
 													title={val}
@@ -1156,7 +1274,7 @@ export default function Preview({
 					{hasStretch && <col style={{ width: stretchWidth }} />}
 				</colgroup>
 
-				<thead className="sticky top-0 z-20 bg-white dark:bg-[#0e1729] text-slate-700 dark:text-slate-200 shadow-sm">
+				<thead className="sticky top-0 z-20 bg-white dark:bg-[#0e1729] text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25">
 					<tr>
 						<PlainHeader label="Tidspunkt" colKey="tidspunkt" />
 						<HeaderWithFilter label="Type" field="Type" colKey="type" />
@@ -1254,7 +1372,7 @@ export default function Preview({
 										zebraClass,
 										// highlight overrides zebra
 										highlight
-											? "[&>td]:bg-amber-50 dark:[&>td]:bg-amber-900/20"
+											? "[&>td]:bg-amber-50 dark:[&>td]:bg-amber-500/20"
 											: ""
 									].join(" ")}
 									{...attachMeasure}
@@ -1403,7 +1521,7 @@ export default function Preview({
 		<section className="mt-6">
 			<div
 				className={[
-					"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 ring-1 ring-slate-200/60 dark:ring-slate-800/60",
+					"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 dark:shadow-black/15 ring-1 ring-slate-200/60 dark:ring-slate-800/60",
 					isResizingCol ? "select-none cursor-col-resize" : ""
 				].join(" ")}
 			>
@@ -1440,6 +1558,8 @@ export default function Preview({
 								role="tab"
 								aria-selected={activeTab === "attention"}
 								onClick={() => {
+									// save current preview scroll before unmounting its container
+									persistPreviewScroll();
 									setActiveTab("attention");
 									setOpenFilter(null);
 								}}
@@ -1467,7 +1587,7 @@ export default function Preview({
 
 					{/* Tabs content */}
 					{activeTab === "attention" ? (
-						<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 max-h:[80vh] overflow-y-auto overscroll-contain dark:border-amber-900/40 dark:bg-amber-500/10">
+						<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 max-h-[80vh] sm:max-h-none overflow-y-auto overscroll-contain dark:border-amber-900/40 dark:bg-amber-500/10">
 							{issues.length === 0 ? (
 								<div className="text-sm text-emerald-700 dark:text-emerald-400">
 									Ingen uavklarte elementer 🎉
@@ -1480,7 +1600,7 @@ export default function Preview({
 											type="button"
 											onClick={ignoreAllPending}
 											disabled={!issues.some((i) => i.status === "pending")}
-											className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50 dark:border:white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+											className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm dark:shadow-black/25 hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
 											title="Ignorer alle uavklarte elementer"
 										>
 											Ignorer alle
@@ -1617,7 +1737,7 @@ export default function Preview({
 																		return (
 																			<li key={`${sig ?? "x"}-${idx}`}>
 																				<div
-																					className="w-full rounded-md bg-white px-2 py-1.5 text-xs shadow-sm ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
+																					className="w-full rounded-md bg-white px-2 py-1.5 text-xs shadow-sm dark:shadow-black/25 ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
 																					title={
 																						sig
 																							? "Gå til rad i forhåndsvisning eller åpne i Solscan"
@@ -1691,7 +1811,7 @@ export default function Preview({
 										<button
 											type="button"
 											onClick={clearAllFilters}
-											className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+											className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
 											title="Nullstill alle filtre"
 										>
 											Nullstill filtre
@@ -1705,7 +1825,7 @@ export default function Preview({
 									<select
 										value={sortOrder}
 										onChange={(e) => setSortOrder(e.target.value as SortOrder)}
-										className="min-w-[140px] sm:min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+										className="min-w-[140px] sm:min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 									>
 										<option value="desc">Nyeste først</option>
 										<option value="asc">Eldste først</option>
@@ -1714,7 +1834,7 @@ export default function Preview({
 									<button
 										type="button"
 										onClick={toggleMaximize}
-										className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+										className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
 										title={isMaximized ? "Lukk maksimering" : "Maksimer"}
 										aria-pressed={isMaximized}
 									>
@@ -1770,7 +1890,7 @@ export default function Preview({
 													<button
 														type="button"
 														onClick={clearAllFilters}
-														className="rounded-md border border-slate-200 bg-white px-2 py-1.5 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+														className="rounded-md border border-slate-200 bg-white px-2 py-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
 														title="Nullstill alle filtre"
 													>
 														Nullstill filtre
@@ -1784,7 +1904,7 @@ export default function Preview({
 													onChange={(e) =>
 														setSortOrder(e.target.value as SortOrder)
 													}
-													className="min-w-[140px] sm:min-w-[180px] pr-8 rounded-lg border border-slate-200 bg:white px-2.5 py-1.5 text-xs shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border:white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+													className="min-w-[140px] sm:min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 												>
 													<option value="desc">Nyeste først</option>
 													<option value="asc">Eldste først</option>
@@ -1792,7 +1912,7 @@ export default function Preview({
 												<button
 													type="button"
 													onClick={toggleMaximize}
-													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
 													title="Lukk maksimering"
 												>
 													<FiMinimize className="h-4 w-4" />
@@ -1912,7 +2032,7 @@ export default function Preview({
 											<select
 												value={editDraft}
 												onChange={(e) => setEditDraft(e.target.value)}
-												className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+												className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 											>
 												{TYPE_OPTIONS.map((t) => (
 													<option key={t} value={t}>
@@ -1926,7 +2046,7 @@ export default function Preview({
 												autoFocus
 												value={editDraft}
 												onChange={(e) => setEditDraft(e.target.value)}
-												className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words min-h-[7rem] dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+												className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words min-h-[7rem] dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 												placeholder="Ny verdi…"
 											/>
 										)}
@@ -2103,7 +2223,7 @@ function ModalActions({
 									| "byMarked"
 							)
 						}
-						className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+						className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 					>
 						<option value="one">Bare dette feltet</option>
 						<option value="bySigner" disabled={!editTarget?.signer}>

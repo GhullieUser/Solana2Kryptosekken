@@ -76,7 +76,7 @@ function ThemePill() {
 		<button
 			type="button"
 			onClick={toggle}
-			className="self-end sm:self-auto inline-flex h-[24px] items-center gap-2 rounded-full bg-white/70 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-white/90 dark:hover:bg-white/10 transition"
+			className="self-end sm:self-auto inline-flex h-[24px] items-center gap-2 rounded-full bg-white/70 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white/90 dark:hover:bg-white/10 transition "
 			title="Bytt lys/mørk"
 			aria-label="Bytt lys/mørk"
 		>
@@ -718,7 +718,7 @@ export default function Home() {
 
 	// Shared card class (proper light/dark)
 	const cardCn =
-		"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 ring-1 ring-slate-200/60 dark:ring-slate-800/60";
+		"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 dark:shadow-black/15 ring-1 ring-slate-200/60 dark:ring-slate-800/60";
 
 	return (
 		<main className="min-h-screen">
@@ -727,7 +727,7 @@ export default function Home() {
 				<header className="mb-8 sm:mb-12">
 					{/* Row: badge + theme pill */}
 					<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-						<div className="inline-flex items-center gap-3 rounded-full bg-white/70 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm">
+						<div className="inline-flex items-center gap-3 rounded-full bg-white/70 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25">
 							<SiSolana className="h-4 w-4" aria-hidden />
 							Solana → Kryptosekken • CSV Generator
 						</div>
@@ -794,7 +794,7 @@ export default function Home() {
 										}}
 										onFocus={() => setAddrMenuOpen(true)}
 										onBlur={() => setTimeout(() => setAddrMenuOpen(false), 120)}
-										className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-11 pr-24 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+										className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-11 pr-24 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 									/>
 
 									{/* right-side actions: clear, history */}
@@ -900,7 +900,7 @@ export default function Home() {
 											placeholder="Navn (valgfritt)"
 											value={walletName}
 											onChange={(e) => setWalletName(e.target.value)}
-											className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-11 pr-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+											className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-11 pr-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 										/>
 
 										{/* Solscan button */}
@@ -913,7 +913,7 @@ export default function Home() {
 											onClick={(e) => {
 												if (!canOpenExplorer) e.preventDefault();
 											}}
-											className={`inline-flex items-center gap-2 rounded-xl border  text-sm shadow-sm aspect-square p-2 h-[37px] w-[37px] justify-center
+											className={`inline-flex items-center gap-2 rounded-xl border  text-sm shadow-sm dark:shadow-black/25 aspect-square p-2 h-[37px] w-[37px] justify-center
                         ${
 													canOpenExplorer
 														? "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-white/10"
@@ -957,7 +957,7 @@ export default function Home() {
 												setCalMonth(range?.to ?? new Date());
 											}}
 											aria-expanded={calOpen}
-											className="inline-flex w-full sm:w-auto items-center justify-between sm:justify-start gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10"
+											className="inline-flex w-full sm:w-auto items-center justify-between sm:justify-start gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10"
 										>
 											<span className="inline-flex items-center gap-2">
 												<FiCalendar className="h-4 w-4 text-slate-500 dark:text-slate-400" />
@@ -1170,7 +1170,7 @@ export default function Home() {
 										<select
 											value={dustMode}
 											onChange={(e) => setDustMode(e.target.value as DustMode)}
-											className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+											className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 										>
 											<option value="off">Vis alle</option>
 											<option value="remove">Skjul</option>
@@ -1195,7 +1195,7 @@ export default function Home() {
 												inputMode="decimal"
 												value={dustThreshold}
 												onChange={(e) => setDustThreshold(e.target.value)}
-												className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+												className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 												placeholder="0.001"
 											/>
 										</div>
@@ -1213,7 +1213,7 @@ export default function Home() {
 												onChange={(e) =>
 													setDustInterval(e.target.value as DustInterval)
 												}
-												className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+												className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 											>
 												<option value="day">Dag</option>
 												<option value="week">Uke</option>
@@ -1259,7 +1259,7 @@ export default function Home() {
 								<button
 									type="submit"
 									disabled={loading}
-									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
+									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
 								>
 									{loading ? (
 										<FiLoader className="h-4 w-4 animate-spin" />
@@ -1272,7 +1272,7 @@ export default function Home() {
 									<button
 										type="button"
 										onClick={onCancel}
-										className="inline-flex  items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 shadow-sm hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300 active:scale-[0.99] w-full sm:w-auto"
+										className="inline-flex  items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 shadow-sm dark:shadow-black/25 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300 active:scale-[0.99] w-full sm:w-auto"
 									>
 										<FiX className="h-4 w-4" />
 										Avbryt
@@ -1281,7 +1281,7 @@ export default function Home() {
 								<button
 									type="button"
 									onClick={onReset}
-									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] w-full sm:w-auto"
+									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] w-full sm:w-auto"
 								>
 									Nullstill
 								</button>
@@ -1306,7 +1306,7 @@ export default function Home() {
 									<button
 										type="button"
 										onClick={() => setLogOpen((v) => !v)}
-										className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto justify-center"
+										className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto justify-center"
 										title="Vis/skjul logg"
 									>
 										<FiActivity className="h-4 w-4" />
