@@ -31,7 +31,9 @@ type CacheVal = {
 	count: number;
 	createdAt: number;
 	sigToSigner?: Record<string, string>;
+	recipients?: Record<string, string>;
 };
+
 const CACHE = new Map<string, CacheVal>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -68,6 +70,59 @@ const LAMPORTS_PER_SOL = 1_000_000_000;
 function lamportsToSol(l: number | string): number {
 	const n = typeof l === "string" ? parseInt(l, 10) : l;
 	return n / LAMPORTS_PER_SOL;
+}
+
+function pickNativeRecipient(tx: HeliusTx, self: string): string | undefined {
+	const outs = (tx.nativeTransfers ?? []).filter(
+		(n) => n?.fromUserAccount === self
+	);
+	if (!outs.length) return undefined;
+	outs.sort((a, b) => Number(b?.amount ?? 0) - Number(a?.amount ?? 0));
+	return outs[0]?.toUserAccount;
+}
+
+function pickTokenRecipient(tx: HeliusTx, self: string): string | undefined {
+	const outs = (tx.tokenTransfers ?? []).filter(
+		(t: any) => t?.fromUserAccount === self
+	);
+	if (!outs.length) return undefined;
+	const amt = (t: any) =>
+		Number(t?.rawTokenAmount?.tokenAmount ?? t?.tokenAmount ?? 0);
+	outs.sort((a: any, b: any) => amt(b) - amt(a));
+	// Prefer user account, otherwise token account
+	return outs[0]?.toUserAccount ?? outs[0]?.toTokenAccount;
+}
+
+function pickAnyRecipient(tx: HeliusTx, self: string): string | undefined {
+	return pickNativeRecipient(tx, self) ?? pickTokenRecipient(tx, self);
+}
+
+function pickAnySender(tx: HeliusTx, self: string): string | undefined {
+	// largest native in
+	const insN = (tx.nativeTransfers ?? []).filter(
+		(n) => n?.toUserAccount === self
+	);
+	if (insN.length) {
+		insN.sort((a, b) => Number(b?.amount ?? 0) - Number(a?.amount ?? 0));
+		return insN[0]?.fromUserAccount;
+	}
+	// largest token in
+	const insT = (tx.tokenTransfers ?? []).filter(
+		(t: any) => t?.toUserAccount === self
+	);
+	if (insT.length) {
+		const amt = (t: any) =>
+			Number(t?.rawTokenAmount?.tokenAmount ?? t?.tokenAmount ?? 0);
+		insT.sort((a: any, b: any) => amt(b) - amt(a));
+		// prefer user account, else token account
+		return insT[0]?.fromUserAccount ?? insT[0]?.fromTokenAccount;
+	}
+	return undefined;
+}
+
+function pickAnyCounterparty(tx: HeliusTx, self: string): string | undefined {
+	// Outgoing → recipient; Incoming → sender
+	return pickAnyRecipient(tx, self) ?? pickAnySender(tx, self);
 }
 
 function sum<T>(arr: T[], f: (x: T) => number): number {
@@ -857,6 +912,207 @@ function processDust(
 
 	return rows;
 }
+function consolidateRowsBySignature(
+	rows: KSRow[],
+	txBySig: Map<string, HeliusTx> | undefined,
+	address: string
+): KSRow[] {
+	const groups = new Map<string, KSRow[]>();
+	const specials: KSRow[] = [];
+
+	for (const r of rows) {
+		const sig = extractSigFromNotat(r.Notat || "");
+		// keep dust aggregates or rows without a signature as-is
+		if (!sig || r.Marked === "AGGREGERT-STØV" || r.Notat.startsWith("agg:")) {
+			specials.push(r);
+			continue;
+		}
+		const arr = groups.get(sig) || [];
+		arr.push(r);
+		groups.set(sig, arr);
+	}
+
+	const dec = (s: string) => {
+		const n = parseFloat((s || "0").replace(/,/g, ""));
+		return Number.isFinite(n) ? n : 0;
+	};
+
+	const preferMarket = (cands: string[]): string => {
+		// preference order
+		const rank = (mkt: string) => {
+			const u = (mkt || "").toUpperCase();
+			if (u.includes("LIQUIDITY")) return 10;
+			if (u.includes("PUMP")) return 9;
+			if (u.includes("GMGN")) return 8;
+			if (u.includes("JUPITER")) return 7;
+			if (u.includes("RAYDIUM")) return 6;
+			if (u.includes("ORCA")) return 5;
+			if (u.includes("METEORA")) return 4;
+			if (u.includes("SABER")) return 3;
+			if (u.includes("SOLANA DEX")) return 2;
+			if (u === "SOLANA" || u === "SPL" || u === "SOLANA-NFT") return 1;
+			return 0;
+		};
+		let best = "";
+		let bestScore = -1;
+		// most frequent, then by rank
+		const freq = new Map<string, number>();
+		for (const m of cands) freq.set(m, (freq.get(m) || 0) + 1);
+		for (const [m, f] of freq.entries()) {
+			const s = f * 100 + rank(m);
+			if (s > bestScore) {
+				bestScore = s;
+				best = m;
+			}
+		}
+		return best || (cands[0] ?? "");
+	};
+
+	const isDexy = (m: string) => {
+		const u = (m || "").toUpperCase();
+		return (
+			u.includes("JUPITER") ||
+			u.includes("DEX") ||
+			u.includes("RAYDIUM") ||
+			u.includes("ORCA") ||
+			u.includes("METEORA") ||
+			u.includes("GMGN") ||
+			u.includes("PUMP")
+		);
+	};
+
+	const out: KSRow[] = [...specials];
+
+	for (const [sig, arr] of groups.entries()) {
+		if (arr.length === 1) {
+			out.push(arr[0]);
+			continue;
+		}
+
+		// gather totals
+		const pos = new Map<string, number>(); // Inn by symbol
+		const neg = new Map<string, number>(); // Ut by symbol
+		let feeSOL = 0;
+		const markets: string[] = [];
+		let time = arr[0].Tidspunkt;
+
+		// keep a helpful note prefix if present, e.g. "LIQUIDITY ADD"
+		const notePrefix = (
+			arr
+				.find((r) => r.Notat.toUpperCase().includes("LIQUIDITY"))
+				?.Notat.split("sig:")[0] || ""
+		).trim();
+
+		for (const r of arr) {
+			time = r.Tidspunkt > time ? r.Tidspunkt : time;
+			markets.push(r.Marked);
+			feeSOL += dec(r.Gebyr);
+
+			const inn = dec(r.Inn);
+			const innSym = (r["Inn-Valuta"] || "").trim();
+			const ut = dec(r.Ut);
+			const utSym = (r["Ut-Valuta"] || "").trim();
+
+			if (inn > 0 && innSym) pos.set(innSym, (pos.get(innSym) || 0) + inn);
+			if (ut > 0 && utSym) neg.set(utSym, (neg.get(utSym) || 0) + ut);
+		}
+
+		const market = preferMarket(markets);
+
+		const pickLargest = (m: Map<string, number>) => {
+			let best: [string, number] | null = null;
+			for (const [sym, val] of m.entries()) {
+				if (!best || val > best[1]) best = [sym, val];
+			}
+			return best;
+		};
+
+		const hasPos = pos.size > 0;
+		const hasNeg = neg.size > 0;
+
+		// If it looks like a plain transfer (no DEX/AMM-like market), use real native delta.
+		const treatAsTransfer = !Array.from(new Set(markets)).some(isDexy);
+
+		let type: KSRow["Type"];
+		let innAmt = 0,
+			innSym = "";
+		let utAmt = 0,
+			utSym = "";
+
+		if (hasPos && hasNeg) {
+			if (treatAsTransfer && txBySig) {
+				const tx = txBySig.get(sig);
+				const nativeDelta = tx ? getUserLamportsDeltaSOL(tx, address) : null;
+				if (nativeDelta != null && nativeDelta !== 0) {
+					// 🔁 Changed: classify as Overføring-Inn / Overføring-Ut (not Erverv/Tap) for non-liquidity signatures
+					if (nativeDelta > 0) {
+						type = "Overføring-Inn";
+						innAmt = nativeDelta + feeSOL; // gross in; net = innAmt - feeSOL = nativeDelta
+						innSym = "SOL";
+					} else {
+						type = "Overføring-Ut";
+						utAmt = Math.max(0, -nativeDelta - feeSOL); // gross out; net = -utAmt - feeSOL = nativeDelta
+						utSym = "SOL";
+					}
+				} else {
+					// fallback to swap-like
+					const p = pickLargest(pos)!;
+					const n = pickLargest(neg)!;
+					type = "Handel";
+					innSym = p[0];
+					innAmt = p[1];
+					utSym = n[0];
+					utAmt = n[1];
+				}
+			} else {
+				// swap-like
+				const p = pickLargest(pos)!;
+				const n = pickLargest(neg)!;
+				type = "Handel";
+				innSym = p[0];
+				innAmt = p[1];
+				utSym = n[0];
+				utAmt = n[1];
+			}
+		} else if (hasPos) {
+			const p = pickLargest(pos)!;
+			// 🔁 Changed: Overføring-Inn instead of Erverv
+			type = "Overføring-Inn";
+			innSym = p[0];
+			innAmt = p[1];
+		} else if (hasNeg) {
+			const n = pickLargest(neg)!;
+			// 🔁 Changed: Overføring-Ut instead of Tap
+			type = "Overføring-Ut";
+			utSym = n[0];
+			utAmt = n[1];
+		} else {
+			// nothing meaningful — keep first row
+			out.push(arr[0]);
+			continue;
+		}
+
+		const prefix = notePrefix ? notePrefix + " " : "";
+		out.push({
+			Tidspunkt: time,
+			Type: type,
+			Inn: innAmt > 0 ? toAmountString(numberToPlain(innAmt)) : "0",
+			"Inn-Valuta": innAmt > 0 ? currencyCode(innSym) : "",
+			Ut: utAmt > 0 ? toAmountString(numberToPlain(utAmt)) : "0",
+			"Ut-Valuta": utAmt > 0 ? currencyCode(utSym) : "",
+			Gebyr: feeSOL > 0 ? toAmountString(numberToPlain(feeSOL)) : "0",
+			"Gebyr-Valuta": feeSOL > 0 ? "SOL" : "",
+			Marked: market || "SOLANA",
+			Notat: `${prefix}sig:${sig}`
+		});
+	}
+
+	// keep stable order
+	out.sort((a, b) =>
+		a.Tidspunkt < b.Tidspunkt ? -1 : a.Tidspunkt > b.Tidspunkt ? 1 : 0
+	);
+	return out;
+}
 
 /* ================= Wallet tag for Notat ================= */
 function walletTag(address: string, walletName?: string): string {
@@ -1467,6 +1723,38 @@ function classifyTxToRows(opts: {
 			});
 		}
 	}
+	// === 8) Safety net: if user's SOL balance changed, emit a transfer row
+	{
+		const delta = getUserLamportsDeltaSOL(tx, address);
+		if (rows.length === 0 && delta && delta !== 0) {
+			const feeSol = userPaidFee && tx.fee ? lamportsToSol(tx.fee) : 0;
+
+			if (delta > 0) {
+				// meta delta includes fee; add it back so amounts + Gebyr reconcile
+				const grossIn = delta + feeSol;
+				pushRow({
+					Type: "Overføring-Inn",
+					Inn: grossIn,
+					"Inn-Valuta": "SOL",
+					Ut: 0,
+					"Ut-Valuta": "",
+					Marked: "SOLANA"
+				});
+			} else {
+				// meta delta includes fee; remove it so Gebyr carries the fee separately
+				const grossOut = Math.max(0, -delta - feeSol);
+				pushRow({
+					Type: "Overføring-Ut",
+					Inn: 0,
+					"Inn-Valuta": "",
+					Ut: grossOut,
+					"Ut-Valuta": "SOL",
+					Marked: "SOLANA"
+				});
+			}
+			return rows;
+		}
+	}
 
 	return rows;
 }
@@ -1577,18 +1865,25 @@ function rowIdOfTagged(r: KSRow) {
 const attachSigAndSigner = (
 	rows: KSRow[],
 	tag: string,
-	sigToSigner: Map<string, string> | Record<string, string>
+	sigToSigner: Map<string, string> | Record<string, string>,
+	sigToRecipient?: Map<string, string> | Record<string, string>
 ) => {
-	const map =
+	const signerMap =
 		sigToSigner instanceof Map
 			? sigToSigner
 			: new Map(Object.entries(sigToSigner || {}));
+	const recipMap =
+		sigToRecipient instanceof Map
+			? sigToRecipient
+			: new Map(Object.entries(sigToRecipient || {}));
+
 	return rows.map((r) => {
 		const withTag = { ...r, Notat: `${tag} - ${r.Notat}` };
 		const sig = extractSigFromNotat(withTag.Notat || "");
-		const signer = sig ? map.get(sig) : undefined;
+		const signer = sig ? signerMap.get(sig!) : undefined;
+		const recipient = sig ? recipMap.get(sig!) : undefined; // hidden field
 		const rowId = rowIdOfTagged(withTag);
-		return { ...withTag, signature: sig, signer, rowId } as any;
+		return { ...withTag, signature: sig, signer, recipient, rowId } as any;
 	});
 };
 
@@ -1607,8 +1902,11 @@ function applyClientEdits<T extends KSRow>(
 
 const getOrNull = (key: string) => {
 	const v = getCache(key);
-	return v ? { ...v, sigToSigner: v.sigToSigner ?? {} } : null;
+	return v
+		? { ...v, sigToSigner: v.sigToSigner ?? {}, recipients: v.recipients ?? {} }
+		: null;
 };
+
 const putCache = (key: string, payload: Omit<CacheVal, "createdAt">) =>
 	setCache(key, { ...payload, createdAt: Date.now() });
 
@@ -1815,7 +2113,7 @@ function postProcessAndCache(
 				return typeof fp === "string" && fp ? fp : undefined;
 		  };
 
-	const processed = processDust(rows, {
+	const processedAfterDust = processDust(rows, {
 		mode: ctx.dustMode,
 		threshold: ctx.dustThreshold,
 		interval: ctx.dustInterval,
@@ -1824,19 +2122,40 @@ function postProcessAndCache(
 		selfAddress: ctx.address
 	});
 
+	const txMap = sigMapOrSigner as Map<string, HeliusTx>;
+
+	const consolidated = consolidateRowsBySignature(
+		processedAfterDust,
+		txMap,
+		ctx.address
+	);
+
+	// NEW: counterparty for in & out
+	let sigToRecipient: Map<string, string> | undefined;
+	if (txMap && typeof txMap.get === "function") {
+		sigToRecipient = new Map<string, string>();
+		for (const [sig, tx] of txMap.entries()) {
+			const cp = pickAnyCounterparty(tx, ctx.address);
+			if (cp) sigToRecipient.set(sig, cp);
+		}
+	}
+
 	const res: ClassifyResult = {
 		rowsRaw: rows,
-		rowsProcessed: processed,
-		count: processed.length,
+		rowsProcessed: consolidated,
+		count: consolidated.length,
 		rawCount: rows.length
 	};
 
 	putCache(ctx.cacheKey, {
-		rowsProcessed: processed,
+		rowsProcessed: consolidated,
 		count: res.count,
 		rawCount: res.rawCount,
 		sigToSigner: selfSignerMap
 			? Object.fromEntries(selfSignerMap.entries())
+			: undefined,
+		recipients: sigToRecipient
+			? Object.fromEntries(sigToRecipient.entries())
 			: undefined
 	});
 
@@ -1937,7 +2256,8 @@ export async function POST(req: NextRequest) {
 						const rowsPreview = attachSigAndSigner(
 							cached.rowsProcessed,
 							walletTagStr,
-							cached.sigToSigner
+							cached.sigToSigner,
+							cached.recipients
 						);
 
 						await send({
@@ -1980,17 +2300,18 @@ export async function POST(req: NextRequest) {
 							fromISO,
 							toISO
 						});
-
 						const result = postProcessAndCache(
 							ctx,
 							rows,
 							scan.sigMap,
 							scan.sigToSigner
 						);
+						const cacheNow = getCache(ctx.cacheKey); // ← just saved
 						const rowsPreview = attachSigAndSigner(
 							result.rowsProcessed,
 							walletTagStr,
-							scan.sigToSigner
+							scan.sigToSigner,
+							cacheNow?.recipients ?? {}
 						);
 
 						await send({
@@ -2028,8 +2349,10 @@ export async function POST(req: NextRequest) {
 				const rowsOutRaw = attachSigAndSigner(
 					cached.rowsProcessed,
 					walletTagStr,
-					cached.sigToSigner
+					cached.sigToSigner,
+					cached.recipients
 				);
+
 				// Apply client edits BEFORE overrides so both JSON and CSV stay consistent
 				let rowsOut = applyClientEdits(rowsOutRaw, body.clientEdits);
 				rowsOut = applyOverridesToRows(rowsOut, body.overrides);
@@ -2067,7 +2390,8 @@ export async function POST(req: NextRequest) {
 			const rowsOutRaw = attachSigAndSigner(
 				result.rowsProcessed,
 				walletTagStr,
-				scan.sigToSigner
+				scan.sigToSigner,
+				getCache(ctx.cacheKey)?.recipients ?? {}
 			);
 
 			let rowsOut = applyClientEdits(rowsOutRaw, body.clientEdits);

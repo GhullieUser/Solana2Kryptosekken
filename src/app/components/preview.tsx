@@ -7,16 +7,17 @@ import Link from "next/link";
 import {
 	FiExternalLink,
 	FiEdit,
-	FiCopy,
 	FiDownload,
 	FiX,
-	FiInfo,
 	FiMaximize,
 	FiMinimize,
-	FiFilter
+	FiFilter,
+	FiRotateCcw,
+	FiRotateCw
 } from "react-icons/fi";
 
 import type { KSRow, KSPreviewRow, OverrideMaps } from "../page";
+import ModalEditor from "@components/edit-modal";
 
 /* ---------- local helpers & constants (duplicated here for isolation) ---------- */
 type IssueKind = "unknown-token" | "unknown-market";
@@ -94,6 +95,26 @@ function extractSig(row: KSPreviewRow): string | undefined {
 	return m?.[1];
 }
 
+function getRecipientFromRow(row: KSPreviewRow | any): string | undefined {
+	if (!row) return undefined;
+	// Try common keys used in your data
+	// (add/remove keys here if your dataset uses different ones)
+	const v =
+		row.recipient ??
+		row.mottaker ??
+		row.Mottaker ??
+		row.receiver ??
+		row.Receiver ??
+		row.to ??
+		row.To ??
+		row.til ??
+		row.Til ??
+		row["Mottaker-adresse"] ??
+		row["mottaker-adresse"] ??
+		row["Receiver Address"];
+	return typeof v === "string" ? v : undefined;
+}
+
 type SortOrder = "desc" | "asc";
 
 /** Columns in the preview table, in visual order */
@@ -142,71 +163,18 @@ const COL_ORDER: ColKey[] = [
 	"explorer"
 ];
 
+/** Unified select styling (match expanded counterpart; avoid bright white border) */
+const SELECT_STYLE =
+	"min-w-[140px] sm:min-w-[180px] pr-8 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs shadow-sm " +
+	"focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 " +
+	"dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-indigo-900/40";
+
 /* ---------- tiny utils ---------- */
 function middleEllipsis(s: string, start = 10, end = 8) {
 	if (!s) return "";
 	return s.length <= start + end + 1
 		? s
 		: `${s.slice(0, start)}…${s.slice(-end)}`;
-}
-
-/* ---------- Meta box (unchanged) ---------- */
-function MetaBox({
-	label,
-	value,
-	link
-}: {
-	label: string;
-	value: string;
-	link?: string;
-}) {
-	const [copied, setCopied] = useState(false);
-	return (
-		<div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 dark:border-white/10 dark:bg-white/5">
-			<div className="min-w-0">
-				<div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-					{label}
-				</div>
-				<div
-					className="font-mono text-[12px] text-slate-800 dark:text-slate-200"
-					title={value}
-				>
-					{middleEllipsis(value)}
-				</div>
-			</div>
-
-			<div className="shrink-0 inline-flex items-center gap-1.5">
-				<button
-					type="button"
-					onClick={async () => {
-						try {
-							await navigator.clipboard.writeText(value);
-							setCopied(true);
-							setTimeout(() => setCopied(false), 1200);
-						} catch {}
-					}}
-					className="rounded p-1 text-slate-600 hover:bg-white hover:text-slate-900 ring-1 ring-transparent hover:ring-slate-200 dark:text-slate-300 dark:hover:bg-white/5 dark:hover:text-slate-100"
-					aria-label="Kopier"
-					title={copied ? "Kopiert!" : "Kopier"}
-				>
-					<FiCopy className="h-4 w-4" />
-				</button>
-
-				{link && (
-					<Link
-						href={link}
-						target="_blank"
-						rel="noopener noreferrer"
-						className="rounded p-1 text-indigo-600 hover:bg-white hover:text-indigo-700 ring-1 ring-transparent hover:ring-indigo-200 dark:text-indigo-400 dark:hover:bg-white/5 dark:hover:text-indigo-300"
-						aria-label="Åpne i explorer"
-						title="Åpne i explorer"
-					>
-						<FiExternalLink className="h-4 w-4" />
-					</Link>
-				)}
-			</div>
-		</div>
-	);
 }
 
 /* ---------- Shared padded wrapper for cells (padding here, td/th are padding:0) ---------- */
@@ -216,7 +184,7 @@ function CellPad({ children }: { children: React.ReactNode }) {
 	);
 }
 
-/* ---------- Edit chrome (hover highlight now perfectly aligned) ---------- */
+/* ---------- Edit chrome ---------- */
 function CellChrome({
 	children,
 	onEdit,
@@ -262,7 +230,6 @@ function CellChrome({
 					: undefined
 			}
 		>
-			{/* full cell hover (no negative insets -> perfect align with column) */}
 			<span className="pointer-events-none absolute inset-[-5px] z-0 rounded ring-1 ring-transparent group-hover:ring-emerald-300/80 group-hover:bg-emerald-50/60 dark:group-hover:ring-emerald-500/40 dark:group-hover:bg-emerald-500/10 transition" />
 			<div
 				className={`relative z-10 ${
@@ -389,7 +356,13 @@ type Props = {
 	onDownloadCSV: (overrides: OverrideMaps) => void;
 };
 
-type EditScope = "one" | "bySigner" | "bySignature" | "byMarked";
+type EditScope =
+	| "one"
+	| "bySigner"
+	| "bySignature"
+	| "byMarked"
+	| "byRecipient";
+
 type FilterableField = "Type" | "Inn-Valuta" | "Ut-Valuta" | "Marked";
 type Filters = Partial<Record<FilterableField, Set<string>>>;
 
@@ -409,6 +382,26 @@ export default function Preview({
 	const [colWidths, setColWidths] = useState<Record<ColKey, number>>(() => ({
 		...DEFAULT_COL_WIDTHS
 	}));
+	/** Dynamically measured minimum widths for header titles (to always fit contents incl. filter & clear buttons) */
+	const [headerMinW, setHeaderMinW] = useState<Partial<Record<ColKey, number>>>(
+		{}
+	);
+
+	const ensureMinWidth = useCallback((key: ColKey, px: number) => {
+		const want = Math.min(MAX_COL_WIDTH, Math.ceil(px));
+		setHeaderMinW((prev) => {
+			if (prev[key] === want) return prev;
+			const next = { ...prev, [key]: want };
+			// enforce immediately on colWidths if user-resized narrower
+			setColWidths((cw) => {
+				const minForThis = Math.max(MIN_COL_WIDTH, want);
+				if ((cw[key] ?? 0) >= minForThis) return cw;
+				return { ...cw, [key]: minForThis };
+			});
+			return next;
+		});
+	}, []);
+
 	const tableColsWidth = useMemo(
 		() => COL_ORDER.reduce((acc, k) => acc + (colWidths[k] || 0), 0),
 		[colWidths]
@@ -432,6 +425,7 @@ export default function Preview({
 			for (const k of COL_ORDER) {
 				const w = saved[k];
 				if (typeof w === "number" && isFinite(w)) {
+					// don't allow below (yet unknown) dynamic header min; clamp later when measured
 					next[k] = Math.min(MAX_COL_WIDTH, Math.max(MIN_COL_WIDTH, w));
 				}
 			}
@@ -470,10 +464,8 @@ export default function Preview({
 			const r = resizingRef.current;
 			if (!r) return;
 			const dx = e.clientX - r.startX;
-			const next = Math.min(
-				MAX_COL_WIDTH,
-				Math.max(MIN_COL_WIDTH, r.startW + dx)
-			);
+			const minForThis = Math.max(MIN_COL_WIDTH, headerMinW[r.key] || 0);
+			const next = Math.min(MAX_COL_WIDTH, Math.max(minForThis, r.startW + dx));
 			setColWidths((prev) => ({ ...prev, [r.key]: next }));
 			e.preventDefault();
 		}
@@ -491,7 +483,7 @@ export default function Preview({
 			window.removeEventListener("mousemove", onMove);
 			window.removeEventListener("mouseup", onUp);
 		};
-	}, []);
+	}, [headerMinW]);
 
 	const handleResizerMouseDown = useCallback(
 		(key: ColKey, e: React.MouseEvent) => {
@@ -502,9 +494,18 @@ export default function Preview({
 		[startResize]
 	);
 
-	const resetWidthToDefault = useCallback((key: ColKey) => {
-		setColWidths((prev) => ({ ...prev, [key]: DEFAULT_COL_WIDTHS[key] }));
-	}, []);
+	const resetWidthToDefault = useCallback(
+		(key: ColKey) => {
+			setColWidths((prev) => {
+				const minForThis = Math.max(MIN_COL_WIDTH, headerMinW[key] || 0);
+				return {
+					...prev,
+					[key]: Math.max(DEFAULT_COL_WIDTHS[key], minForThis)
+				};
+			});
+		},
+		[headerMinW]
+	);
 
 	// filters
 	const [filters, setFilters] = useState<Filters>({});
@@ -528,7 +529,6 @@ export default function Preview({
 	}, [isMaximized]);
 
 	function toggleMaximize() {
-		// save current mode’s scroll so we can restore when coming back
 		persistPreviewScroll();
 		setIsMaximized((v) => !v);
 	}
@@ -588,7 +588,6 @@ export default function Preview({
 
 		const onScroll = () => {
 			setScrollTop(el.scrollTop);
-			// keep latest scroll saved while we’re on preview
 			if (activeTab === "preview") {
 				if (isMaximized) savedScrollRef.current.maximized = el.scrollTop;
 				else savedScrollRef.current.normal = el.scrollTop;
@@ -611,7 +610,7 @@ export default function Preview({
 		};
 	}, [isMaximized, previewHeight, activeTab]);
 
-	// Effective rows with overrides applied (only for display)
+	// Effective rows with overrides applied
 	const effectiveRows: KSPreviewRow[] = useMemo(() => {
 		if (!rows) return [];
 		const mapSym = overrides.symbols;
@@ -753,6 +752,77 @@ export default function Preview({
 	const [editDraft, setEditDraft] = useState("");
 	const [editScope, setEditScope] = useState<EditScope>("one");
 
+	/* ===== Undo / Redo ===== */
+	const MAX_HISTORY = 10;
+	const [undoStack, setUndoStack] = useState<KSPreviewRow[][]>([]);
+	const [redoStack, setRedoStack] = useState<KSPreviewRow[][]>([]);
+
+	const cloneRows = useCallback(
+		(arr: KSPreviewRow[]) => arr.map((r) => ({ ...r })),
+		[]
+	);
+
+	const pushUndoSnapshot = useCallback(() => {
+		if (!rows) return;
+		setUndoStack((prev) => {
+			const next = [...prev, cloneRows(rows)];
+			return next.length > MAX_HISTORY
+				? next.slice(next.length - MAX_HISTORY)
+				: next;
+		});
+		setRedoStack([]); // new change invalidates redo
+	}, [rows, cloneRows]);
+
+	const canUndo = undoStack.length > 0;
+	const canRedo = redoStack.length > 0;
+
+	const undo = useCallback(() => {
+		if (!rows || !canUndo) return;
+		const prevState = undoStack[undoStack.length - 1];
+		setUndoStack((s) => s.slice(0, -1));
+		setRedoStack((s) => {
+			const next = [...s, cloneRows(rows)];
+			return next.length > MAX_HISTORY
+				? next.slice(next.length - MAX_HISTORY)
+				: next;
+		});
+		setRows(cloneRows(prevState));
+	}, [rows, canUndo, undoStack, cloneRows, setRows]);
+
+	const redo = useCallback(() => {
+		if (!rows || !canRedo) return;
+		const nextState = redoStack[redoStack.length - 1];
+		setRedoStack((s) => s.slice(0, -1));
+		setUndoStack((s) => {
+			const next = [...s, cloneRows(rows)];
+			return next.length > MAX_HISTORY
+				? next.slice(next.length - MAX_HISTORY)
+				: next;
+		});
+		setRows(cloneRows(nextState));
+	}, [rows, canRedo, redoStack, cloneRows, setRows]);
+
+	// Keyboard shortcuts: Cmd/Ctrl-Z (undo), Cmd/Ctrl-Shift-Z or Cmd/Ctrl-Y (redo)
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			const meta = e.metaKey || e.ctrlKey;
+			if (!meta) return;
+			const key = e.key.toLowerCase();
+			if (key === "z" && !e.shiftKey && canUndo) {
+				e.preventDefault();
+				undo();
+			} else if (
+				(key === "z" && e.shiftKey && canRedo) ||
+				(key === "y" && canRedo)
+			) {
+				e.preventDefault();
+				redo();
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [canUndo, canRedo, undo, redo]);
+
 	/* ====== Virtualization state ====== */
 	const [rowH, setRowH] = useState(40);
 	const overscan = 10;
@@ -784,6 +854,10 @@ export default function Preview({
 
 	function applyEdit(mode: EditScope) {
 		if (!rows || !editTarget) return;
+
+		// snapshot current rows so this edit is undoable
+		pushUndoSnapshot();
+
 		const { idxOriginal, field, signer, sig } = editTarget;
 		const newVal = editDraft;
 
@@ -833,6 +907,21 @@ export default function Preview({
 				}
 				return next;
 			}
+			if (mode === "byRecipient") {
+				const originalRecipient = getRecipientFromRow(
+					prev[idxOriginal]
+				)?.trim();
+				if (!originalRecipient) return prev;
+				for (let i = 0; i < next.length; i++) {
+					const rec = getRecipientFromRow(next[i])?.trim();
+					if (rec && rec === originalRecipient) {
+						const row = { ...next[i] } as any;
+						row[field] = newVal;
+						next[i] = row;
+					}
+				}
+				return next;
+			}
 			return next;
 		});
 
@@ -857,24 +946,14 @@ export default function Preview({
 
 	function jumpToSig(sig: string) {
 		if (!sig) return;
-
-		// show the table
 		setActiveTab("preview");
 		setOpenFilter(null);
-
-		// Try with current filters; only clear if the row is not found
 		const foundInCurrent = displayed.some(({ r }) => extractSig(r) === sig);
 		if (!foundInCurrent) {
-			setFilters({}); // widen view if needed
+			setFilters({});
 		}
-
-		// set highlight
 		setHighlightSig(sig);
-
-		// ensure we will snap for this new sig
 		lastSnapSigRef.current = null;
-
-		// schedule highlight removal (no locking)
 		if (lastHighlightTimerRef.current) {
 			window.clearTimeout(lastHighlightTimerRef.current);
 		}
@@ -962,7 +1041,7 @@ export default function Preview({
 	const previewsReady =
 		Array.isArray(effectiveRows) && effectiveRows.length >= 0;
 
-	/* ---------- Resizer (exactly on column boundary) ---------- */
+	/* ---------- Resizer ---------- */
 	function Resizer({ colKey }: { colKey: ColKey }) {
 		return (
 			<div
@@ -974,25 +1053,23 @@ export default function Preview({
 				className="group/resize absolute top-0 right-0 h-full w-4 cursor-col-resize select-none z-10"
 				style={{ touchAction: "none" }}
 			>
-				{/* The visible divider */}
 				<div className="pointer-events-none ml-[calc(50%-0.5px)] h-full w-px bg-slate-200 dark:bg-white/10 group-hover/resize:bg-slate-400 dark:group-hover/resize:bg-white/30" />
 			</div>
 		);
 	}
 
-	// Snap-to-highlighted row (only once per sig)
+	// Snap-to-highlighted row
 	useEffect(() => {
 		if (activeTab !== "preview" || !highlightSig) return;
 
 		const container = previewContainerRef.current;
 		if (!container) return;
 
-		// If we already snapped for this sig, do nothing (prevents jitter)
 		if (lastSnapSigRef.current === highlightSig) return;
 
 		const centerOn = (top: number) => {
 			const target = Math.max(0, top - Math.floor(container.clientHeight / 2));
-			container.scrollTop = target; // snap (no smooth)
+			container.scrollTop = target;
 		};
 
 		const safeAttr = (sig: string) => {
@@ -1008,15 +1085,12 @@ export default function Preview({
 			);
 			if (!row) return false;
 			centerOn(row.offsetTop);
-			lastSnapSigRef.current = highlightSig; // mark done (don’t re-run)
+			lastSnapSigRef.current = highlightSig;
 			return true;
 		};
 
-		// 1) Try with current (displayed) list
 		let idx = displayed.findIndex(({ r }) => extractSig(r) === highlightSig);
 
-		// 2) If not found (e.g. filters), try the full sorted list so we can still
-		//    estimate and force the row to mount (baseIndexed is effectiveRows with indices)
 		if (idx < 0) {
 			const allSorted = [...baseIndexed].sort((a, b) => {
 				const ta = parseTidspunkt(a.r.Tidspunkt);
@@ -1027,10 +1101,7 @@ export default function Preview({
 		}
 
 		if (idx >= 0) {
-			// First, jump near the estimated position so virtualization mounts the row
 			centerOn(idx * rowH);
-
-			// Then snap precisely to the actual row once it exists
 			let tries = 0;
 			const tick = () => {
 				if (trySnapToRow()) return;
@@ -1038,7 +1109,6 @@ export default function Preview({
 			};
 			requestAnimationFrame(tick);
 		} else {
-			// Unknown to us (shouldn't happen). Try a few frames anyway.
 			let tries = 0;
 			const tick = () => {
 				if (trySnapToRow()) return;
@@ -1046,16 +1116,13 @@ export default function Preview({
 			};
 			requestAnimationFrame(tick);
 		}
-		// Safe deps: we allow re-run when the displayed list or row height changes,
-		// but snap will still only happen once because of lastSnapSigRef.
 	}, [highlightSig, activeTab, displayed, baseIndexed, rowH, sortOrder]);
 
-	// Restore saved scroll when (re)entering preview (unless we're about to snap)
+	// Restore saved scroll when (re)entering preview
 	useEffect(() => {
 		if (activeTab !== "preview") return;
 		const el = previewContainerRef.current;
 		if (!el) return;
-		// If we’re going to snap to a highlight, let that effect own the scroll.
 		if (highlightSig && lastSnapSigRef.current !== highlightSig) return;
 
 		const saved = isMaximized
@@ -1068,7 +1135,7 @@ export default function Preview({
 		});
 	}, [activeTab, isMaximized, highlightSig]);
 
-	/* ---------- Header with filter + resizer (padding inside, overflow hidden) ---------- */
+	/* ---------- Header with filter + resizer ---------- */
 	function HeaderWithFilter({
 		label,
 		field,
@@ -1089,17 +1156,202 @@ export default function Preview({
 			return arr;
 		}, [field, optionCounts]);
 
+		const btnRef = useRef<HTMLButtonElement | null>(null);
+		const popupRef = useRef<HTMLDivElement | null>(null);
+		const [pos, setPos] = useState<{
+			top: number;
+			left: number;
+			width: number;
+			ready: boolean;
+		} | null>(null);
+
+		const computePopupPosition = useCallback(() => {
+			if (!isOpen || !btnRef.current) return;
+			const PAD = 8;
+			const rect = btnRef.current.getBoundingClientRect();
+
+			const desktop = window.matchMedia("(min-width: 640px)").matches;
+			const desired = desktop ? 288 : Math.min(window.innerWidth * 0.92, 288);
+			const width = Math.max(
+				220,
+				Math.min(desired, window.innerWidth - PAD * 2)
+			);
+
+			let top = rect.bottom + PAD;
+			let left = rect.right - width;
+
+			left = Math.max(PAD, Math.min(left, window.innerWidth - PAD - width));
+
+			setPos({ top, left, width, ready: false });
+
+			requestAnimationFrame(() => {
+				const el = popupRef.current;
+				if (!el) return;
+
+				const h = el.getBoundingClientRect().height || 0;
+				const spaceBelow = window.innerHeight - (rect.bottom + PAD);
+				const spaceAbove = rect.top - PAD;
+
+				if (h > spaceBelow && spaceAbove > spaceBelow) {
+					top = Math.max(PAD, rect.top - PAD - h);
+				}
+
+				if (top + h > window.innerHeight - PAD) {
+					top = Math.max(PAD, window.innerHeight - PAD - h);
+				}
+				setPos({ top, left, width, ready: true });
+			});
+		}, [isOpen]);
+
+		useEffect(() => {
+			if (!isOpen) return;
+			computePopupPosition();
+
+			const onAnyScroll = () => computePopupPosition();
+			const onResize = () => computePopupPosition();
+
+			window.addEventListener("scroll", onAnyScroll, true);
+			window.addEventListener("resize", onResize);
+			return () => {
+				window.removeEventListener("scroll", onAnyScroll, true);
+				window.removeEventListener("resize", onResize);
+			};
+		}, [isOpen, computePopupPosition]);
+
+		useEffect(() => {
+			if (!isOpen) return;
+			function onDown(e: MouseEvent) {
+				const t = e.target as Node;
+				if (
+					popupRef.current &&
+					!popupRef.current.contains(t) &&
+					btnRef.current &&
+					!btnRef.current.contains(t)
+				) {
+					setOpenFilter(null);
+				}
+			}
+			function onKey(e: KeyboardEvent) {
+				if (e.key === "Escape") setOpenFilter(null);
+			}
+			document.addEventListener("mousedown", onDown);
+			document.addEventListener("keydown", onKey);
+			return () => {
+				document.removeEventListener("mousedown", onDown);
+				document.removeEventListener("keydown", onKey);
+			};
+		}, [isOpen]);
+
+		// Measure header content to enforce per-column min width
+		const contentMeasureRef = useRef<HTMLDivElement | null>(null);
+		useEffect(() => {
+			const el = contentMeasureRef.current;
+			if (!el) return;
+			const needed =
+				(el.scrollWidth || el.getBoundingClientRect().width || 0) + 16;
+			ensureMinWidth(colKey, needed);
+		}, [label, active, selected?.size, colKey, ensureMinWidth]);
+
+		const popup = isOpen
+			? createPortal(
+					<div
+						ref={popupRef}
+						className="z-[10000] rounded-xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-[#0f172a]/95 dark:backdrop-blur"
+						style={{
+							position: "fixed",
+							top: pos?.top ?? -9999,
+							left: pos?.left ?? -9999,
+							width: pos?.width ?? 288,
+							maxHeight: "60vh",
+							overflow: "auto",
+							visibility: pos?.ready ? "visible" : "hidden"
+						}}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<div className="mb-2 flex items-center justify-between">
+							<div className="text-xs font-medium text-slate-700 dark:text-slate-200">
+								Filtrer: {label}
+							</div>
+							<button
+								type="button"
+								onClick={() => setOpenFilter(null)}
+								className="p-1 rounded text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+								aria-label="Lukk"
+								title="Lukk"
+							>
+								<FiX className="h-4 w-4" />
+							</button>
+						</div>
+
+						{opts.length === 0 ? (
+							<div className="p-2 text-xs text-slate-500 dark:text-slate-300">
+								Ingen verdier.
+							</div>
+						) : (
+							<ul className="space-y-1">
+								{opts.map(([val, count]) => {
+									const checked = !!selected?.has(val);
+									return (
+										<li key={val}>
+											<label className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-slate-50 dark:hover:bg:white/5 dark:hover:bg-white/5">
+												<span
+													className="truncate text-xs text-slate-800 dark:text-slate-200"
+													title={val}
+												>
+													<input
+														type="checkbox"
+														className="mr-2 align-middle"
+														checked={checked}
+														onChange={() => toggleFilterValue(field, val)}
+													/>
+													{val}
+												</span>
+												<span className="text-[10px] text-slate-500 dark:text-slate-400">
+													{count}
+												</span>
+											</label>
+										</li>
+									);
+								})}
+							</ul>
+						)}
+
+						<div className="mt-2 flex items-center justify-between">
+							<button
+								type="button"
+								onClick={() => clearFilter(field)}
+								className="rounded border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+							>
+								Nullstill {label}
+							</button>
+							<button
+								type="button"
+								onClick={() => setOpenFilter(null)}
+								className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600"
+							>
+								Lukk
+							</button>
+						</div>
+					</div>,
+					document.body
+			  )
+			: null;
+
 		return (
 			<th className="relative" style={{ width: colWidths[colKey], padding: 0 }}>
 				<CellPad>
-					<div className="inline-flex items-center gap-1 select-none overflow-hidden">
-						<span className="pr-0.5 truncate">{label}</span>
+					<div
+						ref={contentMeasureRef}
+						className="inline-flex items-center gap-1 select-none overflow-hidden"
+					>
+						<span className="pr-0.5 whitespace-nowrap">{label}</span>
 
 						{active && (
 							<span className="ml-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-600 dark:bg-indigo-400" />
 						)}
 
 						<button
+							ref={btnRef}
 							type="button"
 							onClick={(e) => {
 								e.stopPropagation();
@@ -1140,82 +1392,12 @@ export default function Preview({
 
 				<Resizer colKey={colKey} />
 
-				{isOpen && (
-					<div
-						className="absolute right-0 mt-2 z-30 w-[min(92vw,18rem)] sm:w-72 max-h-[60vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-[#0f172a]/95 dark:backdrop-blur"
-						onClick={(e) => e.stopPropagation()}
-					>
-						<div className="mb-2 flex items-center justify-between">
-							<div className="text-xs font-medium text-slate-700 dark:text-slate-200">
-								Filtrer: {label}
-							</div>
-							<button
-								type="button"
-								onClick={() => setOpenFilter(null)}
-								className="p-1 rounded text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-								aria-label="Lukk"
-								title="Lukk"
-							>
-								<FiX className="h-4 w-4" />
-							</button>
-						</div>
-
-						{opts.length === 0 ? (
-							<div className="p-2 text-xs text-slate-500 dark:text-slate-300">
-								Ingen verdier.
-							</div>
-						) : (
-							<ul className="space-y-1">
-								{opts.map(([val, count]) => {
-									const checked = !!selected?.has(val);
-									return (
-										<li key={val}>
-											<label className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-slate-50 dark:hover:bg-white/5">
-												<span
-													className="truncate text-xs text-slate-800 dark:text-slate-200"
-													title={val}
-												>
-													<input
-														type="checkbox"
-														className="mr-2 align-middle"
-														checked={checked}
-														onChange={() => toggleFilterValue(field, val)}
-													/>
-													{val}
-												</span>
-												<span className="text-[10px] text-slate-500 dark:text-slate-400">
-													{count}
-												</span>
-											</label>
-										</li>
-									);
-								})}
-							</ul>
-						)}
-
-						<div className="mt-2 flex items-center justify-between">
-							<button
-								type="button"
-								onClick={() => clearFilter(field)}
-								className="rounded border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-							>
-								Nullstill {label}
-							</button>
-							<button
-								type="button"
-								onClick={() => setOpenFilter(null)}
-								className="rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600"
-							>
-								Lukk
-							</button>
-						</div>
-					</div>
-				)}
+				{popup}
 			</th>
 		);
 	}
 
-	/* ---------- simple header ---------- */
+	/* ---------- simple header (also measured to enforce min width) ---------- */
 	function PlainHeader({
 		label,
 		colKey,
@@ -1225,20 +1407,34 @@ export default function Preview({
 		colKey: ColKey;
 		extraClass?: string;
 	}) {
+		const contentRef = useRef<HTMLDivElement | null>(null);
+		useEffect(() => {
+			const el = contentRef.current;
+			if (!el) return;
+			const needed =
+				(el.scrollWidth || el.getBoundingClientRect().width || 0) + 16;
+			ensureMinWidth(colKey, needed);
+		}, [label, colKey]);
+
 		return (
 			<th
 				className={`relative ${extraClass}`}
 				style={{ width: colWidths[colKey], padding: 0 }}
 			>
 				<CellPad>
-					<div className="select-none overflow-hidden truncate">{label}</div>
+					<div
+						ref={contentRef}
+						className="select-none overflow-hidden truncate whitespace-nowrap"
+					>
+						{label}
+					</div>
 				</CellPad>
 				<Resizer colKey={colKey} />
 			</th>
 		);
 	}
 
-	/* ---------- table renderer (td/th have padding:0; all overflow handled inside) ---------- */
+	/* ---------- table renderer ---------- */
 	function PreviewTable({
 		onMeasureRow
 	}: {
@@ -1264,7 +1460,6 @@ export default function Preview({
 		return (
 			<table
 				className="table-fixed border-separate border-spacing-0 text-[11px] sm:text-xs"
-				/* Width = sum of defined columns + optional stretch filler. Prevents any unplanned stretching. */
 				style={{ width: tableColsWidth + (hasStretch ? stretchWidth : 0) }}
 			>
 				<colgroup>
@@ -1296,7 +1491,7 @@ export default function Preview({
 							style={{ width: colWidths.gebyrValuta, padding: 0 }}
 						>
 							<CellPad>
-								<div className="select-none overflow-hidden truncate">
+								<div className="select-none overflow-hidden truncate whitespace-nowrap">
 									Gebyr-Valuta
 								</div>
 							</CellPad>
@@ -1309,13 +1504,12 @@ export default function Preview({
 							style={{ width: colWidths.explorer }}
 						>
 							<CellPad>
-								<div className="select-none overflow-hidden truncate">
+								<div className="select-none overflow-hidden truncate whitespace-nowrap">
 									Explorer
 								</div>
 							</CellPad>
 							<Resizer colKey="explorer" />
 						</th>
-						{/* stretch header cell (no content, no resizer) */}
 						{hasStretch && (
 							<th
 								style={{ width: stretchWidth, padding: 0 }}
@@ -1353,13 +1547,12 @@ export default function Preview({
 								r["Ut-Valuta"]
 							}-${r.Inn}-${r.Ut}-${idxOriginal}`;
 							const highlight = sig && highlightSig === sig;
-
-							// ✅ Stable zebra based on absolute index in the displayed list
 							const globalIndex = startIndex + idx;
 							const zebraClass =
-								globalIndex % 2 === 1
+								!highlight &&
+								(globalIndex % 2 === 1
 									? "[&>td]:bg-black/10 dark:[&>td]:bg-white/5"
-									: "";
+									: "");
 
 							const attachMeasure = idx === 0 ? { ref: measureRowRef } : {};
 
@@ -1367,13 +1560,11 @@ export default function Preview({
 								<tr
 									key={rowKey}
 									data-sig={sig || undefined}
+									data-hl={highlight ? "true" : undefined}
 									className={[
 										"border-b border-slate-100 dark:border-white/10",
 										zebraClass,
-										// highlight overrides zebra
-										highlight
-											? "[&>td]:bg-amber-50 dark:[&>td]:bg-amber-500/20"
-											: ""
+										"data-[hl=true]:[&>td]:!bg-amber-50 dark:data-[hl=true]:[&>td]:!bg-amber-500/20"
 									].join(" ")}
 									{...attachMeasure}
 								>
@@ -1489,7 +1680,6 @@ export default function Preview({
 										)}
 									</td>
 
-									{/* stretch body cell to ensure rows fill container width when needed */}
 									{hasStretch && (
 										<td
 											style={{ width: stretchWidth, padding: 0 }}
@@ -1515,7 +1705,6 @@ export default function Preview({
 	}
 
 	/* ============== RENDER ============== */
-	const modalCardRef = useRef<HTMLDivElement | null>(null);
 
 	return (
 		<section className="mt-6">
@@ -1558,7 +1747,6 @@ export default function Preview({
 								role="tab"
 								aria-selected={activeTab === "attention"}
 								onClick={() => {
-									// save current preview scroll before unmounting its container
 									persistPreviewScroll();
 									setActiveTab("attention");
 									setOpenFilter(null);
@@ -1825,11 +2013,30 @@ export default function Preview({
 									<select
 										value={sortOrder}
 										onChange={(e) => setSortOrder(e.target.value as SortOrder)}
-										className="min-w-[140px] sm:min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+										className={SELECT_STYLE}
 									>
 										<option value="desc">Nyeste først</option>
 										<option value="asc">Eldste først</option>
 									</select>
+
+									<button
+										type="button"
+										onClick={undo}
+										disabled={!canUndo}
+										className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+										title="Angre (Ctrl/⌘+Z)"
+									>
+										<FiRotateCcw className="h-4 w-4" />
+									</button>
+									<button
+										type="button"
+										onClick={redo}
+										disabled={!canRedo}
+										className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+										title="Gjør om (Ctrl/⌘+Shift+Z eller Ctrl/⌘+Y)"
+									>
+										<FiRotateCw className="h-4 w-4" />
+									</button>
 
 									<button
 										type="button"
@@ -1881,7 +2088,6 @@ export default function Preview({
 									<div className="h-full flex flex-col p-4 sm:p-6">
 										<div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 											<div className="text-xs text-slate-600 dark:text-slate-400">
-												{/* ✅ also show "av {effectiveRows.length}" here */}
 												Viser {displayed.length} av {effectiveRows.length} rader
 												{filterHasAny ? " (filtrert)" : ""}.
 											</div>
@@ -1904,11 +2110,31 @@ export default function Preview({
 													onChange={(e) =>
 														setSortOrder(e.target.value as SortOrder)
 													}
-													className="min-w-[140px] sm:min-w-[180px] pr-8 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+													className={SELECT_STYLE}
 												>
 													<option value="desc">Nyeste først</option>
 													<option value="asc">Eldste først</option>
 												</select>
+
+												<button
+													type="button"
+													onClick={undo}
+													disabled={!canUndo}
+													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+													title="Angre (Ctrl/⌘+Z)"
+												>
+													<FiRotateCcw className="h-4 w-4" />
+												</button>
+												<button
+													type="button"
+													onClick={redo}
+													disabled={!canRedo}
+													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+													title="Gjør om (Ctrl/⌘+Shift+Z eller Ctrl/⌘+Y)"
+												>
+													<FiRotateCw className="h-4 w-4" />
+												</button>
+
 												<button
 													type="button"
 													onClick={toggleMaximize}
@@ -1975,299 +2201,28 @@ export default function Preview({
 						</div>
 					)}
 
-					{/* Inline editor modal + tooltip */}
-					{editOpen && editTarget && (
-						<div
-							className="fixed inset-0 z-50 bg-black/30 dark:bg-black/40 flex items-center justify-center p-3 sm:p-4"
-							onClick={() => setEditOpen(false)}
-							role="dialog"
-							aria-modal="true"
-							aria-labelledby="edit-dialog-title"
-						>
-							<div
-								ref={modalCardRef}
-								className="w-full max-w:[min(100vw-1rem,44rem)] sm:max-w-2xl rounded-2xl overflow-hidden bg-white shadow-2xl ring-1 ring-slate-200 dark:bg-[linear-gradient(180deg,#0e1729_0%,#0b1220_100%)] dark:ring-white/10 flex flex-col max-h-[90vh]"
-								onClick={(e) => e.stopPropagation()}
-							>
-								<div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#0e1729]/80">
-									<h3
-										id="edit-dialog-title"
-										className="text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-100"
-									>
-										Rediger felt:{" "}
-										<code className="font-mono">{editTarget.label}</code>
-									</h3>
-									<button
-										type="button"
-										onClick={() => setEditOpen(false)}
-										className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5"
-										aria-label="Lukk"
-									>
-										<FiX className="h-5 w-5" />
-									</button>
-								</div>
+					{/* Separated modal editor */}
+					<ModalEditor
+						open={editOpen}
+						onClose={() => setEditOpen(false)}
+						rows={rows}
+						typeOptions={TYPE_OPTIONS}
+						editTarget={editTarget}
+						editDraft={editDraft}
+						setEditDraft={setEditDraft}
+						editScope={editScope}
+						setEditScope={setEditScope}
+						applyEdit={applyEdit}
+					/>
 
-								<div className="px-3 sm:px-4 py-3 sm:py-4 overflow-y-auto">
-									{(editTarget.sig || editTarget.signer) && (
-										<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-											{editTarget.sig && (
-												<MetaBox
-													label="Signatur"
-													value={editTarget.sig}
-													link={`https://solscan.io/tx/${editTarget.sig}`}
-												/>
-											)}
-											{editTarget.signer && (
-												<MetaBox
-													label="Signer-adresse"
-													value={editTarget.signer}
-													link={`https://solscan.io/address/${editTarget.signer}`}
-												/>
-											)}
-										</div>
-									)}
-
-									<div className="mt-3">
-										{editTarget.field === "Type" ? (
-											<select
-												value={editDraft}
-												onChange={(e) => setEditDraft(e.target.value)}
-												className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-indigo-900/40"
-											>
-												{TYPE_OPTIONS.map((t) => (
-													<option key={t} value={t}>
-														{t}
-													</option>
-												))}
-											</select>
-										) : (
-											<textarea
-												rows={6}
-												autoFocus
-												value={editDraft}
-												onChange={(e) => setEditDraft(e.target.value)}
-												className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words min-h-[7rem] dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
-												placeholder="Ny verdi…"
-											/>
-										)}
-									</div>
-								</div>
-
-								<ModalActions
-									editScope={editScope}
-									setEditScope={setEditScope}
-									editTarget={editTarget}
-									rows={rows}
-									applyEdit={applyEdit}
-									modalRef={modalCardRef}
-								/>
-							</div>
-						</div>
-					)}
-
-					<div className="mt-6 rounded-xl bg-gradient-to-r from-emerald-50 to-indigo-50 p-4 text-xs text-slate-600 ring-1 ring-slate-200/70 dark:from-[#0b1220] dark:to-[#0b1220] dark:text-slate-300 dark:ring-white/10">
+					{/* <div className="mt-6 rounded-xl bg-gradient-to-r from-emerald-50 to-indigo-50 p-4 text-xs text-slate-600 ring-1 ring-slate-200/70 dark:from-[#0b1220] dark:to-[#0b1220] dark:text-slate-300 dark:ring-white/10">
 						Mapper: <b>Swaps</b> → <code>Handel</code>, <b>SOL/SPL</b> →{" "}
 						<code>Overføring-Inn/Ut</code>, <b>Airdrops</b> →{" "}
 						<code>Erverv</code>, <b>staking</b> → <code>Inntekt</code>. Ukjente
 						tokens får koden <code>TOKEN-XXXXXX</code>.
-					</div>
+					</div> */}
 				</div>
 			</div>
 		</section>
-	);
-}
-
-/* ===== Modal actions (tooltip via PORTAL so it always shows) ===== */
-function ModalActions({
-	editScope,
-	setEditScope,
-	editTarget,
-	rows,
-	applyEdit,
-	modalRef
-}: {
-	editScope: "one" | "bySigner" | "bySignature" | "byMarked";
-	setEditScope: (v: "one" | "bySigner" | "bySignature" | "byMarked") => void;
-	editTarget: {
-		idxOriginal: number;
-		field: keyof KSRow;
-		sig?: string;
-		signer?: string;
-		label: string;
-	} | null;
-	rows: KSPreviewRow[] | null;
-	applyEdit: (mode: "one" | "bySigner" | "bySignature" | "byMarked") => void;
-	modalRef: React.RefObject<HTMLDivElement | null>;
-}) {
-	const [open, setOpen] = useState(false);
-	const infoBtnRef = useRef<HTMLButtonElement | null>(null);
-	const tooltipRef = useRef<HTMLDivElement | null>(null);
-	const [coords, setCoords] = useState<{
-		top: number;
-		left: number;
-		width: number;
-	} | null>(null);
-
-	const computePosition = useCallback(() => {
-		if (!open) return;
-		const desktop = window.matchMedia("(min-width: 640px)").matches;
-		if (desktop && infoBtnRef.current) {
-			const r = infoBtnRef.current.getBoundingClientRect();
-			setCoords({
-				top: r.bottom + 8,
-				left: r.left + r.width / 2,
-				width: Math.min(352, Math.floor(window.innerWidth * 0.9))
-			});
-		} else if (!desktop && modalRef.current) {
-			const r = modalRef.current.getBoundingClientRect();
-			setCoords({
-				top: r.bottom + 8,
-				left: window.innerWidth / 2,
-				width: Math.min(360, Math.floor(window.innerWidth - 24))
-			});
-		}
-	}, [open, modalRef]);
-
-	useEffect(() => {
-		if (!open) return;
-		computePosition();
-		const onScroll = () => computePosition();
-		const onResize = () => computePosition();
-		window.addEventListener("scroll", onScroll, true);
-		window.addEventListener("resize", onResize);
-		return () => {
-			window.removeEventListener("scroll", onScroll, true);
-			window.removeEventListener("resize", onResize);
-		};
-	}, [open, computePosition]);
-
-	useEffect(() => {
-		function onDown(e: MouseEvent) {
-			if (!open) return;
-			const t = e.target as Node;
-			if (
-				tooltipRef.current &&
-				!tooltipRef.current.contains(t) &&
-				infoBtnRef.current &&
-				!infoBtnRef.current.contains(t)
-			) {
-				setOpen(false);
-			}
-		}
-		function onKey(e: KeyboardEvent) {
-			if (e.key === "Escape") setOpen(false);
-		}
-		document.addEventListener("mousedown", onDown);
-		document.addEventListener("keydown", onKey);
-		return () => {
-			document.removeEventListener("mousedown", onDown);
-			document.removeEventListener("keydown", onKey);
-		};
-	}, [open]);
-
-	const tooltipNode =
-		open && coords
-			? createPortal(
-					<div
-						ref={tooltipRef}
-						role="tooltip"
-						style={{
-							position: "fixed",
-							top: coords.top,
-							left: coords.left,
-							transform: "translateX(-50%)",
-							width: coords.width,
-							zIndex: 100000
-						}}
-						className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-xl dark:border-white/10 dark:bg-[#0f172a] dark:text-slate-200"
-					>
-						<p className="mb-1 font-medium">Hva betyr valgene?</p>
-						<ul className="list-disc space-y-1 pl-4">
-							<li>
-								<b>Bare dette feltet</b> – endrer kun denne cellen (én rad).
-							</li>
-							<li>
-								<b>Alle fra samme underskriver-adresse</b> – endrer alle rader
-								der samme underskriver (signer) har signert.
-							</li>
-							<li>
-								<b>Alle med samme signatur</b> – endrer alle rader som tilhører
-								samme transaksjon (signatur).
-							</li>
-							<li>
-								<b>Alle fra samme marked</b> – endrer alle rader med samme verdi
-								i <code className="ml-1">Marked</code>-feltet.
-							</li>
-						</ul>
-					</div>,
-					document.body
-			  )
-			: null;
-
-	return (
-		<div className="sticky bottom-0 z-10 px-3 sm:px-4 py-2.5 sm:py-3 border-t border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#0e1729]/80">
-			<div className="flex flex-col sm:flex-row sm:items-center gap-3">
-				<div className="text-[11px] text-slate-500 dark:text-slate-400">
-					Velg hvor endringen skal gjelde.
-				</div>
-
-				<div className="flex w-full items-center gap-2 sm:gap-3">
-					<select
-						value={editScope}
-						onChange={(e) =>
-							setEditScope(
-								e.target.value as
-									| "one"
-									| "bySigner"
-									| "bySignature"
-									| "byMarked"
-							)
-						}
-						className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
-					>
-						<option value="one">Bare dette feltet</option>
-						<option value="bySigner" disabled={!editTarget?.signer}>
-							Alle med samme underskriver-adresse
-						</option>
-						<option value="bySignature" disabled={!editTarget?.sig}>
-							Alle med samme signatur
-						</option>
-						<option
-							value="byMarked"
-							disabled={!rows?.[editTarget?.idxOriginal ?? 0]?.Marked?.trim()}
-						>
-							Alle fra samme marked
-						</option>
-					</select>
-
-					<button
-						ref={infoBtnRef}
-						type="button"
-						aria-label="Forklaring av alternativer"
-						onClick={() => setOpen((v) => !v)}
-						className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:focus:bg-white/5"
-					>
-						<FiInfo className="h-4 w-4" />
-					</button>
-
-					{/* push 'Lagre' right */}
-					<div className="ml-auto" />
-
-					<button
-						type="button"
-						onClick={() => applyEdit(editScope)}
-						disabled={
-							(editScope === "bySigner" && !editTarget?.signer) ||
-							(editScope === "bySignature" && !editTarget?.sig)
-						}
-						className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-indigo-500 dark:hover:bg-indigo-600"
-					>
-						Lagre
-					</button>
-				</div>
-			</div>
-
-			{tooltipNode}
-		</div>
 	);
 }

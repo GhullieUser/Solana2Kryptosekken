@@ -29,6 +29,7 @@ import Link from "next/link";
 // ⬇️ Preview card
 import Preview from "@/app/components/preview";
 import WalletHoldings from "@/app/components/WalletHoldings";
+import KryptosekkenImportCard from "@/app/components/KryptosekkenImportCard";
 
 /* ================= Client-only guard ================= */
 function ClientOnly({ children }: { children: React.ReactNode }) {
@@ -123,9 +124,12 @@ export type KSRow = {
 	Notat: string;
 };
 export type KSPreviewRow = KSRow & {
+	/** derived */
 	signature?: string;
 	signer?: string;
 	rowId?: string;
+	/** hidden; used for “Alle med samme mottaker-adresse” */
+	recipient?: string;
 };
 
 export type OverrideMaps = {
@@ -798,7 +802,7 @@ export default function Home() {
 									/>
 
 									{/* right-side actions: clear, history */}
-									<div className="absolute inset-y-0 right-3 flex items-center top-[-19px] gap-1">
+									<div className="absolute inset-y-0 right-3 flex items-center sm:top-[-19px] gap-1">
 										{/* quick clear */}
 										{hasAddressInput && (
 											<button
@@ -1366,15 +1370,22 @@ export default function Home() {
 
 				{/* ========= Card 2: Preview ========= */}
 				{hasRows && (
-					<div className="mt-6" ref={previewContainerRef}>
-						<Preview
-							rows={rows}
-							setRows={setRows}
-							overrides={overrides}
-							setOverrides={setOverrides}
-							onDownloadCSV={downloadCSV}
-						/>
-					</div>
+					<>
+						<div className="mt-6" ref={previewContainerRef}>
+							<Preview
+								rows={rows}
+								setRows={setRows}
+								overrides={overrides}
+								setOverrides={setOverrides}
+								onDownloadCSV={downloadCSV}
+							/>
+						</div>
+
+						{/* ========= Kryptosekken import help (separate card) ========= */}
+						<div className="mt-6">
+							<KryptosekkenImportCard cardClassName={cardCn} />
+						</div>
+					</>
 				)}
 
 				{/* Footer */}
