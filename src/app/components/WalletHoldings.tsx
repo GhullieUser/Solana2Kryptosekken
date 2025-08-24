@@ -38,6 +38,7 @@ type ApiResponse = {
 
 type SortKey = "token" | "amount" | "mint" | "usd";
 type SortDir = "asc" | "desc";
+type Currency = "USD" | "NOK";
 
 export default function WalletHoldings({
 	address,
@@ -50,8 +51,14 @@ export default function WalletHoldings({
 	const [justCopied, setJustCopied] = useState<"wallet" | string | null>(null);
 	const [collapsed, setCollapsed] = useState(false);
 
-	// Sorting: default is token amount, descending
-	const [sortKey, setSortKey] = useState<SortKey>("amount");
+	// Currency toggle (USD <-> NOK)
+	const [currency, setCurrency] = useState<Currency>("USD");
+	const [usdToNok, setUsdToNok] = useState<number>(10.0); // safe fallback
+	const [fxLoaded, setFxLoaded] = useState(false);
+	const [fxErr, setFxErr] = useState<string | null>(null);
+
+	// Sorting: default is VALUE, descending
+	const [sortKey, setSortKey] = useState<SortKey>("usd");
 	const [sortDir, setSortDir] = useState<SortDir>("desc");
 
 	// Snapshot of the last "checked" inputs (set on rising-edge of `enabled`)
@@ -106,7 +113,6 @@ export default function WalletHoldings({
 	useEffect(() => {
 		if (!committed) return;
 
-		// Destructure now so the closure captures non-null values (fixes TS)
 		const { address: cAddress, includeNFT: cIncludeNFT } = committed;
 
 		let cancelled = false;
@@ -135,7 +141,6 @@ export default function WalletHoldings({
 				const j = (await res.json()) as ApiResponse;
 				const list = Array.isArray(j.holdings) ? j.holdings : [];
 
-				// Client-side safety filter
 				const filtered = (
 					cIncludeNFT ? list : list.filter((h) => !h.isNFT)
 				).filter((h) => {
@@ -161,6 +166,32 @@ export default function WalletHoldings({
 		};
 	}, [committed]);
 
+	// Fetch a USD->NOK rate the first time user switches to NOK (optional)
+	useEffect(() => {
+		if (currency !== "NOK" || fxLoaded) return;
+		let cancelled = false;
+		(async () => {
+			try {
+				const r = await fetch("/api/kryptosekken/fx?base=USD&quote=NOK");
+				if (r.ok) {
+					const j = await r.json();
+					const rate = Number(j?.rate ?? j?.usdNok);
+					if (!cancelled && Number.isFinite(rate) && rate > 0) {
+						setUsdToNok(rate);
+						setFxErr(null);
+					}
+				}
+			} catch (e: any) {
+				setFxErr(e?.message || null);
+			} finally {
+				if (!cancelled) setFxLoaded(true);
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [currency, fxLoaded]);
+
 	const fmt = useMemo(
 		() => new Intl.NumberFormat("no-NO", { maximumFractionDigits: 12 }),
 		[]
@@ -174,16 +205,40 @@ export default function WalletHoldings({
 			}),
 		[]
 	);
+	const fmtNOK = useMemo(
+		() =>
+			new Intl.NumberFormat("no-NO", {
+				style: "currency",
+				currency: "NOK",
+				maximumFractionDigits: 2
+			}),
+		[]
+	);
+	const fmtCurrency = currency === "USD" ? fmtUSD : fmtNOK;
+
+	const numAmount = useCallback((h: Holding) => {
+		if (typeof h.amount === "number")
+			return Number.isFinite(h.amount) ? h.amount : 0;
+		return toNum(h.amountText);
+	}, []);
+
+	const valueNumber = useCallback(
+		(h: Holding) => {
+			const usd =
+				toNum(h.valueUSD) ||
+				(Number.isFinite(toNum(h.priceUSD))
+					? toNum(h.priceUSD) * numAmount(h)
+					: 0);
+			if (currency === "USD") return usd;
+			return (
+				usd * (Number.isFinite(usdToNok) && usdToNok > 0 ? usdToNok : 10.0)
+			);
+		},
+		[currency, usdToNok, numAmount]
+	);
 
 	const shown = useMemo(() => {
 		const by = [...holdings];
-
-		const numAmount = (h: Holding) =>
-			typeof h.amount === "number"
-				? Number.isFinite(h.amount)
-					? h.amount
-					: 0
-				: toNum(h.amountText);
 
 		by.sort((a, b) => {
 			let diff = 0;
@@ -195,35 +250,31 @@ export default function WalletHoldings({
 			} else if (sortKey === "amount") {
 				diff = numAmount(b) - numAmount(a); // default desc
 			} else if (sortKey === "usd") {
-				diff = toNum(b.valueUSD) - toNum(a.valueUSD); // default desc
+				diff = valueNumber(b) - valueNumber(a); // default desc
 			} else if (sortKey === "mint") {
 				diff = (a.mint || "").localeCompare(b.mint || "", "nb", {
 					sensitivity: "base"
 				});
 			}
 
-			// Apply direction
 			if (sortDir === "asc") diff = -diff;
-
-			// Tie-breaker
 			if (diff === 0) {
 				const as = (a.symbol || "").toUpperCase();
 				const bs = (b.symbol || "").toUpperCase();
 				return as.localeCompare(bs, "nb", { sensitivity: "base" });
 			}
-
 			return diff;
 		});
 
 		return by;
-	}, [holdings, sortKey, sortDir]);
+	}, [holdings, sortKey, sortDir, valueNumber, numAmount]);
 
-	const totalValueUsdNum = useMemo(
-		() => shown.reduce((acc, h) => acc + toNum(h.valueUSD), 0),
-		[shown]
+	const totalValueNum = useMemo(
+		() => shown.reduce((acc, h) => acc + valueNumber(h), 0),
+		[shown, valueNumber]
 	);
-	const totalValueText = fmtUSD.format(
-		Number.isFinite(totalValueUsdNum) ? totalValueUsdNum : 0
+	const totalValueText = fmtCurrency.format(
+		Number.isFinite(totalValueNum) ? totalValueNum : 0
 	);
 
 	// --- Measure header/row to cap height at ~ 10 rows when needed ---
@@ -244,10 +295,8 @@ export default function WalletHoldings({
 		return () => cancelAnimationFrame(raf);
 	}, [shown.length, collapsed, loading, err, sortKey, sortDir]);
 
-	// Only render after a check has been performed (enabled + snapshot present)
 	if (!enabled || !committed || !committed.address) return null;
 
-	// Sorting header helpers
 	const handleSort = (key: SortKey) => {
 		if (key === sortKey) {
 			setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -273,6 +322,8 @@ export default function WalletHoldings({
 			<span className="inline-block w-4" />
 		);
 
+	const valueHeaderLabel = currency === "USD" ? "Verdi (USD)" : "Verdi (NOK)";
+
 	return (
 		<section
 			className="mt-6 rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 ring-1 ring-slate-200/60 dark:ring-slate-800/60"
@@ -291,14 +342,11 @@ export default function WalletHoldings({
 							<IoWalletOutline className="h-4 w-4 sm:h-6 sm:w-6" />
 						</div>
 
-						{/* Two-line text */}
 						<div className="min-w-0">
-							{/* Row 1: title */}
 							<h2 className="text-base sm:text-lg font-semibold text-slate-800 dark:text-slate-100">
 								Nåværende beholdning
 							</h2>
 
-							{/* Row 2: committed address + copy (+ token count on sm+) */}
 							<div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 min-w-0">
 								<span
 									className="truncate font-mono text-[11px] sm:text-[12px] max-w-[28ch] sm:max-w-[50ch]"
@@ -307,7 +355,6 @@ export default function WalletHoldings({
 									{committed.address}
 								</span>
 
-								{/* Copy button */}
 								<button
 									type="button"
 									onClick={() => copyText(committed.address || "", "wallet")}
@@ -336,6 +383,11 @@ export default function WalletHoldings({
 							<div className="text-base sm:text-lg font-semibold text-emerald-700 dark:text-emerald-400">
 								{totalValueText}
 							</div>
+							{currency === "NOK" && fxErr && (
+								<div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+									(Bruker fallback-kurs {usdToNok.toFixed(2)})
+								</div>
+							)}
 						</div>
 
 						<button
@@ -366,7 +418,6 @@ export default function WalletHoldings({
 				id="wallet-holdings-content"
 				className={`px-4 py-4 sm:px-10 sm:py-6 ${collapsed ? "hidden" : ""}`}
 			>
-				{/* Loading state */}
 				{loading && (
 					<div className="animate-pulse space-y-2">
 						<div className="h-4 w-40 rounded bg-slate-200 dark:bg-slate-700" />
@@ -375,24 +426,20 @@ export default function WalletHoldings({
 					</div>
 				)}
 
-				{/* Error state */}
 				{!loading && err && (
 					<div className="text-sm text-red-600 dark:text-red-400">
 						Klarte ikke å hente beholdning: {err}
 					</div>
 				)}
 
-				{/* Empty state */}
 				{!loading && !err && shown.length === 0 && (
 					<div className="text-sm text-slate-600 dark:text-slate-300">
 						Ingen tokens funnet for denne lommeboken.
 					</div>
 				)}
 
-				{/* Table */}
 				{!loading && !err && shown.length > 0 && (
 					<div className="overflow-x-auto">
-						{/* Inner wrapper controls vertical scrolling once > 10 rows */}
 						<div
 							className="relative"
 							style={{
@@ -458,27 +505,35 @@ export default function WalletHoldings({
 											</button>
 										</th>
 
+										{/* Value column header with the currency switch moved here */}
 										<th
 											scope="col"
 											aria-sort={ariaSortFor("usd")}
-											className="py-2 pr-0 font-medium text-right"
+											className="py-2 pr-0 font-medium"
 										>
-											<button
-												type="button"
-												onClick={() => handleSort("usd")}
-												className="inline-flex items-center gap-1 hover:underline underline-offset-2"
-												title="Sorter etter verdi (USD)"
-											>
-												Verdi
-												<SortIcon active={sortKey === "usd"} />
-											</button>
+											<div className="flex items-center justify-end gap-2">
+												<button
+													type="button"
+													onClick={() => handleSort("usd")}
+													className="inline-flex items-center gap-1 hover:underline underline-offset-2"
+													title={`Sorter etter verdi (${currency})`}
+												>
+													{valueHeaderLabel}
+													<SortIcon active={sortKey === "usd"} />
+												</button>
+
+												<CurrencyToggle
+													currency={currency}
+													onChange={setCurrency}
+												/>
+											</div>
 										</th>
 									</tr>
 								</thead>
 
 								<tbody>
 									{shown.map((h, idx) => {
-										const amount =
+										const amountText =
 											typeof h.amountText === "string" &&
 											h.amountText.length > 0
 												? h.amountText
@@ -486,9 +541,11 @@ export default function WalletHoldings({
 												? fmt.format(h.amount)
 												: "0";
 
-										const v = toNum(h.valueUSD);
-										const valueKnown = Number.isFinite(v) && v > 0;
-										const value = valueKnown ? fmtUSD.format(v) : "—";
+										const vNum = valueNumber(h);
+										const valueKnown = Number.isFinite(vNum) && vNum > 0;
+										const valueText = valueKnown
+											? fmtCurrency.format(vNum)
+											: "—";
 
 										return (
 											<tr
@@ -515,7 +572,7 @@ export default function WalletHoldings({
 												</td>
 
 												<td className="py-2 pr-4 text-slate-800 dark:text-slate-100 whitespace-nowrap">
-													{amount}
+													{amountText}
 												</td>
 
 												<td className="py-2 pr-4 hidden sm:table-cell text-slate-500 dark:text-slate-400">
@@ -552,7 +609,7 @@ export default function WalletHoldings({
 																: "text-slate-500 dark:text-slate-400"
 														}
 													>
-														{value}
+														{valueText}
 													</span>
 												</td>
 											</tr>
@@ -565,6 +622,50 @@ export default function WalletHoldings({
 				)}
 			</div>
 		</section>
+	);
+}
+
+/* ===== UI bits ===== */
+function CurrencyToggle({
+	currency,
+	onChange
+}: {
+	currency: "USD" | "NOK";
+	onChange: (c: "USD" | "NOK") => void;
+}) {
+	return (
+		<div
+			className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-white dark:bg-slate-900"
+			role="group"
+			aria-label="Valuta"
+		>
+			<button
+				type="button"
+				onClick={() => onChange("USD")}
+				className={[
+					"px-2.5 py-1 text-[11px] sm:text-xs rounded-md",
+					currency === "USD"
+						? "bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-900"
+						: "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
+				].join(" ")}
+				aria-pressed={currency === "USD"}
+			>
+				USD
+			</button>
+			<button
+				type="button"
+				onClick={() => onChange("NOK")}
+				className={[
+					"px-2.5 py-1 text-[11px] sm:text-xs rounded-md",
+					currency === "NOK"
+						? "bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-900"
+						: "text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
+				].join(" ")}
+				aria-pressed={currency === "NOK"}
+			>
+				NOK
+			</button>
+		</div>
 	);
 }
 
@@ -605,7 +706,6 @@ function TokenAvatar({
 }) {
 	const [errored, setErrored] = useState(false);
 
-	// SOL special badge
 	if ((symbol || "").toUpperCase() === "SOL") {
 		return (
 			<span className="inline-flex h-6 w-6 items-center ml-1 justify-center rounded-full bg-slate-200 dark:bg-slate-700 text-black dark:text-white">
@@ -624,14 +724,12 @@ function TokenAvatar({
 				width={24}
 				height={24}
 				className="h-6 w-6 rounded-full ring-1 ml-1 object-cover"
-				// Remove `unoptimized` if you add remotePatterns in next.config.js
 				unoptimized
 				onError={() => setErrored(true)}
 			/>
 		);
 	}
 
-	// Fallback: letter avatar
 	const letter = (symbol || "?").slice(0, 1).toUpperCase();
 	return (
 		<span className="inline-flex h-6 w-6 ml-1 items-center justify-center rounded-full bg-slate-200 dark:bg-slate-700 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
