@@ -1,4 +1,5 @@
 // src/lib/helius.ts
+import bs58 from "bs58";
 
 export const SPL_TOKEN_PROGRAM_ID =
 	"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -162,6 +163,69 @@ async function fetchWithRetry(
 }
 
 /* ================= Enhanced transactions (paged stream) ================= */
+
+export async function getOwnersOfTokenAccounts(
+	tokenAccounts: string[],
+	apiKey?: string
+): Promise<Map<string, string>> {
+	const out = new Map<string, string>();
+	if (!tokenAccounts?.length) return out;
+
+	const key = resolveHeliusKey(apiKey);
+	const url = new URL(
+		`https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(key)}`
+	);
+
+	const chunk = <T>(arr: T[], n: number) =>
+		Array.from({ length: Math.ceil(arr.length / n) }, (_, i) =>
+			arr.slice(i * n, i * n + n)
+		);
+
+	for (const part of chunk(tokenAccounts, 100)) {
+		const body = {
+			jsonrpc: "2.0",
+			id: 1,
+			method: "getMultipleAccounts",
+			params: [part, { encoding: "jsonParsed" }]
+		};
+
+		const res = await fetchWithRetry(
+			url,
+			{
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(body)
+			},
+			3
+		);
+
+		const raw = await res.json().catch(() => null);
+		const list: any[] = raw?.result?.value ?? [];
+
+		for (let i = 0; i < part.length; i++) {
+			const acc = part[i];
+			const v = list[i];
+
+			// Prefer parsed owner if available
+			const ownerParsed: string | undefined = v?.data?.parsed?.info?.owner;
+			let owner = ownerParsed;
+
+			// Fallback: decode base64 data and read bytes [32..64) for owner pubkey
+			if (!owner && v?.data?.[0] && v?.data?.[1] === "base64") {
+				try {
+					const b = Buffer.from(v.data[0], "base64");
+					if (b.length >= 64) {
+						owner = bs58.encode(b.subarray(32, 64));
+					}
+				} catch {}
+			}
+
+			if (owner) out.set(acc, owner);
+		}
+	}
+
+	return out;
+}
 
 export async function* fetchEnhancedTxs(
 	opts: FetchOptions

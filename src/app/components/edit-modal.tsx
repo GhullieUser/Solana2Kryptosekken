@@ -65,8 +65,8 @@ function MetaBox({
 		return `${s.slice(0, start)}…${s.slice(-end)}`;
 	};
 
-	const displayValue = isAvailable ? shorten12(raw) : "not available";
-	const titleValue = isAvailable ? raw : "not available";
+	const displayValue = isAvailable ? shorten12(raw) : "Ikke tilgjengelig";
+	const titleValue = isAvailable ? raw : "Ikke tilgjengelig";
 
 	const onCopy = useCallback(async () => {
 		if (!isAvailable) return;

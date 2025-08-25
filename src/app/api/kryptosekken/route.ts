@@ -9,7 +9,8 @@ import {
 	HeliusTx,
 	NativeTransfer,
 	TokenTransfer,
-	fetchFeePayer
+	fetchFeePayer,
+	getOwnersOfTokenAccounts
 } from "@/lib/helius";
 import {
 	KSRow,
@@ -81,6 +82,7 @@ function pickNativeRecipient(tx: HeliusTx, self: string): string | undefined {
 	return outs[0]?.toUserAccount;
 }
 
+// CHANGE this helper to NOT fall back to token account
 function pickTokenRecipient(tx: HeliusTx, self: string): string | undefined {
 	const outs = (tx.tokenTransfers ?? []).filter(
 		(t: any) => t?.fromUserAccount === self
@@ -89,8 +91,7 @@ function pickTokenRecipient(tx: HeliusTx, self: string): string | undefined {
 	const amt = (t: any) =>
 		Number(t?.rawTokenAmount?.tokenAmount ?? t?.tokenAmount ?? 0);
 	outs.sort((a: any, b: any) => amt(b) - amt(a));
-	// Prefer user account, otherwise token account
-	return outs[0]?.toUserAccount ?? outs[0]?.toTokenAccount;
+	return outs[0]?.toUserAccount || undefined; // <-- only real wallet
 }
 
 function pickAnyRecipient(tx: HeliusTx, self: string): string | undefined {
@@ -1866,22 +1867,33 @@ const attachSigAndSigner = (
 	rows: KSRow[],
 	tag: string,
 	sigToSigner: Map<string, string> | Record<string, string>,
-	sigToRecipient?: Map<string, string> | Record<string, string>
+	sigToOtherParty?: Map<string, string> | Record<string, string>,
+	selfAddress?: string
 ) => {
 	const signerMap =
 		sigToSigner instanceof Map
 			? sigToSigner
 			: new Map(Object.entries(sigToSigner || {}));
-	const recipMap =
-		sigToRecipient instanceof Map
-			? sigToRecipient
-			: new Map(Object.entries(sigToRecipient || {}));
+	const otherMap =
+		sigToOtherParty instanceof Map
+			? sigToOtherParty
+			: new Map(Object.entries(sigToOtherParty || {}));
 
 	return rows.map((r) => {
 		const withTag = { ...r, Notat: `${tag} - ${r.Notat}` };
 		const sig = extractSigFromNotat(withTag.Notat || "");
 		const signer = sig ? signerMap.get(sig!) : undefined;
-		const recipient = sig ? recipMap.get(sig!) : undefined; // hidden field
+
+		// Recipient shown per *row*:
+		// - Overføring-Ut  -> actual counterparty (resolved)
+		// - everything else (Overføring-Inn, Handel, Erverv, Inntekt, Tap, …) -> self
+		let recipient: string | undefined;
+		if (r.Type === "Overføring-Ut") {
+			recipient = sig ? otherMap.get(sig!) : undefined;
+		} else {
+			recipient = selfAddress || undefined;
+		}
+
 		const rowId = rowIdOfTagged(withTag);
 		return { ...withTag, signature: sig, signer, recipient, rowId } as any;
 	});
@@ -1929,6 +1941,116 @@ type Progress =
 			totalATAs: number;
 			addressShort: string;
 	  };
+
+// ADD THIS helper (place near other helpers)
+// Prefer: direct user recipient (rank 3) > token-account owner (rank 3, or 4 if owner===self)
+// Fallbacks (rank 1) only apply if nothing better exists.
+async function computeSigRecipients(
+	sigMap: Map<string, HeliusTx>,
+	self: string,
+	apiKey?: string
+): Promise<Map<string, string>> {
+	type Cand = { addr: string; rank: number };
+	const cand = new Map<string, Cand>();
+	const setCand = (sig: string, addr?: string, rank = 0) => {
+		if (!addr) return;
+		const prev = cand.get(sig);
+		if (!prev || rank > prev.rank) cand.set(sig, { addr, rank });
+	};
+
+	// tokenAccount -> { sigs: string[], baseRank: number }
+	const tokenAccToSigs = new Map<string, { sigs: string[]; rank: number }>();
+
+	const takeLargest = <T>(arr: T[], score: (t: T) => number) =>
+		arr.length ? [...arr].sort((a, b) => score(b) - score(a))[0] : undefined;
+
+	for (const [sig, tx] of sigMap.entries()) {
+		const native = (tx.nativeTransfers ?? []) as any[];
+		const toks = (tx.tokenTransfers ?? []) as any[];
+
+		// Collect all token-accounts that appear in this tx (to detect WSOL ATAs, pool vaults, etc.)
+		const accountsInTx = new Set<string>();
+		for (const t of toks) {
+			if (t?.fromTokenAccount) accountsInTx.add(t.fromTokenAccount);
+			if (t?.toTokenAccount) accountsInTx.add(t.toTokenAccount);
+		}
+
+		// ----- OUTGOING -----
+		// Native out: try recipient wallet; if it's actually a token account in this tx, resolve owner later.
+		const outsN = native.filter((n) => n?.fromUserAccount === self);
+		const bestOutN = takeLargest(outsN, (n) => Number(n?.amount ?? 0));
+		if (bestOutN?.toUserAccount) {
+			const dest = bestOutN.toUserAccount as string;
+			if (accountsInTx.has(dest)) {
+				const entry = tokenAccToSigs.get(dest) ?? { sigs: [], rank: 3 };
+				entry.sigs.push(sig);
+				tokenAccToSigs.set(dest, entry);
+			} else {
+				setCand(sig, dest, 3);
+			}
+		}
+
+		// Token out
+		const outsT = toks.filter((t) => t?.fromUserAccount === self);
+		const bestOutT = takeLargest(outsT, (t) =>
+			Number(t?.rawTokenAmount?.tokenAmount ?? t?.tokenAmount ?? 0)
+		);
+		if (bestOutT) {
+			if (bestOutT?.toUserAccount) {
+				setCand(sig, bestOutT.toUserAccount as string, 3);
+			} else if (bestOutT?.toTokenAccount) {
+				const acc = bestOutT.toTokenAccount as string;
+				const entry = tokenAccToSigs.get(acc) ?? { sigs: [], rank: 3 };
+				entry.sigs.push(sig);
+				tokenAccToSigs.set(acc, entry);
+			}
+		}
+
+		// ----- INCOMING (fallbacks if we didn’t get an outgoing recipient) -----
+		// Native in → sender (rank 1)
+		const insN = native.filter((n) => n?.toUserAccount === self);
+		const bestInN = takeLargest(insN, (n) => Number(n?.amount ?? 0));
+		if (bestInN?.fromUserAccount) {
+			setCand(sig, bestInN.fromUserAccount as string, 1);
+		}
+
+		// Token in → sender (rank 1) or resolve fromTokenAccount owner later (rank 2 baseline)
+		const insT = toks.filter((t) => t?.toUserAccount === self);
+		const bestInT = takeLargest(insT, (t) =>
+			Number(t?.rawTokenAmount?.tokenAmount ?? t?.tokenAmount ?? 0)
+		);
+		if (bestInT) {
+			if (bestInT?.fromUserAccount) {
+				setCand(sig, bestInT.fromUserAccount as string, 1);
+			} else if (bestInT?.fromTokenAccount) {
+				const acc = bestInT.fromTokenAccount as string;
+				const entry = tokenAccToSigs.get(acc) ?? { sigs: [], rank: 2 };
+				entry.sigs.push(sig);
+				tokenAccToSigs.set(acc, entry);
+			}
+		}
+	}
+
+	// Resolve token-account owners and upgrade candidates.
+	if (tokenAccToSigs.size) {
+		const owners = await getOwnersOfTokenAccounts(
+			[...tokenAccToSigs.keys()],
+			apiKey ?? process.env.HELIUS_API_KEY
+		);
+		for (const [acc, { sigs, rank }] of tokenAccToSigs.entries()) {
+			const owner = owners.get(acc);
+			if (!owner) continue;
+			const ownerIsSelf = owner.toLowerCase() === self.toLowerCase();
+			const finalRank = ownerIsSelf ? 4 : rank; // self beats everything
+			for (const s of sigs) setCand(s, owner, finalRank);
+		}
+	}
+
+	// Finalize
+	const out = new Map<string, string>();
+	for (const [s, c] of cand.entries()) out.set(s, c.addr);
+	return out;
+}
 
 async function scanAddresses(
 	address: string,
@@ -2101,7 +2223,8 @@ function postProcessAndCache(
 	ctx: Ctx,
 	rows: KSRow[],
 	sigMapOrSigner: Map<string, HeliusTx> | Map<string, string>,
-	selfSignerMap?: Map<string, string>
+	selfSignerMap?: Map<string, string>,
+	precomputedRecipients?: Map<string, string>
 ) {
 	const getSigner = selfSignerMap
 		? (s: string) => (s ? selfSignerMap.get(s) : undefined)
@@ -2131,8 +2254,8 @@ function postProcessAndCache(
 	);
 
 	// NEW: counterparty for in & out
-	let sigToRecipient: Map<string, string> | undefined;
-	if (txMap && typeof txMap.get === "function") {
+	let sigToRecipient: Map<string, string> | undefined = precomputedRecipients;
+	if (!sigToRecipient && txMap && typeof txMap.get === "function") {
 		sigToRecipient = new Map<string, string>();
 		for (const [sig, tx] of txMap.entries()) {
 			const cp = pickAnyCounterparty(tx, ctx.address);
@@ -2257,7 +2380,8 @@ export async function POST(req: NextRequest) {
 							cached.rowsProcessed,
 							walletTagStr,
 							cached.sigToSigner,
-							cached.recipients
+							cached.recipients,
+							address
 						);
 
 						await send({
@@ -2300,18 +2424,27 @@ export async function POST(req: NextRequest) {
 							fromISO,
 							toISO
 						});
+
+						// compute real recipients (resolve token accounts → owners)
+						const recipients = await computeSigRecipients(
+							scan.sigMap,
+							address,
+							process.env.HELIUS_API_KEY
+						);
+
 						const result = postProcessAndCache(
 							ctx,
 							rows,
 							scan.sigMap,
-							scan.sigToSigner
+							scan.sigToSigner,
+							recipients // ← pass precomputed recipients
 						);
-						const cacheNow = getCache(ctx.cacheKey); // ← just saved
 						const rowsPreview = attachSigAndSigner(
 							result.rowsProcessed,
 							walletTagStr,
 							scan.sigToSigner,
-							cacheNow?.recipients ?? {}
+							recipients,
+							address
 						);
 
 						await send({
@@ -2350,7 +2483,8 @@ export async function POST(req: NextRequest) {
 					cached.rowsProcessed,
 					walletTagStr,
 					cached.sigToSigner,
-					cached.recipients
+					cached.recipients,
+					address
 				);
 
 				// Apply client edits BEFORE overrides so both JSON and CSV stay consistent
@@ -2381,17 +2515,27 @@ export async function POST(req: NextRequest) {
 				toISO
 			});
 
+			// compute recipients and pass into cache/post-processing
+			const recipients = await computeSigRecipients(
+				scan.sigMap,
+				address,
+				process.env.HELIUS_API_KEY
+			);
+
 			const result = postProcessAndCache(
 				ctx,
 				rows,
 				scan.sigMap,
-				scan.sigToSigner
+				scan.sigToSigner,
+				recipients // ← pass precomputed recipients
 			);
+
 			const rowsOutRaw = attachSigAndSigner(
 				result.rowsProcessed,
 				walletTagStr,
 				scan.sigToSigner,
-				getCache(ctx.cacheKey)?.recipients ?? {}
+				recipients,
+				address
 			);
 
 			let rowsOut = applyClientEdits(rowsOutRaw, body.clientEdits);
