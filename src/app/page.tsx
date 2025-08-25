@@ -1390,8 +1390,8 @@ export default function Home() {
 
 				{/* Footer */}
 				<footer className="mt-6 text-xs text-slate-500 dark:text-slate-400">
-					Vi tar forbehold om feil. Kontroller resultatet i Kryptosekken etter
-					opplasting.
+					Resultatet kan inneholde feil. Kontroller i lommeboken og i
+					Kryptosekken før innlevering.
 				</footer>
 			</div>
 		</main>

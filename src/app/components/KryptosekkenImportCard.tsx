@@ -76,7 +76,7 @@ export default function KryptosekkenImportCard({
 		<div className={cardClassName}>
 			<div className="p-4 sm:p-6">
 				{/* Header */}
-				<div className="mb-3 flex items-start justify-between gap-3">
+				<div className="mb-5 flex items-start justify-between gap-3 ">
 					<h2 className="text-base sm:text-lg font-semibold text-slate-800 dark:text-slate-100">
 						Importer i Kryptosekken
 					</h2>
