@@ -39,7 +39,103 @@ function getRecipientFromRow(row: KSPreviewRow | any): string | undefined {
 	return typeof v === "string" ? v : undefined;
 }
 
-/* ---------- Compact MetaBox (always renders; copy button matches WalletHoldings) ---------- */
+/* ---------- tiny badge for Type ---------- */
+function TypeBadge({ type }: { type?: string }) {
+	const base =
+		"inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium ring-1";
+	const cls =
+		type === "Handel"
+			? "ring-indigo-200 bg-indigo-100 text-indigo-700 dark:ring-indigo-900/40 dark:bg-indigo-500/15 dark:text-indigo-300"
+			: type === "Overføring-Inn"
+			? "ring-emerald-200 bg-emerald-100 text-emerald-700 dark:ring-emerald-900/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+			: type === "Overføring-Ut"
+			? "ring-rose-200 bg-rose-100 text-rose-700 dark:ring-rose-900/40 dark:bg-rose-500/15 dark:text-rose-300"
+			: type === "Erverv"
+			? "ring-sky-200 bg-sky-100 text-sky-700 dark:ring-sky-900/40 dark:bg-sky-500/15 dark:text-sky-300"
+			: type === "Tap"
+			? "ring-amber-200 bg-amber-100 text-amber-800 dark:ring-amber-900/40 dark:bg-amber-500/15 dark:text-amber-300"
+			: type === "Inntekt"
+			? "ring-green-200 bg-green-100 text-green-700 dark:ring-green-900/40 dark:bg-green-500/15 dark:text-green-300"
+			: "ring-slate-200 bg-slate-100 text-slate-700 dark:ring-white/10 dark:bg-white/10 dark:text-slate-200";
+	return <span className={`${base} ${cls}`}>{type || "—"}</span>;
+}
+
+/* ---------- ONE-LINE row preview (NO gebyr / NO notat) ---------- */
+function OneLineRowPreview({ row }: { row: KSPreviewRow | null | undefined }) {
+	if (!row) return null;
+
+	const type = (row as any).Type as string | undefined;
+	const marked = (row as any).Marked as string | undefined;
+	const time = (row as any).Tidspunkt as string | undefined;
+
+	const innAmt = (row as any).Inn as string | undefined;
+	const innSym = (row as any)["Inn-Valuta"] as string | undefined;
+	const utAmt = (row as any).Ut as string | undefined;
+	const utSym = (row as any)["Ut-Valuta"] as string | undefined;
+
+	const hasVal = (s?: string) =>
+		typeof s === "string" && s.trim() && s.replace(/[,\s]/g, ".") !== "0";
+
+	const innText = hasVal(innAmt) ? `${innAmt} ${innSym || ""}`.trim() : "";
+	const utText = hasVal(utAmt) ? `${utAmt} ${utSym || ""}`.trim() : "";
+
+	const titleParts = [
+		type ? `Type: ${type}` : "",
+		marked ? `Marked: ${marked}` : "",
+		time ? `Tid: ${time}` : "",
+		innText ? `Inn: ${innText}` : "",
+		utText ? `Ut: ${utText}` : ""
+	].filter(Boolean);
+	const title = titleParts.join(" • ");
+
+	return (
+		<div
+			className="mt-2 rounded-lg border border-slate-200 px-2.5 py-1.5 bg-white/70 dark:border-white/10 dark:bg-white/5"
+			title={title}
+		>
+			{/* key changes: allow wrapping on mobile, no overflow clipping */}
+			<div className="flex items-center gap-2 flex-wrap sm:flex-nowrap whitespace-normal sm:whitespace-nowrap overflow-visible">
+				<TypeBadge type={type} />
+
+				{/* INN chip */}
+				{innText ? (
+					<span className="min-w-0 max-w-full sm:max-w-[34%] truncate inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] ring-1 ring-emerald-200 bg-emerald-50 text-emerald-700 dark:ring-emerald-900/40 dark:bg-emerald-500/10 dark:text-emerald-300">
+						<span className="opacity-70">Inn</span>
+						<span className="font-mono truncate">{innText}</span>
+					</span>
+				) : null}
+
+				{/* UT chip */}
+				{utText ? (
+					<span className="min-w-0 max-w-full sm:max-w-[34%] truncate inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] ring-1 ring-rose-200 bg-rose-50 text-rose-700 dark:ring-rose-900/40 dark:bg-rose-500/10 dark:text-rose-300">
+						<span className="opacity-70">Ut</span>
+						<span className="font-mono truncate">{utText}</span>
+					</span>
+				) : null}
+
+				{/* Market tag (small) */}
+				{marked ? (
+					<span className="hidden sm:inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-slate-200 bg-slate-100 text-slate-700 dark:ring-white/10 dark:bg-white/10 dark:text-slate-200 truncate max-w-[18%]">
+						{marked}
+					</span>
+				) : null}
+
+				{/* Time — on mobile it wraps to its own line at the end */}
+				<span className="order-last w-full mt-1 text-right text-[12px] text-slate-600 dark:text-slate-300 sm:order-none sm:w-auto sm:mt-0 sm:ml-auto sm:text-inherit sm:truncate sm:max-w-[22%]">
+					{time || ""}
+				</span>
+
+				{!innText && !utText ? (
+					<span className="text-[12px] text-slate-500 dark:text-slate-400">
+						—
+					</span>
+				) : null}
+			</div>
+		</div>
+	);
+}
+
+/* ---------- Compact MetaBox (copy + open) ---------- */
 function MetaBox({
 	label,
 	value,
@@ -92,7 +188,6 @@ function MetaBox({
 
 	return (
 		<div className="rounded-md border border-slate-200 bg-slate-50 p-2.5 dark:border-white/10 dark:bg-white/5">
-			{/* Row 1: label + small buttons (copy + open) */}
 			<div className="flex items-center justify-between gap-2">
 				<div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
 					{label}
@@ -146,7 +241,6 @@ function MetaBox({
 				</div>
 			</div>
 
-			{/* Row 2: one-line truncated value */}
 			<div
 				className={
 					"mt-1 font-mono text-[12px] truncate whitespace-nowrap " +
@@ -226,7 +320,7 @@ export default function ModalEditor({
 
 	if (!open || !editTarget) return null;
 
-	// compute meta values for the three boxes (always render the boxes)
+	// meta values (shown above the preview)
 	const currentRow = rows?.[editTarget.idxOriginal];
 	const sig =
 		editTarget.sig ??
@@ -247,7 +341,7 @@ export default function ModalEditor({
 		>
 			<div
 				ref={modalCardRef}
-				className="w-full sm:max-w-2xl rounded-2xl overflow-hidden bg-white shadow-2xl ring-1 ring-slate-200 dark:bg-[linear-gradient(180deg,#0e1729_0%,#0b1220_100%)] dark:ring-white/10 flex flex-col max-h-[90vh]"
+				className="w-full sm:max-w-2xl rounded-2xl overflow-hidden bg-white shadow-2xl ring-1 ring-slate-200 dark:bg-[linear-gradient(180deg,#0e1729_0%,#0b1220_100%)] dark:ring-white/10 flex flex-col max-h[90vh]"
 				onClick={(e) => e.stopPropagation()}
 			>
 				<div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#0e1729]/80">
@@ -268,7 +362,7 @@ export default function ModalEditor({
 				</div>
 
 				<div className="px-3 sm:px-4 py-3 sm:py-4 overflow-y-auto">
-					{/* Meta row: ALWAYS show the three boxes (even when missing) */}
+					{/* Meta row: three compact boxes */}
 					<div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
 						<MetaBox
 							label="Signatur"
@@ -290,6 +384,9 @@ export default function ModalEditor({
 							}
 						/>
 					</div>
+
+					{/* ONE-LINE preview (no Gebyr / no Notat) */}
+					<OneLineRowPreview row={currentRow} />
 
 					<div className="mt-3">
 						{editTarget.field === "Type" ? (
@@ -442,7 +539,7 @@ function ModalActions({
 								<b>Bare dette feltet</b> – endrer kun denne cellen (én rad).
 							</li>
 							<li>
-								<b>Alle fra samme signer-adresse</b> – endrer alle rader der
+								<b>Alle med samme signer-adresse</b> – endrer alle rader der
 								samme underskriver (signer) har signert.
 							</li>
 							<li>
