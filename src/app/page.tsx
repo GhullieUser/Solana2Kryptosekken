@@ -8,7 +8,7 @@ import {
 	FiCalendar,
 	FiLoader,
 	FiEye,
-	FiExternalLink,
+	//FiExternalLink,
 	FiClock,
 	FiTrash2,
 	FiSliders,
@@ -20,7 +20,7 @@ import {
 	FiSun,
 	FiMoon
 } from "react-icons/fi";
-import { IoWalletOutline } from "react-icons/io5";
+import { IoWalletOutline, IoOpenOutline } from "react-icons/io5";
 import { SiSolana } from "react-icons/si";
 
 import Image from "next/image";
@@ -929,7 +929,7 @@ export default function Home() {
 													: "Skriv inn en adresse først"
 											}
 										>
-											<FiExternalLink className="h-[17px] w-[17px]" />
+											<IoOpenOutline className="h-[17px] w-[17px]" />
 										</Link>
 									</div>
 

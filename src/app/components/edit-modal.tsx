@@ -3,18 +3,17 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { FiX, FiInfo, FiCopy, FiExternalLink } from "react-icons/fi";
+import {
+	IoCloseOutline,
+	IoInformationCircleOutline,
+	IoCopyOutline,
+	IoCheckmarkCircle,
+	IoOpenOutline
+} from "react-icons/io5";
 
 import type { KSRow, KSPreviewRow } from "../page";
 
-/* ---------- tiny utils ---------- */
-function middleEllipsis(s: string, start = 10, end = 8) {
-	if (!s) return "";
-	return s.length <= start + end + 1
-		? s
-		: `${s.slice(0, start)}…${s.slice(-end)}`;
-}
-
+/* ---------- utils ---------- */
 function extractSig(row: KSPreviewRow): string | undefined {
 	if (row.signature) return row.signature;
 	const m = row.Notat?.match(/sig:([1-9A-HJ-NP-Za-km-z]+)/);
@@ -40,66 +39,124 @@ function getRecipientFromRow(row: KSPreviewRow | any): string | undefined {
 	return typeof v === "string" ? v : undefined;
 }
 
-/* ---------- Meta box (copy/link buttons styled like WalletHoldings, square + subtle) ---------- */
+/* ---------- Compact MetaBox (always renders; copy button matches WalletHoldings) ---------- */
 function MetaBox({
 	label,
 	value,
 	link
 }: {
 	label: string;
-	value: string;
+	value?: string | null;
 	link?: string;
 }) {
-	const [copied, setCopied] = useState(false);
+	const [justCopied, setJustCopied] = useState(false);
 
-	const btnSquare =
-		"inline-flex h-7 w-7 items-center justify-center rounded-md border " +
-		"border-slate-200 bg-white text-slate-700 hover:bg-slate-50 " +
-		"dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-white/10";
+	const btnSm =
+		"inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] " +
+		"ring-1 ring-slate-200 hover:bg-slate-100 " +
+		"dark:ring-slate-700 dark:hover:bg-white/10 " +
+		"disabled:opacity-50 disabled:cursor-not-allowed";
+
+	const isAvailable = typeof value === "string" && value.trim().length > 0;
+	const raw = (value || "").trim();
+
+	const shorten12 = (s: string, start = 6, end = 6) => {
+		if (s.length <= start + end + 1) return s;
+		return `${s.slice(0, start)}…${s.slice(-end)}`;
+	};
+
+	const displayValue = isAvailable ? shorten12(raw) : "not available";
+	const titleValue = isAvailable ? raw : "not available";
+
+	const onCopy = useCallback(async () => {
+		if (!isAvailable) return;
+		try {
+			await navigator.clipboard.writeText(raw);
+		} catch {
+			// Fallback for older browsers
+			const ta = document.createElement("textarea");
+			ta.value = raw;
+			ta.style.position = "fixed";
+			ta.style.opacity = "0";
+			document.body.appendChild(ta);
+			ta.select();
+			try {
+				document.execCommand("copy");
+			} finally {
+				document.body.removeChild(ta);
+			}
+		}
+		setJustCopied(true);
+		setTimeout(() => setJustCopied(false), 1200);
+	}, [isAvailable, raw]);
 
 	return (
-		<div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 dark:border-white/10 dark:bg-white/5">
-			<div className="min-w-0">
+		<div className="rounded-md border border-slate-200 bg-slate-50 p-2.5 dark:border-white/10 dark:bg-white/5">
+			{/* Row 1: label + small buttons (copy + open) */}
+			<div className="flex items-center justify-between gap-2">
 				<div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
 					{label}
 				</div>
-				<div
-					className="font-mono text-[12px] text-slate-800 dark:text-slate-200"
-					title={value}
-				>
-					{middleEllipsis(value)}
+				<div className="shrink-0 inline-flex items-center gap-1">
+					<button
+						type="button"
+						onClick={onCopy}
+						className={btnSm}
+						aria-label={isAvailable ? "Kopier" : "Ikke tilgjengelig"}
+						title={
+							isAvailable
+								? justCopied
+									? "Kopiert!"
+									: "Kopier"
+								: "Ikke tilgjengelig"
+						}
+						disabled={!isAvailable}
+					>
+						{justCopied ? (
+							<IoCheckmarkCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+						) : (
+							<IoCopyOutline className="h-3.5 w-3.5" />
+						)}
+					</button>
+
+					{link ? (
+						isAvailable ? (
+							<Link
+								href={link}
+								target="_blank"
+								rel="noopener noreferrer"
+								className={btnSm}
+								aria-label="Åpne i explorer"
+								title="Åpne i explorer"
+							>
+								<IoOpenOutline className="h-3.5 w-3.5" />
+							</Link>
+						) : (
+							<button
+								type="button"
+								className={btnSm}
+								aria-label="Ikke tilgjengelig"
+								title="Ikke tilgjengelig"
+								disabled
+							>
+								<IoOpenOutline className="h-3.5 w-3.5" />
+							</button>
+						)
+					) : null}
 				</div>
 			</div>
 
-			<div className="shrink-0 inline-flex items-center gap-1.5">
-				<button
-					type="button"
-					onClick={async () => {
-						try {
-							await navigator.clipboard.writeText(value);
-							setCopied(true);
-							setTimeout(() => setCopied(false), 1200);
-						} catch {}
-					}}
-					className={btnSquare}
-					aria-label="Kopier"
-					title={copied ? "Kopiert!" : "Kopier"}
-				>
-					<FiCopy className="h-4 w-4" />
-				</button>
-
-				{link && (
-					<Link
-						href={link}
-						target="_blank"
-						rel="noopener noreferrer"
-						className={btnSquare}
-						aria-label="Åpne i explorer"
-						title="Åpne i explorer"
-					>
-						<FiExternalLink className="h-4 w-4" />
-					</Link>
-				)}
+			{/* Row 2: one-line truncated value */}
+			<div
+				className={
+					"mt-1 font-mono text-[12px] truncate whitespace-nowrap " +
+					(isAvailable
+						? "text-slate-800 dark:text-slate-200"
+						: "text-slate-400 italic")
+				}
+				title={titleValue}
+			>
+				{displayValue}
 			</div>
 		</div>
 	);
@@ -169,6 +226,17 @@ export default function ModalEditor({
 
 	if (!open || !editTarget) return null;
 
+	// compute meta values for the three boxes (always render the boxes)
+	const currentRow = rows?.[editTarget.idxOriginal];
+	const sig =
+		editTarget.sig ??
+		(currentRow ? extractSig(currentRow as KSPreviewRow) : undefined);
+	const signer =
+		editTarget.signer ??
+		(currentRow && (currentRow as KSPreviewRow).signer) ??
+		undefined;
+	const recipient = currentRow ? getRecipientFromRow(currentRow) : undefined;
+
 	return (
 		<div
 			className="fixed inset-0 z-50 bg-black/30 dark:bg-black/40 flex items-center justify-center p-3 sm:p-4"
@@ -195,29 +263,33 @@ export default function ModalEditor({
 						className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5"
 						aria-label="Lukk"
 					>
-						<FiX className="h-5 w-5" />
+						<IoCloseOutline className="h-5 w-5" />
 					</button>
 				</div>
 
 				<div className="px-3 sm:px-4 py-3 sm:py-4 overflow-y-auto">
-					{(editTarget.sig || editTarget.signer) && (
-						<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-							{editTarget.sig && (
-								<MetaBox
-									label="Signatur"
-									value={editTarget.sig}
-									link={`https://solscan.io/tx/${editTarget.sig}`}
-								/>
-							)}
-							{editTarget.signer && (
-								<MetaBox
-									label="Signer-adresse"
-									value={editTarget.signer}
-									link={`https://solscan.io/address/${editTarget.signer}`}
-								/>
-							)}
-						</div>
-					)}
+					{/* Meta row: ALWAYS show the three boxes (even when missing) */}
+					<div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+						<MetaBox
+							label="Signatur"
+							value={sig}
+							link={sig ? `https://solscan.io/tx/${sig}` : undefined}
+						/>
+						<MetaBox
+							label="Signer-adresse"
+							value={signer}
+							link={signer ? `https://solscan.io/address/${signer}` : undefined}
+						/>
+						<MetaBox
+							label="Mottaker-adresse"
+							value={recipient}
+							link={
+								recipient
+									? `https://solscan.io/address/${recipient}`
+									: undefined
+							}
+						/>
+					</div>
 
 					<div className="mt-3">
 						{editTarget.field === "Type" ? (
@@ -283,7 +355,7 @@ function ModalActions({
 		width: number;
 	} | null>(null);
 
-	// NEW: detect if current row has a recipient to enable the "byRecipient" option
+	// detect if current row has a recipient to enable the "byRecipient" option
 	const hasRecipient = useMemo(() => {
 		if (!rows || !editTarget) return false;
 		const r = rows[editTarget.idxOriginal];
@@ -429,7 +501,7 @@ function ModalActions({
 						onClick={() => setOpen((v) => !v)}
 						className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:focus:bg-white/5"
 					>
-						<FiInfo className="h-4 w-4" />
+						<IoInformationCircleOutline className="h-5 w-5" />
 					</button>
 
 					{/* push 'Lagre' right */}
