@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@raydium-io/raydium-sdk-v2": "^0.2.20-alpha",
     "bs58": "^6.0.0",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",

@@ -39,6 +39,33 @@ function getRecipientFromRow(row: KSPreviewRow | any): string | undefined {
 	return typeof v === "string" ? v : undefined;
 }
 
+/** Try to read a program ID field from a row. */
+function getProgramIdFromRow(row: KSPreviewRow | any): string | undefined {
+	if (!row) return undefined;
+	// Check explicit programId field first (populated from transaction data)
+	const v =
+		row.programId ??
+		row.program_id ??
+		row.ProgramId ??
+		row["Program ID"] ??
+		row.program ??
+		row.Program;
+	return typeof v === "string" && v.trim() ? v : undefined;
+}
+
+function getProgramNameFromRow(row: KSPreviewRow | any): string | undefined {
+	if (!row) return undefined;
+	const v = row.programName ?? row.program_name ?? row.ProgramName;
+	return typeof v === "string" && v.trim() ? v : undefined;
+}
+
+function getProgramAddressFromRow(row: KSPreviewRow | any): string | undefined {
+	const v = getProgramIdFromRow(row);
+	if (!v) return undefined;
+	const s = v.trim();
+	return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s) ? s : undefined;
+}
+
 /* ---------- tiny badge for Type ---------- */
 function TypeBadge({ type }: { type?: string }) {
 	const base =
@@ -135,6 +162,94 @@ function OneLineRowPreview({ row }: { row: KSPreviewRow | null | undefined }) {
 	);
 }
 
+/* ---------- Compact address display ---------- */
+function CompactAddress({
+	label,
+	value,
+	copyValue,
+	link
+}: {
+	label: string;
+	value?: string | null;
+	copyValue?: string | null;
+	link?: string;
+}) {
+	const [justCopied, setJustCopied] = useState(false);
+	const isAvailable = typeof value === "string" && value.trim().length > 0;
+	const raw = (value || "").trim();
+	const copyRaw = (copyValue ?? raw).trim();
+
+	const shorten = (s: string) => {
+		if (s.length <= 13) return s;
+		// Check if it's an address
+		if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s)) {
+			return `${s.slice(0, 4)}…${s.slice(-4)}`;
+		}
+		return s;
+	};
+
+	const displayValue = isAvailable ? shorten(raw) : "—";
+
+	const onCopy = useCallback(async () => {
+		if (!isAvailable) return;
+		try {
+			await navigator.clipboard.writeText(copyRaw || raw);
+			setJustCopied(true);
+			setTimeout(() => setJustCopied(false), 1200);
+		} catch {}
+	}, [isAvailable, copyRaw, raw]);
+
+	return (
+		<div className="rounded border border-slate-200 bg-white px-2 py-1.5 dark:border-white/10 dark:bg-white/5 group">
+			<div className="flex items-center justify-between gap-2">
+				<div className="flex-1 min-w-0">
+					<div className="text-[9px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-0.5">
+						{label}
+					</div>
+					<div
+						className="font-mono text-[11px] text-slate-700 dark:text-slate-300 truncate"
+						title={
+							isAvailable
+								? copyRaw && copyRaw !== raw
+									? `${raw} (${copyRaw})`
+									: raw
+								: "Ikke tilgjengelig"
+						}
+					>
+						{displayValue}
+					</div>
+				</div>
+				<div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+					<button
+						type="button"
+						onClick={onCopy}
+						disabled={!isAvailable}
+						className="p-0.5 hover:bg-slate-200 dark:hover:bg-white/20 rounded disabled:opacity-30"
+						title={justCopied ? "Kopiert!" : "Kopier"}
+					>
+						{justCopied ? (
+							<IoCheckmarkCircle className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+						) : (
+							<IoCopyOutline className="h-3 w-3" />
+						)}
+					</button>
+					{link && isAvailable && (
+						<Link
+							href={link}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="p-0.5 hover:bg-slate-200 dark:hover:bg-white/20 rounded"
+							title="Åpne i explorer"
+						>
+							<IoOpenOutline className="h-3 w-3" />
+						</Link>
+					)}
+				</div>
+			</div>
+		</div>
+	);
+}
+
 /* ---------- Compact MetaBox (copy + open) ---------- */
 function MetaBox({
 	label,
@@ -161,7 +276,11 @@ function MetaBox({
 		return `${s.slice(0, start)}…${s.slice(-end)}`;
 	};
 
-	const displayValue = isAvailable ? shorten12(raw) : "Ikke tilgjengelig";
+	// Only shorten if it looks like a Solana address (base58, 32-44 chars)
+	const looksLikeAddress = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(raw);
+	const displayValue = isAvailable 
+		? (looksLikeAddress ? shorten12(raw) : raw)
+		: "Ikke tilgjengelig";
 	const titleValue = isAvailable ? raw : "Ikke tilgjengelig";
 
 	const onCopy = useCallback(async () => {
@@ -262,7 +381,10 @@ export type EditScope =
 	| "bySigner"
 	| "bySignature"
 	| "byMarked"
-	| "byRecipient";
+	| "byRecipient"
+	| "bySender"
+	| "byProgramId"
+	| "byVisible";
 
 type FieldKey = keyof KSRow;
 
@@ -330,6 +452,9 @@ export default function ModalEditor({
 		(currentRow && (currentRow as KSPreviewRow).signer) ??
 		undefined;
 	const recipient = currentRow ? getRecipientFromRow(currentRow) : undefined;
+	const programAddress = currentRow ? getProgramAddressFromRow(currentRow) : undefined;
+	const programName = currentRow ? getProgramNameFromRow(currentRow) : undefined;
+	const programDisplay = programName || programAddress || undefined;
 
 	return (
 		<div
@@ -362,27 +487,47 @@ export default function ModalEditor({
 				</div>
 
 				<div className="px-3 sm:px-4 py-3 sm:py-4 overflow-y-auto">
-					{/* Meta row: three compact boxes */}
-					<div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+					{/* Transaction metadata - compact layout */}
+					<div className="space-y-2 mb-3">
+						{/* Signature */}
 						<MetaBox
 							label="Signatur"
 							value={sig}
 							link={sig ? `https://solscan.io/tx/${sig}` : undefined}
 						/>
-						<MetaBox
-							label="Signer-adresse"
-							value={signer}
-							link={signer ? `https://solscan.io/address/${signer}` : undefined}
-						/>
-						<MetaBox
-							label="Mottaker-adresse"
-							value={recipient}
-							link={
-								recipient
-									? `https://solscan.io/address/${recipient}`
-									: undefined
-							}
-						/>
+
+						{/* Compact address row */}
+						<div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+							<CompactAddress
+								label="Signer"
+								value={signer}
+								link={signer ? `https://solscan.io/address/${signer}` : undefined}
+							/>
+							<CompactAddress
+								label="Avsender"
+								value={getSenderFromRow(currentRow)}
+								link={
+									getSenderFromRow(currentRow)
+										? `https://solscan.io/address/${getSenderFromRow(currentRow)}`
+										: undefined
+								}
+							/>
+							<CompactAddress
+								label="Mottaker"
+								value={recipient}
+								link={recipient ? `https://solscan.io/address/${recipient}` : undefined}
+							/>
+							<CompactAddress
+								label="Program ID"
+								value={programDisplay}
+								copyValue={programAddress}
+								link={
+									programAddress
+										? `https://solscan.io/account/${programAddress}`
+										: undefined
+								}
+							/>
+						</div>
 					</div>
 
 					{/* ONE-LINE preview (no Gebyr / no Notat) */}
@@ -457,6 +602,22 @@ function ModalActions({
 		if (!rows || !editTarget) return false;
 		const r = rows[editTarget.idxOriginal];
 		const v = getRecipientFromRow(r);
+		return !!(typeof v === "string" && v.trim());
+	}, [rows, editTarget]);
+
+	// detect if current row has a sender to enable the "bySender" option
+	const hasSender = useMemo(() => {
+		if (!rows || !editTarget) return false;
+		const r = rows[editTarget.idxOriginal];
+		const v = getSenderFromRow(r);
+		return !!(typeof v === "string" && v.trim());
+	}, [rows, editTarget]);
+
+	// detect if current row has a program ID to enable the "byProgramId" option
+	const hasProgramId = useMemo(() => {
+		if (!rows || !editTarget) return false;
+		const r = rows[editTarget.idxOriginal];
+		const v = getProgramIdFromRow(r);
 		return !!(typeof v === "string" && v.trim());
 	}, [rows, editTarget]);
 
@@ -543,6 +704,10 @@ function ModalActions({
 								samme underskriver (signer) har signert.
 							</li>
 							<li>
+								<b>Alle med samme avsender-adresse</b> – endrer alle rader som
+								har samme avsender/fra-adresse.
+							</li>
+							<li>
 								<b>Alle med samme signatur</b> – endrer alle rader som tilhører
 								samme transaksjon (signatur).
 							</li>
@@ -553,6 +718,10 @@ function ModalActions({
 							<li>
 								<b>Alle med samme mottaker-adresse</b> – endrer alle rader som
 								har samme mottaker (recipient).
+							</li>
+							<li>
+								<b>Kun synlige</b> – endrer alle rader som er synlige etter
+								gjeldende filtre.
 							</li>
 						</ul>
 					</div>,
@@ -577,6 +746,9 @@ function ModalActions({
 						<option value="bySigner" disabled={!editTarget?.signer}>
 							Alle med samme signer-adresse
 						</option>
+						<option value="bySender" disabled={!hasSender}>
+							Alle med samme avsender-adresse
+						</option>
 						<option value="bySignature" disabled={!editTarget?.sig}>
 							Alle med samme signatur
 						</option>
@@ -589,6 +761,10 @@ function ModalActions({
 						<option value="byRecipient" disabled={!hasRecipient}>
 							Alle med samme mottaker-adresse
 						</option>
+						<option value="byProgramId" disabled={!hasProgramId}>
+							Alle med samme program ID
+						</option>
+						<option value="byVisible">Kun synlige</option>
 					</select>
 
 					<button
@@ -609,8 +785,10 @@ function ModalActions({
 						onClick={() => applyEdit(editScope)}
 						disabled={
 							(editScope === "bySigner" && !editTarget?.signer) ||
+							(editScope === "bySender" && !hasSender) ||
 							(editScope === "bySignature" && !editTarget?.sig) ||
-							(editScope === "byRecipient" && !hasRecipient)
+							(editScope === "byRecipient" && !hasRecipient) ||
+							(editScope === "byProgramId" && !hasProgramId)
 						}
 						className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-indigo-500 dark:hover:bg-indigo-600"
 					>
@@ -622,4 +800,32 @@ function ModalActions({
 			{tooltipNode}
 		</div>
 	);
+}
+
+/** Try to read a sender/avsender field from a row (extend key list if needed). */
+function getSenderFromRow(row: KSPreviewRow | any): string | undefined {
+	if (!row) return undefined;
+	// For Overføring-Inn (incoming), the sender is the 'other party' (not signer)
+	// For Overføring-Ut (outgoing), the sender is the signer (self)
+	// For other types, sender is typically the signer
+	if (row.Type === "Overføring-Inn") {
+		// For incoming transfers, we need to find who sent it (not who received it)
+		// The recipient field for Overføring-Inn is self, so sender would be the counterparty
+		// But this info isn't directly stored, so try fallback fields
+		const v =
+			row.sender ??
+			row.Sender ??
+			row.fra ??
+			row.Fra ??
+			row.from ??
+			row.From ??
+			row["Avsender-adresse"] ??
+			row["Fra-adresse"] ??
+			row["sender-adresse"];
+		return typeof v === "string" && v.trim() ? v : undefined;
+	}
+	// For outgoing or other types, signer is the sender
+	return row.signer && typeof row.signer === "string" && row.signer.trim()
+		? row.signer
+		: undefined;
 }

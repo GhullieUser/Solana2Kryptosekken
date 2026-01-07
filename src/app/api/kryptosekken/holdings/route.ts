@@ -386,20 +386,29 @@ async function fetchDexScreenerForMints(
 
 async function fetchHoldingsForAddress(address: string, includeNFT: boolean) {
 	// 1) Native SOL
-	const balRes = await rpcCall("getBalance", [
-		address,
-		{ commitment: "confirmed" }
-	]);
+	let balRes: any;
+	try {
+		balRes = await rpcCall("getBalance", [address, { commitment: "confirmed" }]);
+	} catch (err: any) {
+		console.error("rpcCall getBalance failed:", err?.message || err);
+		throw new Error(`RPC getBalance failed: ${err?.message || String(err)}`);
+	}
 	const lamports: number =
 		typeof balRes === "number" ? balRes : balRes?.value ?? 0;
 	const solAmt = lamportsToSol(lamports);
 
 	// 2) SPL token accounts (parsed)
-	const tokRes = await rpcCall("getTokenAccountsByOwner", [
-		address,
-		{ programId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" },
-		{ encoding: "jsonParsed", commitment: "confirmed" }
-	]);
+	let tokRes: any;
+	try {
+		tokRes = await rpcCall("getTokenAccountsByOwner", [
+			address,
+			{ programId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" },
+			{ encoding: "jsonParsed", commitment: "confirmed" }
+		]);
+	} catch (err: any) {
+		console.error("rpcCall getTokenAccountsByOwner failed:", err?.message || err);
+		throw new Error(`RPC getTokenAccountsByOwner failed: ${err?.message || String(err)}`);
+	}
 
 	type TokenAccountParsed = {
 		pubkey: string;
@@ -488,15 +497,25 @@ async function fetchHoldingsForAddress(address: string, includeNFT: boolean) {
 
 	// 4) Resolve symbol/decimals
 	const needMeta = raw.map((r) => r.mint).filter((m) => m !== SOL_MINT);
-	const jupMeta =
-		needMeta.length > 0
-			? await fetchJupiterTokenMetadataMap(needMeta)
-			: new Map<string, { symbol?: string; decimals?: number }>();
+	let jupMeta: Map<string, { symbol?: string; decimals?: number }> =
+		new Map();
+	try {
+		if (needMeta.length > 0) jupMeta = await fetchJupiterTokenMetadataMap(needMeta);
+	} catch (err: any) {
+		console.error("Jupiter token metadata lookup failed:", err?.message || err);
+		jupMeta = new Map();
+	}
+
 	const still = needMeta.filter((m) => !jupMeta.has(m));
-	const helMeta =
-		still.length > 0
-			? await fetchTokenMetadataMap(still, process.env.HELIUS_API_KEY)
-			: new Map<string, { symbol?: string; decimals?: number }>();
+
+	let helMeta: Map<string, { symbol?: string; decimals?: number }> = new Map();
+	try {
+		if (still.length > 0)
+			helMeta = await fetchTokenMetadataMap(still, process.env.HELIUS_API_KEY);
+	} catch (err: any) {
+		console.error("Helius token metadata lookup failed:", err?.message || err);
+		helMeta = new Map();
+	}
 	const resolve = mkSymDecResolver(jupMeta, helMeta);
 
 	// 5) Pricing: try mint → id (various casings) → stables → SOL Coingecko fallback
@@ -545,7 +564,13 @@ async function fetchHoldingsForAddress(address: string, includeNFT: boolean) {
 	}
 
 	// 6) Logos (Jupiter token list)
-	const tokenList = await getJupTokenListMap();
+	let tokenList: Map<string, { logoURI?: string; symbol?: string; decimals?: number }> = new Map();
+	try {
+		tokenList = await getJupTokenListMap();
+	} catch (err: any) {
+		console.error("getJupTokenListMap failed:", err?.message || err);
+		tokenList = new Map();
+	}
 
 	// 7) DexScreener fallback: fill remaining prices + logos for meme/launchpad tokens
 	const missingForPrice = allMints.filter((m) => !priceMap.has(m));
@@ -630,6 +655,11 @@ export async function POST(req: NextRequest) {
 		const holdings = await fetchHoldingsForAddress(address, includeNFT);
 		return NextResponse.json({ holdings, updatedAt: Date.now() });
 	} catch (e: any) {
+		// Log full error and stack for easier debugging in dev/servers
+		try {
+			console.error("/api/kryptosekken/holdings POST error:", e);
+			if (e && e.stack) console.error(e.stack);
+		} catch {}
 		const msg = e?.message || "Unknown error";
 		return NextResponse.json({ error: msg }, { status: 502 });
 	}

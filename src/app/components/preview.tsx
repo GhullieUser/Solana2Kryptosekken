@@ -17,7 +17,7 @@ import {
 } from "react-icons/fi";
 
 import type { KSRow, KSPreviewRow, OverrideMaps } from "../page";
-import ModalEditor from "@components/edit-modal";
+import ModalEditor, { type EditScope } from "@components/edit-modal";
 
 /* ---------- local helpers & constants (duplicated here for isolation) ---------- */
 type IssueKind = "unknown-token" | "unknown-market";
@@ -113,6 +113,55 @@ function getRecipientFromRow(row: KSPreviewRow | any): string | undefined {
 		row["mottaker-adresse"] ??
 		row["Receiver Address"];
 	return typeof v === "string" ? v : undefined;
+}
+
+/** Try to read a sender/avsender field from a row (extend key list if needed). */
+function getSenderFromRow(row: KSPreviewRow | any): string | undefined {
+	if (!row) return undefined;
+	// For Overføring-Inn (incoming), the sender is the 'other party' (not signer)
+	// For Overføring-Ut (outgoing), the sender is the signer (self)
+	// For other types, sender is typically the signer
+	if (row.Type === "Overføring-Inn") {
+		// For incoming transfers, we need to find who sent it (not who received it)
+		// The recipient field for Overføring-Inn is self, so sender would be the counterparty
+		// But this info isn't directly stored, so try fallback fields
+		const v =
+			row.sender ??
+			row.Sender ??
+			row.fra ??
+			row.Fra ??
+			row.from ??
+			row.From ??
+			row["Avsender-adresse"] ??
+			row["Fra-adresse"] ??
+			row["sender-adresse"];
+		return typeof v === "string" && v.trim() ? v : undefined;
+	}
+	// For outgoing or other types, signer is the sender
+	return row.signer && typeof row.signer === "string" && row.signer.trim()
+		? row.signer
+		: undefined;
+}
+
+/** Try to read a program ID field from a row. */
+function getProgramIdFromRow(row: KSPreviewRow | any): string | undefined {
+	if (!row) return undefined;
+	// Check explicit programId field first (populated from transaction data)
+	const v =
+		row.programId ??
+		row.program_id ??
+		row.ProgramId ??
+		row["Program ID"] ??
+		row.program ??
+		row.Program;
+	return typeof v === "string" && v.trim() ? v : undefined;
+}
+
+function getProgramAddressFromRow(row: KSPreviewRow | any): string | undefined {
+	const v = getProgramIdFromRow(row);
+	if (!v) return undefined;
+	const s = v.trim();
+	return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s) ? s : undefined;
 }
 
 type SortOrder = "desc" | "asc";
@@ -355,13 +404,6 @@ type Props = {
 	setOverrides: React.Dispatch<React.SetStateAction<OverrideMaps>>;
 	onDownloadCSV: (overrides: OverrideMaps) => void;
 };
-
-type EditScope =
-	| "one"
-	| "bySigner"
-	| "bySignature"
-	| "byMarked"
-	| "byRecipient";
 
 type FilterableField = "Type" | "Inn-Valuta" | "Ut-Valuta" | "Marked";
 type Filters = Partial<Record<FilterableField, Set<string>>>;
@@ -915,6 +957,65 @@ export default function Preview({
 				for (let i = 0; i < next.length; i++) {
 					const rec = getRecipientFromRow(next[i])?.trim();
 					if (rec && rec === originalRecipient) {
+						const row = { ...next[i] } as any;
+						row[field] = newVal;
+						next[i] = row;
+					}
+				}
+				return next;
+			}
+			if (mode === "bySender") {
+				const originalSender = getSenderFromRow(prev[idxOriginal])?.trim();
+				if (!originalSender) return prev;
+				for (let i = 0; i < next.length; i++) {
+					const s = getSenderFromRow(next[i])?.trim();
+					if (s && s === originalSender) {
+						const row = { ...next[i] } as any;
+						row[field] = newVal;
+						next[i] = row;
+					}
+				}
+				return next;
+			}
+			if (mode === "byProgramId") {
+				const originalProgramId =
+					getProgramAddressFromRow(prev[idxOriginal])?.trim() ??
+					getProgramIdFromRow(prev[idxOriginal])?.trim();
+				if (!originalProgramId) return prev;
+				for (let i = 0; i < next.length; i++) {
+					const p =
+						getProgramAddressFromRow(next[i])?.trim() ??
+						getProgramIdFromRow(next[i])?.trim();
+					if (p && p === originalProgramId) {
+						const row = { ...next[i] } as any;
+						row[field] = newVal;
+						next[i] = row;
+					}
+				}
+				return next;
+			}
+			if (mode === "byVisible") {
+				// Apply to all currently visible rows (after filters and sorting)
+				// We need to recalculate which rows are visible based on current filters
+				const effectiveNext = next.map((r, idx) => ({
+					r: {
+						...r,
+						"Inn-Valuta": overrides.symbols?.[r["Inn-Valuta"]] ?? r["Inn-Valuta"],
+						"Ut-Valuta": overrides.symbols?.[r["Ut-Valuta"]] ?? r["Ut-Valuta"],
+						Marked: overrides.markets?.[r.Marked] ?? r.Marked
+					} as KSPreviewRow,
+					idx
+				}));
+				
+				const visibleIndices = new Set<number>();
+				for (const { r, idx } of effectiveNext) {
+					if (matchesFilters(r)) {
+						visibleIndices.add(idx);
+					}
+				}
+				
+				for (let i = 0; i < next.length; i++) {
+					if (visibleIndices.has(i)) {
 						const row = { ...next[i] } as any;
 						row[field] = newVal;
 						next[i] = row;
@@ -2177,7 +2278,7 @@ export default function Preview({
 									</button>
 								) : (
 									<span className="text-emerald-700 dark:text-emerald-400">
-										Alt ser bra ut ✅
+										Alt OK ✅
 									</span>
 								)}
 							</div>

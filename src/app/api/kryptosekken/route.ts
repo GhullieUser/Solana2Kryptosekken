@@ -33,6 +33,8 @@ type CacheVal = {
 	createdAt: number;
 	sigToSigner?: Record<string, string>;
 	recipients?: Record<string, string>;
+	programIds?: Record<string, string>;
+	programNames?: Record<string, string>;
 };
 
 const CACHE = new Map<string, CacheVal>();
@@ -706,6 +708,28 @@ function bucketEndDateMs(key: string, interval: DustInterval): number {
 	return end.getTime();
 }
 
+function bucketStartDateMs(key: string, interval: DustInterval): number {
+	if (interval === "day") {
+		const dt = new Date(`${key}T00:00:00Z`);
+		return dt.getTime();
+	}
+	if (interval === "month") {
+		const [y, m] = key.split("-");
+		const year = parseInt(y, 10);
+		const month = parseInt(m, 10);
+		const first = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
+		return first.getTime();
+	}
+	if (interval === "year") {
+		const year = parseInt(key, 10);
+		const first = new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0));
+		return first.getTime();
+	}
+	// week -> key is Monday start
+	const start = new Date(`${key}T00:00:00Z`);
+	return start.getTime();
+}
+
 function processDust(
 	rows: KSRow[],
 	opts: {
@@ -726,7 +750,7 @@ function processDust(
 			if (!isTransferRow(r)) return true;
 			const info = directionAndCurrency(r);
 			if (!info) return true;
-			return info.amt >= threshold;
+			return info.amt >= threshold; // Keep rows above threshold
 		});
 	}
 
@@ -742,6 +766,7 @@ function processDust(
 			totalAmt: number;
 			totalFeeSOL: number;
 			bucketMs: number;
+			bucketKey: string;
 			dir: "INN" | "UT";
 			sym: string;
 			signer: string;
@@ -788,6 +813,7 @@ function processDust(
 					totalAmt: info.amt,
 					totalFeeSOL: fee,
 					bucketMs: bucketEndDateMs(bucket, interval),
+					bucketKey: bucket,
 					dir: info.dir,
 					sym: info.sym,
 					signer
@@ -811,7 +837,12 @@ function processDust(
 			const signerNote =
 				v.signer && v.signer !== "UNKNOWN" ? short(v.signer) : "ukjent";
 
-			aggRows.push({
+				const startMs = bucketStartDateMs(v.bucketKey, interval);
+				const startCappedMs = Math.min(startMs, cappedMs);
+				const startTs = toNorwayTimeString(startCappedMs, useOslo);
+				const endTs = toNorwayTimeString(cappedMs, useOslo);
+
+				aggRows.push({
 				Tidspunkt: ts,
 				Type: type,
 				Inn: toAmountString(inn),
@@ -820,9 +851,9 @@ function processDust(
 				"Ut-Valuta": v.dir === "UT" ? currencyCode(v.sym) : "",
 				Gebyr: toAmountString(gebyr),
 				"Gebyr-Valuta": v.totalFeeSOL > 0 ? "SOL" : "",
-				Marked: "AGGREGERT-STØV",
-				Notat: `agg:${v.count} støv < ${threshold} fra:${signerNote}`
-			});
+					Marked: "AGG-DUST",
+					Notat: `Aggregert: ${v.count} støv mindre enn ${threshold} fra:${signerNote} tidsrom: ${startTs} - ${endTs}`
+				});
 		}
 
 		return finish(keep, aggRows);
@@ -835,6 +866,7 @@ function processDust(
 			totalAmt: number;
 			totalFeeSOL: number;
 			bucketMs: number;
+			bucketKey: string;
 			dir: "INN" | "UT";
 			sym: string;
 		};
@@ -870,6 +902,7 @@ function processDust(
 						totalAmt: info.amt,
 						totalFeeSOL: fee,
 						bucketMs: bucketEndDateMs(bucket, interval),
+						bucketKey: bucket,
 						dir: info.dir,
 						sym: info.sym
 					});
@@ -894,6 +927,11 @@ function processDust(
 			const ut = v.dir === "UT" ? numberToPlain(v.totalAmt) : "0";
 			const gebyr = v.totalFeeSOL > 0 ? numberToPlain(v.totalFeeSOL) : "0";
 
+			const startMs = bucketStartDateMs(v.bucketKey, interval);
+			const startCappedMs = Math.min(startMs, cappedMs);
+			const startTs = toNorwayTimeString(startCappedMs, useOslo);
+			const endTs = toNorwayTimeString(cappedMs, useOslo);
+
 			aggRows.push({
 				Tidspunkt: ts,
 				Type: type,
@@ -903,9 +941,9 @@ function processDust(
 				"Ut-Valuta": v.dir === "UT" ? currencyCode(v.sym) : "",
 				Gebyr: toAmountString(gebyr),
 				"Gebyr-Valuta": v.totalFeeSOL > 0 ? "SOL" : "",
-				Marked: "AGGREGERT-STØV",
-				Notat: `agg:${v.count} støv < ${threshold}`
-			});
+			    Marked: "AGG-DUST",
+			    Notat: `Aggregert: ${v.count} støv mindre enn ${threshold} tidsrom: ${startTs} - ${endTs}`
+		    });
 		}
 
 		return finish(keep, aggRows);
@@ -924,7 +962,12 @@ function consolidateRowsBySignature(
 	for (const r of rows) {
 		const sig = extractSigFromNotat(r.Notat || "");
 		// keep dust aggregates or rows without a signature as-is
-		if (!sig || r.Marked === "AGGREGERT-STØV" || r.Notat.startsWith("agg:")) {
+		if (
+			!sig ||
+			r.Marked === "AGG-DUST" ||
+			r.Notat.startsWith("agg:") ||
+			r.Notat.startsWith("Aggregert:")
+		) {
 			specials.push(r);
 			continue;
 		}
@@ -1822,6 +1865,8 @@ type ScanResult = {
 	myATAs: Set<string>;
 	sigMap: Map<string, HeliusTx>;
 	sigToSigner: Map<string, string>;
+	sigToProgramId: Map<string, string>;
+	sigToProgramName: Map<string, string>;
 };
 
 type MetaResult = {
@@ -1868,7 +1913,9 @@ const attachSigAndSigner = (
 	tag: string,
 	sigToSigner: Map<string, string> | Record<string, string>,
 	sigToOtherParty?: Map<string, string> | Record<string, string>,
-	selfAddress?: string
+	selfAddress?: string,
+	sigToProgramId?: Map<string, string> | Record<string, string>,
+	sigToProgramName?: Map<string, string> | Record<string, string>
 ) => {
 	const signerMap =
 		sigToSigner instanceof Map
@@ -1878,24 +1925,50 @@ const attachSigAndSigner = (
 		sigToOtherParty instanceof Map
 			? sigToOtherParty
 			: new Map(Object.entries(sigToOtherParty || {}));
+	const programMap =
+		sigToProgramId instanceof Map
+			? sigToProgramId
+			: new Map(Object.entries(sigToProgramId || {}));
+	const programNameMap =
+		sigToProgramName instanceof Map
+			? sigToProgramName
+			: new Map(Object.entries(sigToProgramName || {}));
 
 	return rows.map((r) => {
 		const withTag = { ...r, Notat: `${tag} - ${r.Notat}` };
 		const sig = extractSigFromNotat(withTag.Notat || "");
 		const signer = sig ? signerMap.get(sig!) : undefined;
+		const programId = sig ? programMap.get(sig!) : undefined;
+		const programName = sig ? programNameMap.get(sig!) : undefined;
 
 		// Recipient shown per *row*:
 		// - Overføring-Ut  -> actual counterparty (resolved)
 		// - everything else (Overføring-Inn, Handel, Erverv, Inntekt, Tap, …) -> self
 		let recipient: string | undefined;
+		let sender: string | undefined;
+		
 		if (r.Type === "Overføring-Ut") {
 			recipient = sig ? otherMap.get(sig!) : undefined;
+			sender = signer; // For outgoing, sender is the signer (self)
+		} else if (r.Type === "Overføring-Inn") {
+			recipient = selfAddress || undefined; // For incoming, recipient is self
+			sender = sig ? otherMap.get(sig!) : undefined; // Sender is the counterparty
 		} else {
 			recipient = selfAddress || undefined;
+			sender = signer; // For other types, sender is typically the signer
 		}
 
 		const rowId = rowIdOfTagged(withTag);
-		return { ...withTag, signature: sig, signer, recipient, rowId } as any;
+		return {
+			...withTag,
+			signature: sig,
+			signer,
+			recipient,
+			sender,
+			programId,
+			programName,
+			rowId
+		} as any;
 	});
 };
 
@@ -1915,7 +1988,13 @@ function applyClientEdits<T extends KSRow>(
 const getOrNull = (key: string) => {
 	const v = getCache(key);
 	return v
-		? { ...v, sigToSigner: v.sigToSigner ?? {}, recipients: v.recipients ?? {} }
+		? {
+				...v,
+				sigToSigner: v.sigToSigner ?? {},
+				recipients: v.recipients ?? {},
+				programIds: v.programIds ?? {},
+				programNames: v.programNames ?? {}
+			}
 		: null;
 };
 
@@ -2074,7 +2153,10 @@ async function scanAddresses(
 	const addressesToQuery = [address, ...tokenAccounts];
 	const sigMap = new Map<string, HeliusTx>();
 	const sigToSigner = new Map<string, string>();
+	const sigToProgramId = new Map<string, string>();
+	const sigToProgramName = new Map<string, string>();
 	const missing = new Set<string>();
+	
 
 	for (let ai = 0; ai < addressesToQuery.length; ai++) {
 		const who = addressesToQuery[ai];
@@ -2104,6 +2186,57 @@ async function scanAddresses(
 					sigToSigner.set(tx.signature, fpRaw);
 				} else {
 					missing.add(tx.signature);
+				}
+				
+				// Extract program address from instructions array + friendly name from source
+				let extractedProgramAddress: string | undefined;
+				let extractedProgramName: string | undefined;
+				
+				const instructions = (tx as any).instructions;
+				if (Array.isArray(instructions)) {
+					// Common system programs to filter out
+					const systemPrograms = new Set([
+						"ComputeBudget111111111111111111111111111111",
+						"11111111111111111111111111111111", // System Program
+						"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", // Token Program
+						"TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb", // Token-2022
+						"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", // Associated Token Program
+						"MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr" // Memo Program
+					]);
+					
+					// Find first non-system program
+					for (const instr of instructions) {
+						const pid = instr?.programId;
+						if (typeof pid === "string" && pid && !systemPrograms.has(pid)) {
+							extractedProgramAddress = pid;
+							break;
+						}
+					}
+				}
+
+				// Friendly name (e.g. RAYDIUM/JUPITER) from source, if present
+				const source = (tx as any).source;
+				if (typeof source === "string" && source.trim()) {
+					const lower = source.toLowerCase().trim();
+					// Skip generic/system names that don't provide useful info
+					const skipNames = new Set([
+						"unknown",
+						"solana",
+						"solana system",
+						"solana library",
+						"system program",
+						"spl"
+					]);
+					if (!skipNames.has(lower) && lower !== "") {
+						extractedProgramName = source.trim();
+					}
+				}
+
+				if (extractedProgramAddress) {
+					sigToProgramId.set(tx.signature, extractedProgramAddress);
+				}
+				if (extractedProgramName) {
+					sigToProgramName.set(tx.signature, extractedProgramName);
 				}
 			}
 			onProgress?.({
@@ -2142,7 +2275,7 @@ async function scanAddresses(
 		await Promise.allSettled(jobs);
 	}
 
-	return { myATAs, sigMap, sigToSigner };
+	return { myATAs, sigMap, sigToSigner, sigToProgramId, sigToProgramName };
 }
 
 function collectMints(allTxs: HeliusTx[]): string[] {
@@ -2224,7 +2357,9 @@ function postProcessAndCache(
 	rows: KSRow[],
 	sigMapOrSigner: Map<string, HeliusTx> | Map<string, string>,
 	selfSignerMap?: Map<string, string>,
-	precomputedRecipients?: Map<string, string>
+	precomputedRecipients?: Map<string, string>,
+	precomputedProgramIds?: Map<string, string>,
+	precomputedProgramNames?: Map<string, string>
 ) {
 	const getSigner = selfSignerMap
 		? (s: string) => (s ? selfSignerMap.get(s) : undefined)
@@ -2279,6 +2414,12 @@ function postProcessAndCache(
 			: undefined,
 		recipients: sigToRecipient
 			? Object.fromEntries(sigToRecipient.entries())
+			: undefined,
+		programIds: precomputedProgramIds
+			? Object.fromEntries(precomputedProgramIds.entries())
+			: undefined,
+		programNames: precomputedProgramNames
+			? Object.fromEntries(precomputedProgramNames.entries())
 			: undefined
 	});
 
@@ -2381,7 +2522,9 @@ export async function POST(req: NextRequest) {
 							walletTagStr,
 							cached.sigToSigner,
 							cached.recipients,
-							address
+							address,
+							cached.programIds,
+							cached.programNames
 						);
 
 						await send({
@@ -2437,14 +2580,18 @@ export async function POST(req: NextRequest) {
 							rows,
 							scan.sigMap,
 							scan.sigToSigner,
-							recipients // ← pass precomputed recipients
+							recipients, // ← pass precomputed recipients
+							scan.sigToProgramId,
+							scan.sigToProgramName
 						);
 						const rowsPreview = attachSigAndSigner(
 							result.rowsProcessed,
 							walletTagStr,
 							scan.sigToSigner,
 							recipients,
-							address
+							address,
+							scan.sigToProgramId,
+							scan.sigToProgramName
 						);
 
 						await send({
@@ -2484,7 +2631,9 @@ export async function POST(req: NextRequest) {
 					walletTagStr,
 					cached.sigToSigner,
 					cached.recipients,
-					address
+					address,
+					cached.programIds,
+					cached.programNames
 				);
 
 				// Apply client edits BEFORE overrides so both JSON and CSV stay consistent
@@ -2527,15 +2676,19 @@ export async function POST(req: NextRequest) {
 				rows,
 				scan.sigMap,
 				scan.sigToSigner,
-				recipients // ← pass precomputed recipients
+				recipients, // ← pass precomputed recipients
+				scan.sigToProgramId, // ← pass precomputed program IDs
+				scan.sigToProgramName
 			);
-
+			
 			const rowsOutRaw = attachSigAndSigner(
 				result.rowsProcessed,
 				walletTagStr,
 				scan.sigToSigner,
 				recipients,
-				address
+				address,
+				scan.sigToProgramId,
+				scan.sigToProgramName
 			);
 
 			let rowsOut = applyClientEdits(rowsOutRaw, body.clientEdits);

@@ -127,6 +127,9 @@ export type KSPreviewRow = KSRow & {
 	/** derived */
 	signature?: string;
 	signer?: string;
+	sender?: string;
+	programId?: string;
+	programName?: string;
 	rowId?: string;
 	/** hidden; used for “Alle med samme mottaker-adresse” */
 	recipient?: string;
@@ -456,6 +459,14 @@ export default function Home() {
 		setRange({ from, to: now });
 		setCalOpen(false);
 	}
+	function lastYearWhole() {
+		const now = new Date();
+		const year = now.getFullYear() - 1;
+		const from = new Date(year, 0, 1);
+		const to = new Date(year, 11, 31);
+		setRange({ from, to });
+		setCalOpen(false);
+	}
 	function clearDates() {
 		setRange(undefined);
 		setCalOpen(false);
@@ -638,6 +649,48 @@ export default function Home() {
 			});
 
 			if (!res.ok) {
+				// If server replies 412 it means no cached preview exists.
+				if (res.status === 412) {
+					const j = await res.json().catch(() => ({} as any));
+					const cacheKey = j?.cacheKey;
+					if (cacheKey) {
+						// Generate preview first, then retry CSV fetch using the returned cacheKey
+						pushLog("ℹ️ Ingen bufret forhåndsvisning — lager forhåndsvisning nå...");
+						const previewRes = await fetch("/api/kryptosekken", {
+							method: "POST",
+							headers: { "Content-Type": "application/json", Accept: "application/json" },
+							body: JSON.stringify({ ...lastPayloadRef.current, overrides: currentOverrides, clientEdits })
+						});
+						if (!previewRes.ok) {
+							const pj = await previewRes.json().catch(() => ({ error: previewRes.statusText }));
+							throw new Error(pj.error || previewRes.statusText);
+						}
+						const pj = await previewRes.json();
+						const newKey = pj.cacheKey || cacheKey;
+						// Retry CSV download with cacheKey param
+						const csvUrl = `/api/kryptosekken?useCache=1&cacheKey=${encodeURIComponent(newKey)}`;
+						const csvRes = await fetch(csvUrl, {
+							method: "POST",
+							headers: { "Content-Type": "application/json", Accept: "text/csv" },
+							body: JSON.stringify({ ...lastPayloadRef.current, overrides: currentOverrides, clientEdits })
+						});
+						if (!csvRes.ok) {
+							const cj = await csvRes.json().catch(() => ({ error: csvRes.statusText }));
+							throw new Error(cj.error || csvRes.statusText);
+						}
+						const blob2 = await csvRes.blob();
+						const a2 = document.createElement("a");
+						const dlUrl2 = URL.createObjectURL(blob2);
+						a2.href = dlUrl2;
+						a2.download = `sol2ks_${lastPayloadRef.current.address}.csv`;
+						document.body.appendChild(a2);
+						a2.click();
+						a2.remove();
+						URL.revokeObjectURL(dlUrl2);
+						pushLog("✅ CSV klar (med redigeringer).");
+						return;
+					}
+				}
 				const j = await res.json().catch(() => ({ error: "Feil" }));
 				throw new Error(j.error || res.statusText);
 			}
@@ -645,7 +698,7 @@ export default function Home() {
 			const a = document.createElement("a");
 			const dlUrl = URL.createObjectURL(blob);
 			a.href = dlUrl;
-			a.download = `kryptosekken_${lastPayloadRef.current.address}.csv`;
+			a.download = `sol2ks_${lastPayloadRef.current.address}.csv`;
 			document.body.appendChild(a);
 			a.click();
 			a.remove();
@@ -1063,9 +1116,20 @@ export default function Home() {
 										<button
 											type="button"
 											onClick={ytd}
+											title="Hittil i år — Fra 1. januar til i dag"
+											aria-label="Hittil i år (Året så langt)"
 											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 										>
-											YTD
+											Hittil i år
+										</button>
+										<button
+											type="button"
+											onClick={lastYearWhole}
+											title="Hele fjoråret — Fra 1. januar til 31. desember i fjor"
+											aria-label="Hele fjoråret"
+											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
+										>
+											Hele fjoråret
 										</button>
 										<button
 											type="button"
