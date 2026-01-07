@@ -17,7 +17,8 @@ import {
 } from "react-icons/fi";
 
 import type { KSRow, KSPreviewRow, OverrideMaps } from "../page";
-import ModalEditor, { type EditScope } from "@components/edit-modal";
+import ModalEditor, { type EditScope, type TextEditMode } from "@components/edit-modal";
+import StyledSelect from "@components/styled-select";
 
 /* ---------- local helpers & constants (duplicated here for isolation) ---------- */
 type IssueKind = "unknown-token" | "unknown-market";
@@ -214,9 +215,9 @@ const COL_ORDER: ColKey[] = [
 
 /** Unified select styling (match expanded counterpart; avoid bright white border) */
 const SELECT_STYLE =
-	"min-w-[140px] sm:min-w-[180px] pr-8 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs shadow-sm " +
+	"min-w-[140px] sm:min-w-[180px] rounded-xl border border-slate-200 bg-white px-3 pr-10 py-2 text-sm text-slate-800 shadow-sm dark:shadow-black/25 " +
 	"focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 " +
-	"dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-indigo-900/40";
+	"dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40";
 
 /* ---------- tiny utils ---------- */
 function middleEllipsis(s: string, start = 10, end = 8) {
@@ -894,14 +895,19 @@ export default function Preview({
 		setEditOpen(true);
 	}
 
-	function applyEdit(mode: EditScope) {
+	function applyEdit(
+		mode: EditScope,
+		textEditMode: TextEditMode = "replace",
+		valueOverride?: string
+	) {
 		if (!rows || !editTarget) return;
 
 		// snapshot current rows so this edit is undoable
 		pushUndoSnapshot();
 
 		const { idxOriginal, field, signer, sig } = editTarget;
-		const newVal = editDraft;
+		const newVal = valueOverride ?? editDraft;
+		const isNotesField = field === "Notat";
 
 		const originalMarket = rows[idxOriginal]?.Marked?.trim();
 
@@ -909,9 +915,21 @@ export default function Preview({
 			if (!prev) return prev;
 			const next = [...prev];
 
+			const mergeValue = (prevValue: unknown) => {
+				const prevText =
+					typeof prevValue === "string"
+						? prevValue
+						: prevValue == null
+						? ""
+						: String(prevValue);
+				if (!isNotesField || textEditMode === "replace") return newVal;
+				if (textEditMode === "prefix") return `${newVal}${prevText}`;
+				return `${prevText}${newVal}`;
+			};
+
 			if (mode === "one") {
 				const row = { ...next[idxOriginal] } as any;
-				row[field] = newVal;
+				row[field] = mergeValue((next[idxOriginal] as any)?.[field]);
 				next[idxOriginal] = row;
 				return next;
 			}
@@ -920,7 +938,7 @@ export default function Preview({
 				for (let i = 0; i < next.length; i++) {
 					if (next[i]?.signer && next[i]?.signer === signer) {
 						const row = { ...next[i] } as any;
-						row[field] = newVal;
+						row[field] = mergeValue((next[i] as any)?.[field]);
 						next[i] = row;
 					}
 				}
@@ -932,7 +950,7 @@ export default function Preview({
 					const rowSig = extractSig(next[i]);
 					if (rowSig && rowSig === sig) {
 						const row = { ...next[i] } as any;
-						row[field] = newVal;
+						row[field] = mergeValue((next[i] as any)?.[field]);
 						next[i] = row;
 					}
 				}
@@ -943,7 +961,7 @@ export default function Preview({
 				for (let i = 0; i < next.length; i++) {
 					if ((next[i]?.Marked ?? "").trim() === originalMarket) {
 						const row = { ...next[i] } as any;
-						row[field] = newVal;
+						row[field] = mergeValue((next[i] as any)?.[field]);
 						next[i] = row;
 					}
 				}
@@ -958,7 +976,7 @@ export default function Preview({
 					const rec = getRecipientFromRow(next[i])?.trim();
 					if (rec && rec === originalRecipient) {
 						const row = { ...next[i] } as any;
-						row[field] = newVal;
+						row[field] = mergeValue((next[i] as any)?.[field]);
 						next[i] = row;
 					}
 				}
@@ -971,7 +989,7 @@ export default function Preview({
 					const s = getSenderFromRow(next[i])?.trim();
 					if (s && s === originalSender) {
 						const row = { ...next[i] } as any;
-						row[field] = newVal;
+						row[field] = mergeValue((next[i] as any)?.[field]);
 						next[i] = row;
 					}
 				}
@@ -988,7 +1006,7 @@ export default function Preview({
 						getProgramIdFromRow(next[i])?.trim();
 					if (p && p === originalProgramId) {
 						const row = { ...next[i] } as any;
-						row[field] = newVal;
+						row[field] = mergeValue((next[i] as any)?.[field]);
 						next[i] = row;
 					}
 				}
@@ -1017,7 +1035,7 @@ export default function Preview({
 				for (let i = 0; i < next.length; i++) {
 					if (visibleIndices.has(i)) {
 						const row = { ...next[i] } as any;
-						row[field] = newVal;
+						row[field] = mergeValue((next[i] as any)?.[field]);
 						next[i] = row;
 					}
 				}
@@ -1811,7 +1829,7 @@ export default function Preview({
 		<section className="mt-6">
 			<div
 				className={[
-					"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 dark:shadow-black/15 ring-1 ring-slate-200/60 dark:ring-slate-800/60",
+					"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/15 ring-1 ring-slate-300/80 dark:ring-slate-800/60",
 					isResizingCol ? "select-none cursor-col-resize" : ""
 				].join(" ")}
 			>
@@ -2111,14 +2129,19 @@ export default function Preview({
 									<span className="text-slate-600 dark:text-slate-300">
 										Sorter:
 									</span>
-									<select
+									<StyledSelect
 										value={sortOrder}
-										onChange={(e) => setSortOrder(e.target.value as SortOrder)}
-										className={SELECT_STYLE}
-									>
-										<option value="desc">Nyeste først</option>
-										<option value="asc">Eldste først</option>
-									</select>
+										onChange={(v) => setSortOrder(v as SortOrder)}
+										buttonClassName={
+											"w-full sm:w-auto inline-flex items-center justify-between gap-2 " +
+												SELECT_STYLE
+										}
+										options={[
+											{ value: "desc", label: "Nyeste først" },
+											{ value: "asc", label: "Eldste først" }
+										]}
+										ariaLabel="Sorter"
+									/>
 
 									<button
 										type="button"
@@ -2206,16 +2229,19 @@ export default function Preview({
 												<span className="text-slate-600 dark:text-slate-300">
 													Sorter:
 												</span>
-												<select
+												<StyledSelect
 													value={sortOrder}
-													onChange={(e) =>
-														setSortOrder(e.target.value as SortOrder)
+													onChange={(v) => setSortOrder(v as SortOrder)}
+													buttonClassName={
+														"w-full sm:w-auto inline-flex items-center justify-between gap-2 " +
+														SELECT_STYLE
 													}
-													className={SELECT_STYLE}
-												>
-													<option value="desc">Nyeste først</option>
-													<option value="asc">Eldste først</option>
-												</select>
+													options={[
+														{ value: "desc", label: "Nyeste først" },
+														{ value: "asc", label: "Eldste først" }
+													]}
+													ariaLabel="Sorter"
+												/>
 
 												<button
 													type="button"
@@ -2288,7 +2314,7 @@ export default function Preview({
 									type="button"
 									onClick={() => onDownloadCSV(overrides)}
 									disabled={!rows || pendingIssuesCount > 0}
-									className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:shadow-lg active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed dark:from-indigo-500 dark:to-emerald-500"
+									className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:shadow-lg hover:from-indigo-700 hover:to-emerald-700 focus:outline-none focus:ring-4 focus:ring-indigo-200/60 dark:from-indigo-500 dark:to-emerald-500 dark:hover:from-indigo-500 dark:hover:to-emerald-500 dark:focus:ring-indigo-900/40 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
 									title={
 										pendingIssuesCount > 0
 											? "Løs ‘Trenger oppmerksomhet’ først"

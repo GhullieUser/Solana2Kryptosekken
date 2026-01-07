@@ -10,10 +10,10 @@
 
 /* ================= Theme tokens ================= */
 :root {
-	--bg: #ffffff;
+	--bg: #f8fafc; /* slate-50 */
 	--fg: #0f172a; /* slate-900 */
 	--muted: #475569; /* slate-600 */
-	--ring: #e2e8f0; /* slate-200 */
+	--ring: #cbd5e1; /* slate-300 */
 	--card: #ffffff;
 	--surface: #ffffff;
 
@@ -66,7 +66,7 @@ body {
 			rgba(16, 185, 129, 0.14),
 			transparent 60%
 		),
-		linear-gradient(to bottom, #eef2ff 0%, #ffffff 45%, #ecfdf5 100%);
+		linear-gradient(to bottom, #eef2ff 0%, #f8fafc 45%, #ecfdf5 100%);
 	color: var(--fg);
 }
 

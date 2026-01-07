@@ -12,6 +12,7 @@ import {
 } from "react-icons/io5";
 
 import type { KSRow, KSPreviewRow } from "../page";
+import StyledSelect from "./styled-select";
 
 /* ---------- utils ---------- */
 function extractSig(row: KSPreviewRow): string | undefined {
@@ -183,7 +184,7 @@ function CompactAddress({
 		if (s.length <= 13) return s;
 		// Check if it's an address
 		if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s)) {
-			return `${s.slice(0, 4)}…${s.slice(-4)}`;
+			return `${s.slice(0, 5)}…${s.slice(-5)}`;
 		}
 		return s;
 	};
@@ -386,6 +387,8 @@ export type EditScope =
 	| "byProgramId"
 	| "byVisible";
 
+export type TextEditMode = "replace" | "prefix" | "suffix";
+
 type FieldKey = keyof KSRow;
 
 export type EditTarget = {
@@ -413,7 +416,11 @@ type Props = {
 	setEditScope: (v: EditScope) => void;
 
 	/** apply */
-	applyEdit: (mode: EditScope) => void;
+	applyEdit: (
+		mode: EditScope,
+		textEditMode?: TextEditMode,
+		valueOverride?: string
+	) => void;
 };
 
 export default function ModalEditor({
@@ -429,6 +436,43 @@ export default function ModalEditor({
 	applyEdit
 }: Props) {
 	const modalCardRef = useRef<HTMLDivElement | null>(null);
+	const backdropMouseDownRef = useRef(false);
+	const [mounted, setMounted] = useState(false);
+	const [textEditMode, setTextEditMode] = useState<TextEditMode>("replace");
+	const currentRow = useMemo(() => {
+		if (!rows || !editTarget) return undefined;
+		return rows[editTarget.idxOriginal];
+	}, [rows, editTarget]);
+	const currentFieldValue = useMemo(() => {
+		if (!currentRow || !editTarget) return "";
+		const v = (currentRow as any)[editTarget.field];
+		return typeof v === "string" ? v : v == null ? "" : String(v);
+	}, [currentRow, editTarget]);
+	const notatPreviewValue = useMemo(() => {
+		if (!editTarget || editTarget.field !== "Notat") return "";
+		if (textEditMode === "replace") return editDraft;
+		if (textEditMode === "prefix") return `${editDraft}${currentFieldValue}`;
+		return `${currentFieldValue}${editDraft}`;
+	}, [editTarget, textEditMode, editDraft, currentFieldValue]);
+
+	useEffect(() => {
+		setMounted(true);
+	}, []);
+
+	useEffect(() => {
+		if (!open) return;
+		setTextEditMode("replace");
+	}, [open, editTarget?.field]);
+
+	useEffect(() => {
+		if (!open) return;
+		if (editTarget?.field !== "Notat") return;
+		if (textEditMode === "replace") {
+			setEditDraft(currentFieldValue);
+		} else {
+			setEditDraft("");
+		}
+	}, [open, editTarget?.field, textEditMode, currentFieldValue, setEditDraft]);
 
 	// close on ESC
 	useEffect(() => {
@@ -440,10 +484,10 @@ export default function ModalEditor({
 		return () => window.removeEventListener("keydown", onKey);
 	}, [open, onClose]);
 
-	if (!open || !editTarget) return null;
+	if (!mounted || typeof document === "undefined" || !open || !editTarget)
+		return null;
 
 	// meta values (shown above the preview)
-	const currentRow = rows?.[editTarget.idxOriginal];
 	const sig =
 		editTarget.sig ??
 		(currentRow ? extractSig(currentRow as KSPreviewRow) : undefined);
@@ -456,10 +500,18 @@ export default function ModalEditor({
 	const programName = currentRow ? getProgramNameFromRow(currentRow) : undefined;
 	const programDisplay = programName || programAddress || undefined;
 
-	return (
+	return createPortal(
 		<div
 			className="fixed inset-0 z-50 bg-black/30 dark:bg-black/40 flex items-center justify-center p-3 sm:p-4"
-			onClick={onClose}
+			onMouseDown={(e) => {
+				backdropMouseDownRef.current = e.target === e.currentTarget;
+			}}
+			onMouseUp={(e) => {
+				if (backdropMouseDownRef.current && e.target === e.currentTarget) {
+					onClose();
+				}
+				backdropMouseDownRef.current = false;
+			}}
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="edit-dialog-title"
@@ -535,26 +587,87 @@ export default function ModalEditor({
 
 					<div className="mt-3">
 						{editTarget.field === "Type" ? (
-							<select
+							<StyledSelect
 								value={editDraft}
-								onChange={(e) => setEditDraft(e.target.value)}
-								className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-indigo-900/40"
-							>
-								{typeOptions.map((t) => (
-									<option key={t} value={t}>
-										{t}
-									</option>
-								))}
-							</select>
-						) : (
-							<textarea
-								rows={6}
-								autoFocus
-								value={editDraft}
-								onChange={(e) => setEditDraft(e.target.value)}
-								className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words min-h-[7rem] dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
-								placeholder="Ny verdi…"
+								onChange={(v) => setEditDraft(v)}
+								buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 bg-white shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+								options={typeOptions.map((t) => ({ value: t, label: t }))}
+								ariaLabel="Velg type"
 							/>
+						) : (
+							<>
+								{editTarget.field === "Notat" ? (
+									<div className="mb-2 flex items-center gap-2">
+										<label className="text-xs text-slate-600 dark:text-slate-300">
+											Modus
+										</label>
+										<StyledSelect
+											value={textEditMode}
+											onChange={(v) => setTextEditMode(v as TextEditMode)}
+											buttonClassName="min-w-[9.5rem] inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+											options={[
+												{ value: "replace", label: "Erstatt" },
+												{ value: "prefix", label: "Prefiks" },
+												{ value: "suffix", label: "Suffiks" }
+											]}
+											ariaLabel="Hvordan Notat skal endres"
+										/>
+									</div>
+								) : null}
+
+								{editTarget.field === "Notat" && textEditMode !== "replace" ? (
+									<div className="grid grid-cols-1 gap-2">
+										{textEditMode === "prefix" ? (
+											<>
+												<textarea
+													rows={3}
+													autoFocus
+													value={editDraft}
+													onChange={(e) => setEditDraft(e.target.value)}
+													className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+													placeholder="Skriv prefiks (ny tekst før)…"
+												/>
+												<textarea
+													rows={4}
+													readOnly
+													tabIndex={-1}
+													value={notatPreviewValue}
+													className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono text-slate-500 shadow-sm dark:shadow-black/25 dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
+													aria-readonly="true"
+												/>
+											</>
+										) : (
+											<>
+												<textarea
+													rows={4}
+													readOnly
+													tabIndex={-1}
+													value={notatPreviewValue}
+													className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono text-slate-500 shadow-sm dark:shadow-black/25 dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
+													aria-readonly="true"
+												/>
+												<textarea
+													rows={3}
+													autoFocus
+													value={editDraft}
+													onChange={(e) => setEditDraft(e.target.value)}
+													className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+													placeholder="Skriv suffiks (ny tekst etter)…"
+												/>
+											</>
+										)}
+									</div>
+								) : (
+									<textarea
+										rows={6}
+										autoFocus
+										value={editDraft}
+										onChange={(e) => setEditDraft(e.target.value)}
+										className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words min-h-[7rem] dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+										placeholder="Ny verdi…"
+									/>
+								)}
+							</>
 						)}
 					</div>
 				</div>
@@ -564,11 +677,13 @@ export default function ModalEditor({
 					editScope={editScope}
 					setEditScope={setEditScope}
 					editTarget={editTarget}
+					textEditMode={editTarget.field === "Notat" ? textEditMode : "replace"}
 					applyEdit={applyEdit}
 					modalRef={modalCardRef}
 				/>
 			</div>
-		</div>
+		</div>,
+		document.body
 	);
 }
 
@@ -578,6 +693,7 @@ function ModalActions({
 	setEditScope,
 	editTarget,
 	rows,
+	textEditMode,
 	applyEdit,
 	modalRef
 }: {
@@ -585,7 +701,12 @@ function ModalActions({
 	setEditScope: (v: EditScope) => void;
 	editTarget: EditTarget;
 	rows: KSPreviewRow[] | null;
-	applyEdit: (mode: EditScope) => void;
+	textEditMode: TextEditMode;
+	applyEdit: (
+		mode: EditScope,
+		textEditMode?: TextEditMode,
+		valueOverride?: string
+	) => void;
 	modalRef: React.RefObject<HTMLDivElement | null>;
 }) {
 	const [open, setOpen] = useState(false);
@@ -595,6 +716,7 @@ function ModalActions({
 		top: number;
 		left: number;
 		width: number;
+		openUp: boolean;
 	} | null>(null);
 
 	// detect if current row has a recipient to enable the "byRecipient" option
@@ -626,17 +748,25 @@ function ModalActions({
 		const desktop = window.matchMedia("(min-width: 640px)").matches;
 		if (desktop && infoBtnRef.current) {
 			const r = infoBtnRef.current.getBoundingClientRect();
+			const spaceBelow = window.innerHeight - r.bottom;
+			const spaceAbove = r.top;
+			const openUp = spaceBelow < spaceAbove;
 			setCoords({
-				top: r.bottom + 8,
+				top: openUp ? r.top - 8 : r.bottom + 8,
 				left: r.left + r.width / 2,
-				width: Math.min(352, Math.floor(window.innerWidth * 0.9))
+				width: Math.min(352, Math.floor(window.innerWidth * 0.9)),
+				openUp
 			});
 		} else if (!desktop && modalRef.current) {
 			const r = modalRef.current.getBoundingClientRect();
+			const spaceBelow = window.innerHeight - r.bottom;
+			const spaceAbove = r.top;
+			const openUp = spaceBelow < spaceAbove;
 			setCoords({
-				top: r.bottom + 8,
+				top: openUp ? r.top - 8 : r.bottom + 8,
 				left: window.innerWidth / 2,
-				width: Math.min(360, Math.floor(window.innerWidth - 24))
+				width: Math.min(360, Math.floor(window.innerWidth - 24)),
+				openUp
 			});
 		}
 	}, [open, modalRef]);
@@ -688,7 +818,9 @@ function ModalActions({
 							position: "fixed",
 							top: coords.top,
 							left: coords.left,
-							transform: "translateX(-50%)",
+							transform: coords.openUp
+								? "translate(-50%, -100%)"
+								: "translateX(-50%)",
 							width: coords.width,
 							zIndex: 100000
 						}}
@@ -720,6 +852,10 @@ function ModalActions({
 								har samme mottaker (recipient).
 							</li>
 							<li>
+								<b>Alle med samme program ID</b> – endrer alle rader som
+								har samme program-adresse (Program ID).
+							</li>
+							<li>
 								<b>Kun synlige</b> – endrer alle rader som er synlige etter
 								gjeldende filtre.
 							</li>
@@ -731,69 +867,86 @@ function ModalActions({
 
 	return (
 		<div className="sticky bottom-0 z-10 px-3 sm:px-4 py-2.5 sm:py-3 border-t border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#0e1729]/80">
-			<div className="flex flex-col sm:flex-row sm:items-center gap-3">
-				<div className="text-[11px] text-slate-500 dark:text-slate-400">
-					Velg hvor endringen skal gjelde.
-				</div>
-
-				<div className="flex w-full items-center gap-2 sm:gap-3">
-					<select
-						value={editScope}
-						onChange={(e) => setEditScope(e.target.value as EditScope)}
-						className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
-					>
-						<option value="one">Bare dette feltet</option>
-						<option value="bySigner" disabled={!editTarget?.signer}>
-							Alle med samme signer-adresse
-						</option>
-						<option value="bySender" disabled={!hasSender}>
-							Alle med samme avsender-adresse
-						</option>
-						<option value="bySignature" disabled={!editTarget?.sig}>
-							Alle med samme signatur
-						</option>
-						<option
-							value="byMarked"
-							disabled={!rows?.[editTarget?.idxOriginal ?? 0]?.Marked?.trim()}
-						>
-							Alle fra samme marked
-						</option>
-						<option value="byRecipient" disabled={!hasRecipient}>
-							Alle med samme mottaker-adresse
-						</option>
-						<option value="byProgramId" disabled={!hasProgramId}>
-							Alle med samme program ID
-						</option>
-						<option value="byVisible">Kun synlige</option>
-					</select>
-
+			<div className="flex flex-col gap-2">
+				<div className="flex items-center justify-between gap-3">
+					<div className="text-[11px] text-slate-500 dark:text-slate-400">
+						Velg hvor endringen skal gjelde.
+					</div>
 					<button
 						ref={infoBtnRef}
 						type="button"
 						aria-label="Forklaring av alternativer"
 						onClick={() => setOpen((v) => !v)}
-						className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 dark:focus:bg-white/5"
+						className="shrink-0 rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10 dark:focus:bg-white/10"
 					>
 						<IoInformationCircleOutline className="h-5 w-5" />
 					</button>
+				</div>
 
-					{/* push 'Lagre' right */}
-					<div className="ml-auto" />
+				<div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+					<StyledSelect
+						value={editScope}
+						onChange={(v) => setEditScope(v as EditScope)}
+						usePortal
+						placement="auto"
+						buttonClassName="w-full sm:flex-1 min-w-[280px] sm:min-w-[420px] inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+						options={[
+							{ value: "one", label: "Bare dette feltet" },
+							{
+								value: "bySigner",
+								label: "Alle med samme signer-adresse",
+								disabled: !editTarget?.signer
+							},
+							{
+								value: "bySender",
+								label: "Alle med samme avsender-adresse",
+								disabled: !hasSender
+							},
+							{
+								value: "bySignature",
+								label: "Alle med samme signatur",
+								disabled: !editTarget?.sig
+							},
+							{
+								value: "byMarked",
+								label: "Alle fra samme marked",
+								disabled: !rows?.[editTarget?.idxOriginal ?? 0]?.Marked?.trim()
+							},
+							{
+								value: "byRecipient",
+								label: "Alle med samme mottaker-adresse",
+								disabled: !hasRecipient
+							},
+							{
+								value: "byProgramId",
+								label: "Alle med samme program ID",
+								disabled: !hasProgramId
+							},
+							{ value: "byVisible", label: "Kun synlige" }
+						]}
+						ariaLabel="Velg omfang"
+					/>
 
-					<button
-						type="button"
-						onClick={() => applyEdit(editScope)}
-						disabled={
+					{(() => {
+						const scopeDisabled =
 							(editScope === "bySigner" && !editTarget?.signer) ||
 							(editScope === "bySender" && !hasSender) ||
 							(editScope === "bySignature" && !editTarget?.sig) ||
 							(editScope === "byRecipient" && !hasRecipient) ||
-							(editScope === "byProgramId" && !hasProgramId)
-						}
-						className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-indigo-500 dark:hover:bg-indigo-600"
-					>
-						Lagre
-					</button>
+							(editScope === "byProgramId" && !hasProgramId);
+						return (
+							<div className="flex items-center gap-2 sm:ml-auto">
+								<button
+									type="button"
+									onClick={() => applyEdit(editScope, textEditMode)}
+									disabled={scopeDisabled}
+									className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-indigo-500 dark:hover:bg-indigo-600"
+								>
+									Lagre
+								</button>
+							</div>
+						);
+					})()}
 				</div>
 			</div>
 

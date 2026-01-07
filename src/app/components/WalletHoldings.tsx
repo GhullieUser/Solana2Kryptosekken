@@ -326,7 +326,7 @@ export default function WalletHoldings({
 
 	return (
 		<section
-			className="mt-6 rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 dark:shadow-black/15 ring-1 ring-slate-200/60 dark:ring-slate-800/60"
+			className="mt-6 rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/15 ring-1 ring-slate-300/80 dark:ring-slate-800/60"
 			aria-label="Beholdning"
 		>
 			{/* Header */}
@@ -389,7 +389,6 @@ export default function WalletHoldings({
 								</div>
 							)}
 						</div>
-
 						<button
 							type="button"
 							onClick={() => setCollapsed((v) => !v)}

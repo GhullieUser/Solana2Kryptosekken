@@ -30,6 +30,7 @@ import Link from "next/link";
 import Preview from "@/app/components/preview";
 import WalletHoldings from "@/app/components/WalletHoldings";
 import KryptosekkenImportCard from "@/app/components/KryptosekkenImportCard";
+import StyledSelect from "@/app/components/styled-select";
 
 /* ================= Client-only guard ================= */
 function ClientOnly({ children }: { children: React.ReactNode }) {
@@ -77,7 +78,7 @@ function ThemePill() {
 		<button
 			type="button"
 			onClick={toggle}
-			className="self-end sm:self-auto inline-flex h-[24px] items-center gap-2 rounded-full bg-white/70 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white/90 dark:hover:bg-white/10 transition "
+			className="self-end sm:self-auto inline-flex h-[24px] items-center gap-2 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition "
 			title="Bytt lys/mørk"
 			aria-label="Bytt lys/mørk"
 		>
@@ -775,7 +776,7 @@ export default function Home() {
 
 	// Shared card class (proper light/dark)
 	const cardCn =
-		"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 dark:shadow-black/15 ring-1 ring-slate-200/60 dark:ring-slate-800/60";
+		"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/15 ring-1 ring-slate-300/80 dark:ring-slate-800/60";
 
 	return (
 		<main className="min-h-screen">
@@ -784,7 +785,7 @@ export default function Home() {
 				<header className="mb-8 sm:mb-12">
 					{/* Row: badge + theme pill */}
 					<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-						<div className="inline-flex items-center gap-3 rounded-full bg-white/70 dark:bg-white/5 ring-1 ring-black/5 dark:ring-white/10 px-3 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25">
+						<div className="inline-flex items-center gap-3 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 py-1 text-xs font-medium text-slate-800 dark:text-slate-200 shadow-sm dark:shadow-black/25">
 							<SiSolana className="h-4 w-4" aria-hidden />
 							Solana → Kryptosekken • CSV Generator
 						</div>
@@ -1235,20 +1236,24 @@ export default function Home() {
 										<label className="text-xs text-slate-600 dark:text-slate-400">
 											Modus
 										</label>
-										<select
+										<StyledSelect
 											value={dustMode}
-											onChange={(e) => setDustMode(e.target.value as DustMode)}
-											className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
-										>
-											<option value="off">Vis alle</option>
-											<option value="remove">Skjul</option>
-											<option value="aggregate-signer">
-												Slå sammen fra samme sender
-											</option>
-											<option value="aggregate-period">
-												Slå sammen periodisk
-											</option>
-										</select>
+											onChange={(v) => setDustMode(v)}
+											buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+											options={[
+												{ value: "off", label: "Vis alle" },
+												{ value: "remove", label: "Skjul" },
+												{
+													value: "aggregate-signer",
+													label: "Slå sammen fra samme sender"
+												},
+												{
+													value: "aggregate-period",
+													label: "Slå sammen periodisk"
+												}
+											] as const}
+											ariaLabel="Velg støvmodus"
+										/>
 									</div>
 
 									{/* Threshold */}
@@ -1276,18 +1281,18 @@ export default function Home() {
 											<label className="text-xs text-slate-600 dark:text-slate-400">
 												Periode
 											</label>
-											<select
+											<StyledSelect
 												value={dustInterval}
-												onChange={(e) =>
-													setDustInterval(e.target.value as DustInterval)
-												}
-												className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
-											>
-												<option value="day">Dag</option>
-												<option value="week">Uke</option>
-												<option value="month">Måned</option>
-												<option value="year">År</option>
-											</select>
+												onChange={(v) => setDustInterval(v)}
+												buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+												options={[
+													{ value: "day", label: "Dag" },
+													{ value: "week", label: "Uke" },
+													{ value: "month", label: "Måned" },
+													{ value: "year", label: "År" }
+												] as const}
+												ariaLabel="Velg periode"
+											/>
 										</div>
 									)}
 								</div>
@@ -1327,7 +1332,7 @@ export default function Home() {
 								<button
 									type="submit"
 									disabled={loading}
-									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
+									className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:shadow-lg hover:from-indigo-700 hover:to-emerald-700 focus:outline-none focus:ring-4 focus:ring-indigo-200/60 dark:focus:ring-indigo-900/40 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
 								>
 									{loading ? (
 										<FiLoader className="h-4 w-4 animate-spin" />
