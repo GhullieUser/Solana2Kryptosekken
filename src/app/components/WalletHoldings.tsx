@@ -16,6 +16,8 @@ type Props = {
 	includeNFT?: boolean;
 	/** Render & fetch only after “Sjekk lommebok”. */
 	enabled?: boolean;
+	/** Optional: pass back a symbol->logo map to share with other views (e.g. Summary). */
+	onLogoMap?: (logos: Record<string, string | null>) => void;
 };
 
 type Holding = {
@@ -44,7 +46,8 @@ type Currency = "USD" | "NOK";
 export default function WalletHoldings({
 	address,
 	includeNFT = false,
-	enabled = false
+	enabled = false,
+	onLogoMap
 }: Props) {
 	const { tr } = useLocale();
 	const [loading, setLoading] = useState(false);
@@ -69,6 +72,11 @@ export default function WalletHoldings({
 		includeNFT: boolean;
 	} | null>(null);
 	const prevEnabled = useRef<boolean>(enabled);
+	const onLogoMapRef = useRef<Props["onLogoMap"]>(onLogoMap);
+
+	useEffect(() => {
+		onLogoMapRef.current = onLogoMap;
+	}, [onLogoMap]);
 
 	// --- refs + computed max height for 10 rows ---
 	const headerRef = useRef<HTMLTableSectionElement | null>(null);
@@ -153,7 +161,20 @@ export default function WalletHoldings({
 					return Number.isFinite(n) && n > 0;
 				});
 
-				if (!cancelled) setHoldings(filtered);
+				if (!cancelled) {
+					setHoldings(filtered);
+					const cb = onLogoMapRef.current;
+					if (cb) {
+						const logos: Record<string, string | null> = {};
+						for (const h of filtered) {
+							const sym = String(h.symbol ?? "").trim().toUpperCase();
+							if (!sym) continue;
+							const url = normalizeLogoUrl(h.logoURI);
+							logos[sym] = url ?? null;
+						}
+						cb(logos);
+					}
+				}
 			} catch (e: any) {
 				if (!cancelled) setErr(e?.message || "Ukjent feil");
 			} finally {
@@ -337,7 +358,7 @@ export default function WalletHoldings({
 			{/* Header */}
 			<div
 				className={`px-4 py-3 sm:px-10 sm:py-6 ${
-					!collapsed ? "border-b border-slate-100 dark:border-slate-800" : ""
+						!collapsed ? "border-b border-slate-200 dark:border-slate-800" : ""
 				}`}
 			>
 				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -582,7 +603,7 @@ export default function WalletHoldings({
 											<tr
 												key={`${h.mint}-${h.symbol}`}
 												ref={idx === 0 ? firstRowRef : undefined}
-												className="border-t border-slate-100 dark:border-slate-800"
+															className="border-t border-slate-200 dark:border-slate-800"
 											>
 												<td className="py-2 pr-4">
 													<div className="flex items-center gap-2 min-w-0">

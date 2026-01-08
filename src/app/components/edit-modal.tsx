@@ -613,6 +613,8 @@ export default function ModalEditor({
 							<StyledSelect
 								value={editDraft}
 								onChange={(v) => setEditDraft(v)}
+								usePortal
+								placement="bottom"
 								buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 bg-white shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 								options={typeOptions.map((t) => ({ value: t, label: t }))}
 								ariaLabel="Velg type"

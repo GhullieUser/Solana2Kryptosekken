@@ -1027,7 +1027,8 @@ function consolidateRowsBySignature(
 	};
 
 	const out: KSRow[] = [...specials];
-	const dustT = typeof dustThreshold === "number" && dustThreshold > 0 ? dustThreshold : 0;
+	const dustT =
+		typeof dustThreshold === "number" && dustThreshold > 0 ? dustThreshold : 0;
 
 	for (const [sig, arr] of groups.entries()) {
 		if (arr.length === 1) {
@@ -2015,6 +2016,7 @@ const putCache = (key: string, payload: Omit<CacheVal, "createdAt">) =>
 
 type Progress =
 	| { type: "log"; message: string }
+	| { type: "error"; error: string }
 	| {
 			type: "page";
 			page: number;
@@ -2616,9 +2618,16 @@ export async function POST(req: NextRequest) {
 							}
 						});
 					} catch (err: any) {
+						const msg =
+							err instanceof Error
+								? err.message
+								: typeof err === "string"
+								? err
+								: "Unknown error";
+						await send({ type: "error", error: msg });
 						await send({
 							type: "log",
-							message: `❌ Feil: ${err?.message || err}`
+							message: `❌ Feil: ${msg}`
 						});
 					} finally {
 						controller.close();

@@ -15,6 +15,10 @@ export const dynamic = "force-dynamic";
 const LAMPORTS_PER_SOL = 1_000_000_000;
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 
+// TrustWallet SOL logo (used as deterministic fallback)
+const SOL_LOGO =
+	"https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png";
+
 // $1 heuristic for stablecoins when price API misses them
 const USD_STABLES = new Set([
 	"USDC",
@@ -274,6 +278,34 @@ async function getJupTokenListMap(): Promise<Map<string, JupMinimal>> {
 		});
 	}
 	JUP_TOKENLIST_CACHE = { map, ts: now };
+	return map;
+}
+
+let JUP_SYMBOL_LOGO_CACHE:
+	| { map: Map<string, string | null>; ts: number }
+	| null = null;
+
+async function getJupSymbolToLogoMap(): Promise<Map<string, string | null>> {
+	const now = Date.now();
+	if (
+		JUP_SYMBOL_LOGO_CACHE &&
+		now - JUP_SYMBOL_LOGO_CACHE.ts < TOKENLIST_TTL_MS
+	) {
+		return JUP_SYMBOL_LOGO_CACHE.map;
+	}
+
+	const tokenList = await getJupTokenListMap();
+	const map = new Map<string, string | null>();
+	for (const t of tokenList.values()) {
+		const sym = (t?.symbol || "").trim().toUpperCase();
+		if (!sym) continue;
+		if (map.has(sym)) continue;
+		map.set(sym, normalizeLogoUrl(t?.logoURI) ?? null);
+	}
+
+	if (!map.has("SOL")) map.set("SOL", SOL_LOGO);
+
+	JUP_SYMBOL_LOGO_CACHE = { map, ts: now };
 	return map;
 }
 
@@ -598,11 +630,6 @@ async function fetchHoldingsForAddress(address: string, includeNFT: boolean) {
 	const holdings: Holding[] = raw.map((r) => {
 		const { symbol, decimals } = resolve(r.mint, r.decimals);
 		const jupLogo = tokenList.get(r.mint)?.logoURI;
-		const dsLogo = (() => {
-			// We'll ask DexScreener once more ONLY for logos still missing – reuse last call if possible
-			// (We already called it for missing prices; reuse that mapping if present.)
-			return undefined; // Will be filled after we compute a per-mint map below
-		})();
 
 		const priceUSD = priceMap.get(r.mint);
 		const valueUSD =
@@ -610,7 +637,7 @@ async function fetchHoldingsForAddress(address: string, includeNFT: boolean) {
 
 		const logoURI =
 			r.mint === SOL_MINT
-				? "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png"
+				? SOL_LOGO
 				: normalizeLogoUrl(jupLogo) || undefined; // DS fallback added below
 
 		return {
@@ -679,6 +706,36 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
 	try {
 		const sp = req.nextUrl.searchParams;
+
+		// Lightweight mode: resolve token logos by symbol
+		if (sp.get("logos") === "1") {
+			const raw = String(sp.get("symbols") || "");
+			const symbols = raw
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean)
+				.slice(0, 60)
+				.map((s) => currencyCode(s).toUpperCase());
+
+			if (symbols.length === 0) {
+				return NextResponse.json(
+					{ logos: {} },
+					{ headers: { "Cache-Control": "no-store" } }
+				);
+			}
+
+			const map = await getJupSymbolToLogoMap();
+			const logos: Record<string, string | null> = {};
+			for (const s of symbols) {
+				logos[s] = map.get(s) ?? null;
+			}
+
+			return NextResponse.json(
+				{ logos },
+				{ headers: { "Cache-Control": "no-store" } }
+			);
+		}
+
 		const address = String(sp.get("address") || "").trim();
 		if (!address) {
 			return NextResponse.json({ error: "Missing address" }, { status: 400 });

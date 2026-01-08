@@ -78,7 +78,7 @@ export default function KryptosekkenImportCard({
 	function StepText({ step }: { step: Step }) {
 		const Icon = step.Icon;
 		return (
-			<div className="inline-flex items-center gap-2 text-sm leading-6 text-slate-700 dark:text-slate-300 max-w-[22rem] justify-center">
+			<div className="inline-flex w-full items-center gap-2 text-sm leading-6 text-slate-700 dark:text-slate-300 justify-start sm:justify-center sm:max-w-[22rem]">
 				<span className={iconBox}>
 					<Icon className={iconCn} aria-hidden />
 				</span>

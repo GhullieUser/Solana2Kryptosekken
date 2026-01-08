@@ -5,7 +5,9 @@
 import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import Image from "next/image";
 import { useLocale } from "@/app/components/locale-provider";
+import { SiSolana } from "react-icons/si";
 import {
 	FiExternalLink,
 	FiEdit,
@@ -225,11 +227,54 @@ const SELECT_STYLE =
 	"dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40";
 
 /* ---------- tiny utils ---------- */
-function middleEllipsis(s: string, start = 10, end = 8) {
-	if (!s) return "";
-	return s.length <= start + end + 1
-		? s
-		: `${s.slice(0, start)}…${s.slice(-end)}`;
+function normalizeLogoUrl(input?: string) {
+	if (!input) return undefined;
+	if (input.startsWith("ipfs://")) {
+		const cid = input.replace("ipfs://", "");
+		return `https://ipfs.io/ipfs/${cid}`;
+	}
+	return input;
+}
+
+function SummaryAvatar({
+	symbol,
+	logoURI
+}: {
+	symbol: string;
+	logoURI?: string | null;
+}) {
+	const [errored, setErrored] = useState(false);
+	const sym = (symbol || "").trim().toUpperCase();
+
+	if (sym === "SOL") {
+		return (
+			<span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 dark:bg-slate-700 text-black dark:text-white">
+				<SiSolana className="h-3.5 w-3.5" />
+			</span>
+		);
+	}
+
+	const url = normalizeLogoUrl(logoURI ?? undefined);
+	if (url && !errored) {
+		return (
+			<Image
+				src={url}
+				alt={sym || symbol}
+				width={24}
+				height={24}
+				className="h-6 w-6 rounded-full ring-1 object-cover"
+				unoptimized
+				onError={() => setErrored(true)}
+			/>
+		);
+	}
+
+	const letter = (sym || "?").slice(0, 1).toUpperCase();
+	return (
+		<span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 dark:bg-slate-700 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+			{letter}
+		</span>
+	);
 }
 
 /* ---------- Shared padded wrapper for cells (padding here, td/th are padding:0) ---------- */
@@ -409,6 +454,10 @@ type Props = {
 	overrides: OverrideMaps;
 	setOverrides: React.Dispatch<React.SetStateAction<OverrideMaps>>;
 	onDownloadCSV: (overrides: OverrideMaps) => void;
+	walletName?: string;
+	address?: string;
+	timeframeLabel?: string;
+	prefetchedLogos?: Record<string, string | null>;
 };
 
 type FilterableField = "Type" | "Inn-Valuta" | "Ut-Valuta" | "Marked";
@@ -419,12 +468,16 @@ export default function Preview({
 	setRows,
 	overrides,
 	setOverrides,
-	onDownloadCSV
+	onDownloadCSV,
+	walletName,
+	address,
+	timeframeLabel,
+	prefetchedLogos
 }: Props) {
 	const { tr } = useLocale();
-	const [activeTab, setActiveTab] = useState<"preview" | "attention">(
-		"preview"
-	);
+	const [activeTab, setActiveTab] = useState<
+		"preview" | "summary" | "attention"
+	>("preview");
 	const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
 
 	/** Column width state (persisted to localStorage) */
@@ -600,14 +653,7 @@ export default function Preview({
 	const dragStartYRef = useRef(0);
 	const startHeightRef = useRef(384);
 
-	function onResizeStart(e: React.MouseEvent) {
-		isDraggingRef.current = true;
-		dragStartYRef.current = e.clientY;
-		startHeightRef.current = previewHeight;
-		window.addEventListener("mousemove", onResizing);
-		window.addEventListener("mouseup", onResizeEnd);
-	}
-	function onResizing(e: MouseEvent) {
+	const onResizing = useCallback((e: MouseEvent) => {
 		if (!isDraggingRef.current) return;
 		const dy = e.clientY - dragStartYRef.current;
 		const h = Math.max(
@@ -615,18 +661,27 @@ export default function Preview({
 			Math.min(window.innerHeight - 240, startHeightRef.current + dy)
 		);
 		setPreviewHeight(h);
-	}
-	function onResizeEnd() {
+	}, []);
+
+	const onResizeEnd = useCallback(() => {
 		isDraggingRef.current = false;
 		window.removeEventListener("mousemove", onResizing);
 		window.removeEventListener("mouseup", onResizeEnd);
+	}, [onResizing]);
+
+	function onResizeStart(e: React.MouseEvent) {
+		isDraggingRef.current = true;
+		dragStartYRef.current = e.clientY;
+		startHeightRef.current = previewHeight;
+		window.addEventListener("mousemove", onResizing);
+		window.addEventListener("mouseup", onResizeEnd);
 	}
 	useEffect(() => {
 		return () => {
 			window.removeEventListener("mousemove", onResizing);
 			window.removeEventListener("mouseup", onResizeEnd);
 		};
-	}, []);
+	}, [onResizing, onResizeEnd]);
 
 	// observe container size (height + width)
 	const [scrollTop, setScrollTop] = useState(0);
@@ -887,7 +942,7 @@ export default function Preview({
 	function openEditCell(
 		idxOriginal: number,
 		field: FieldKey,
-		currentValue: string
+		currentValue: string | undefined
 	) {
 		const sig = rows ? extractSig(rows[idxOriginal]) : undefined;
 		const signer = rows?.[idxOriginal]?.signer;
@@ -1164,6 +1219,218 @@ export default function Preview({
 	const filtered = sorted.filter(({ r }) => matchesFilters(r));
 	const displayed = filtered;
 
+	/* ===================== SUMMARY (by currency + type) ===================== */
+	const [summaryMarketByCurrency, setSummaryMarketByCurrency] = useState<
+		Record<string, string>
+	>({});
+
+	const summaryByCurrency = useMemo(() => {
+		const parseAmount = (v: unknown): number => {
+			if (typeof v === "number" && Number.isFinite(v)) return v;
+			if (typeof v !== "string") return 0;
+			const s = v.trim();
+			if (!s) return 0;
+			const n = Number.parseFloat(s.replace(/\s+/g, "").replace(/,/g, "."));
+			return Number.isFinite(n) ? n : 0;
+		};
+
+		const normalizeSummaryType = (
+			typeRaw: unknown,
+			side: "inn" | "ut"
+		): string => {
+			const t = String(typeRaw ?? "").trim() || "(ukjent)";
+			if (t === "Handel") {
+				return side === "inn" ? "Handel - kjøp" : "Handel - salg";
+			}
+			return t;
+		};
+
+		const addToMap = (
+			outer: Map<string, Map<string, number>>,
+			currency: string,
+			type: string,
+			amount: number
+		) => {
+			let byType = outer.get(currency);
+			if (!byType) {
+				byType = new Map<string, number>();
+				outer.set(currency, byType);
+			}
+			byType.set(type, (byType.get(type) ?? 0) + amount);
+		};
+
+		const add = (
+			currencyRaw: unknown,
+			typeRaw: unknown,
+			amount: number,
+			side: "inn" | "ut",
+			marketRaw: unknown
+		) => {
+			const currency = String(currencyRaw ?? "").trim();
+			if (!currency) return;
+			if (!amount) return;
+			const type = normalizeSummaryType(typeRaw, side);
+			addToMap(allMap, currency, type, amount);
+			const market = String(marketRaw ?? "").trim();
+			if (market) {
+				let marketMap = byMarketMap.get(currency);
+				if (!marketMap) {
+					marketMap = new Map<string, Map<string, number>>();
+					byMarketMap.set(currency, marketMap);
+				}
+				let typeMap = marketMap.get(market);
+				if (!typeMap) {
+					typeMap = new Map<string, number>();
+					marketMap.set(market, typeMap);
+				}
+				typeMap.set(type, (typeMap.get(type) ?? 0) + amount);
+			}
+		};
+
+		const allMap = new Map<string, Map<string, number>>();
+		const byMarketMap = new Map<
+			string,
+			Map<string, Map<string, number>>
+		>();
+		for (const { r } of displayed) {
+			add(r["Inn-Valuta"], r.Type, parseAmount(r.Inn), "inn", r.Marked);
+			add(r["Ut-Valuta"], r.Type, parseAmount(r.Ut), "ut", r.Marked);
+		}
+
+		const summaryTypeOrderList: string[] = [];
+		for (const t of TYPE_OPTIONS) {
+			if (t === "Handel") {
+				summaryTypeOrderList.push("Handel - kjøp", "Handel - salg");
+			} else {
+				summaryTypeOrderList.push(t);
+			}
+		}
+		const typeOrder = new Map<string, number>(
+			summaryTypeOrderList.map((t, i) => [t, i])
+		);
+
+		const toTypeTotals = (byType: Map<string, number>) =>
+			[...byType.entries()]
+				.filter(([, sum]) => Number.isFinite(sum) && Math.abs(sum) > 0)
+				.sort((a, b) => {
+					const oa = typeOrder.get(a[0]) ?? 999;
+					const ob = typeOrder.get(b[0]) ?? 999;
+					if (oa !== ob) return oa - ob;
+					return a[0].localeCompare(b[0]);
+				});
+
+		return [...allMap.entries()]
+			.map(([currency, byType]) => {
+				const currencyMarkets = Array.from(
+					(byMarketMap.get(currency)?.keys() ?? []) as Iterable<string>
+				)
+					.filter(Boolean)
+					.sort((a, b) => a.localeCompare(b));
+
+				const byMarket: Record<string, [string, number][]> = {};
+				const m = byMarketMap.get(currency);
+				if (m) {
+					for (const mk of currencyMarkets) {
+						const tm = m.get(mk);
+						if (tm) byMarket[mk] = toTypeTotals(tm);
+					}
+				}
+
+				return {
+					currency,
+					markets: currencyMarkets,
+					allTypeTotals: toTypeTotals(byType),
+					byMarket
+				};
+			})
+			.filter((x) => x.allTypeTotals.length > 0)
+			.sort((a, b) => a.currency.localeCompare(b.currency));
+	}, [displayed]);
+
+	useEffect(() => {
+		// prune per-token market selections that no longer exist
+		setSummaryMarketByCurrency((prev) => {
+			const keep = new Set(
+				summaryByCurrency.map((x) => String(x.currency).toUpperCase())
+			);
+			let changed = false;
+			const next: Record<string, string> = {};
+			for (const key of Object.keys(prev)) {
+				if (!keep.has(key)) {
+					changed = true;
+					continue;
+				}
+				next[key] = prev[key];
+			}
+			for (const row of summaryByCurrency) {
+				const key = String(row.currency).toUpperCase();
+				const sel = next[key];
+				if (sel && !row.markets.includes(sel)) {
+					next[key] = "";
+					changed = true;
+				}
+			}
+			return changed ? next : prev;
+		});
+	}, [summaryByCurrency]);
+
+	const summaryNumberFormat = useMemo(() => {
+		// Match requested formatting like "1,000.00".
+		return new Intl.NumberFormat("en-GB", {
+			useGrouping: true,
+			minimumFractionDigits: 2,
+			maximumFractionDigits: 20
+		});
+	}, []);
+
+	const summarySymbols = useMemo(
+		() => summaryByCurrency.map((x) => x.currency).filter(Boolean),
+		[summaryByCurrency]
+	);
+	const [summaryLogos, setSummaryLogos] = useState<
+		Record<string, string | null>
+	>({});
+
+	useEffect(() => {
+		if (!prefetchedLogos) return;
+		const keys = Object.keys(prefetchedLogos);
+		if (keys.length === 0) return;
+		setSummaryLogos((prev) => ({ ...prefetchedLogos, ...prev }));
+	}, [prefetchedLogos]);
+
+	useEffect(() => {
+		if (activeTab !== "summary") return;
+		if (summarySymbols.length === 0) return;
+
+		const normalized = summarySymbols
+			.map((s) => String(s).trim().toUpperCase())
+			.filter(Boolean);
+
+		const missing = normalized.filter(
+			(s) => !Object.prototype.hasOwnProperty.call(summaryLogos, s)
+		);
+		if (missing.length === 0) return;
+
+		const ctrl = new AbortController();
+		(async () => {
+			try {
+				const qs = encodeURIComponent(missing.join(","));
+				const res = await fetch(
+					`/api/kryptosekken/holdings?logos=1&symbols=${qs}`,
+					{ signal: ctrl.signal }
+				);
+				if (!res.ok) return;
+				const j = (await res.json()) as { logos?: Record<string, string | null> };
+				if (!j?.logos) return;
+				setSummaryLogos((prev) => ({ ...prev, ...j.logos }));
+			} catch {
+				// ignore
+			}
+		})();
+
+		return () => ctrl.abort();
+	}, [activeTab, summarySymbols, summaryLogos]);
+
 	const previewsReady =
 		Array.isArray(effectiveRows) && effectiveRows.length >= 0;
 
@@ -1278,12 +1545,9 @@ export default function Preview({
 		const selected = filters[field];
 		const active = !!selected && selected.size > 0;
 
-		const opts = useMemo(() => {
-			const m = optionCounts[field];
-			const arr = Array.from(m.entries());
-			arr.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-			return arr;
-		}, [field, optionCounts]);
+		const m = optionCounts[field];
+		const opts = Array.from(m.entries());
+		opts.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 
 		const btnRef = useRef<HTMLButtonElement | null>(null);
 		const popupRef = useRef<HTMLDivElement | null>(null);
@@ -1379,7 +1643,7 @@ export default function Preview({
 			const needed =
 				(el.scrollWidth || el.getBoundingClientRect().width || 0) + 16;
 			ensureMinWidth(colKey, needed);
-		}, [label, active, selected?.size, colKey, ensureMinWidth]);
+		}, [label, active, selected?.size, colKey]);
 
 		const popup = isOpen
 			? createPortal(
@@ -1900,7 +2164,10 @@ export default function Preview({
 								].join(" ")}
 							>
 								<span className="pointer-events-none">
-									{tr({ no: "Trenger oppmerksomhet", en: "Needs attention" })}
+									<span className="sm:hidden">{tr({ no: "Obs", en: "Attention" })}</span>
+									<span className="hidden sm:inline">
+										{tr({ no: "Trenger oppmerksomhet", en: "Needs attention" })}
+									</span>
 								</span>
 								{pendingIssuesCount > 0 && (
 									<span
@@ -1915,6 +2182,27 @@ export default function Preview({
 										{pendingIssuesCount}
 									</span>
 								)}
+							</button>
+
+							<button
+								type="button"
+								role="tab"
+								aria-selected={activeTab === "summary"}
+								onClick={() => {
+									persistPreviewScroll();
+									setActiveTab("summary");
+									setOpenFilter(null);
+								}}
+								className={[
+									"relative flex-1 min-w-0 text-center rounded-t-md",
+									"px-2 pr-6 py-1.5 text-[11px] leading-5 sm:px-3 sm:py-2 sm:text-sm",
+									"-mb-px border-b-2 transition-colors",
+									activeTab === "summary"
+										? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
+										: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
+								].join(" ")}
+							>
+								{tr({ no: "Oppsummering", en: "Summary" })}
 							</button>
 						</div>
 					</div>
@@ -2180,6 +2468,137 @@ export default function Preview({
 										})}
 									</ul>
 								</>
+							)}
+						</div>
+					) : activeTab === "summary" ? (
+						<div className="mt-4 max-h-[80vh] sm:max-h-none overflow-y-auto overscroll-contain">
+							{(walletName?.trim() || address?.trim() || timeframeLabel?.trim()) && (
+								<div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
+									{(walletName?.trim() || address?.trim()) && (
+										<span className="inline-flex items-center gap-1">
+											<span className="font-medium text-slate-700 dark:text-slate-200">
+												{tr({ no: "Wallet", en: "Wallet" })}:
+											</span>
+											<span className="truncate max-w-[60vw] sm:max-w-none">
+												{walletName?.trim() || address?.trim()}
+											</span>
+										</span>
+									)}
+									{timeframeLabel?.trim() && (
+										<span className="inline-flex items-center gap-1">
+											<span className="font-medium text-slate-700 dark:text-slate-200">
+												{tr({ no: "Tidsrom", en: "Timeframe" })}:
+											</span>
+											<span>{timeframeLabel}</span>
+										</span>
+									)}
+								</div>
+							)}
+
+							{summaryByCurrency.length === 0 ? (
+								<div className="text-sm text-slate-600 dark:text-slate-300">
+									{tr({
+										no: "Ingen summer å vise (ingen rader i gjeldende utvalg).",
+										en: "Nothing to summarize (no rows in the current selection)."
+									})}
+								</div>
+							) : (
+								<div className="rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/60">
+									<table className="w-full text-sm">
+										<thead className="sr-only">
+											<tr>
+												<th scope="col">{tr({ no: "Valuta", en: "Token" })}</th>
+												<th scope="col">{tr({ no: "Summer", en: "Totals" })}</th>
+											</tr>
+										</thead>
+										<tbody>
+											{summaryByCurrency.map(
+												({ currency, markets, allTypeTotals, byMarket }, idx) => {
+													const key = String(currency).toUpperCase();
+													const selMarket = summaryMarketByCurrency[key] ?? "";
+													const typeTotals = selMarket
+														? byMarket[selMarket] ?? []
+														: allTypeTotals;
+													const marketOptions = [
+														{ value: "", label: tr({ no: "Alle markeder", en: "All markets" }) },
+														...markets.map((m) => ({ value: m, label: m }))
+													];
+													// keep dropdown button size stable; do not auto-widen
+
+													return (
+														<tr
+															key={currency}
+															className={[
+																idx === 0
+																	? ""
+																	: "border-t border-slate-200 dark:border-slate-800",
+																"block sm:table-row"
+														].join(" ")}
+													>
+														<td className="py-2 pl-3 pr-3 sm:pr-4 align-top block sm:table-cell w-full">
+															<div className="flex items-start justify-between gap-2 sm:block">
+																<div className="flex items-center gap-2 min-w-0">
+																	<SummaryAvatar
+																		symbol={currency}
+																		logoURI={
+																			summaryLogos[String(currency).toUpperCase()] ?? null
+																		}
+																	/>
+																	<span className="font-medium text-slate-800 dark:text-slate-100 truncate">
+																		{currency}
+																	</span>
+																</div>
+
+																{markets.length > 0 && (
+																	<div className="w-[160px] flex-shrink-0 sm:w-auto sm:mt-1">
+																		<StyledSelect
+																			value={selMarket as string}
+																			onChange={(v) =>
+																				setSummaryMarketByCurrency((prev) => ({
+																					...prev,
+																					[key]: v as string
+																				}))
+																			}
+																			options={marketOptions as any}
+																			buttonClassName={
+																				"w-full sm:w-auto inline-flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 shadow-sm dark:shadow-black/25 " +
+																				"focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+																			}
+																			ariaLabel={tr({
+																				no: `Velg marked for ${currency}`,
+																				en: `Select market for ${currency}`
+																			})}
+																			usePortal
+																			portalZIndex={110000}
+																		/>
+																	</div>
+																)}
+															</div>
+														</td>
+														<td className="py-0 pb-3 sm:py-2 px-3 sm:pr-3 align-top block sm:table-cell w-full sm:w-[420px]">
+															<div className="w-full space-y-0.5">
+																{typeTotals.map(([type, sum]) => (
+																	<div
+																		key={`${currency}:${type}`}
+																		className="grid grid-cols-[1fr_auto] sm:grid-cols-[11rem_1fr] items-baseline gap-x-3"
+																	>
+																		<span className="text-xs text-slate-600 dark:text-slate-300">
+																			{type}
+																		</span>
+																		<span className="text-xs font-mono tabular-nums text-slate-800 dark:text-slate-100 text-right whitespace-nowrap">
+																			{summaryNumberFormat.format(sum)}
+																		</span>
+																	</div>
+																))}
+															</div>
+														</td>
+													</tr>
+													);
+											}
+										)}
+										</tbody>
+									</table>
+								</div>
 							)}
 						</div>
 					) : (

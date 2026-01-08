@@ -80,25 +80,11 @@ function ThemePill() {
 		<button
 			type="button"
 			onClick={toggle}
-			className="self-end sm:self-auto inline-flex h-[24px] w-[96px] items-center justify-center gap-2 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+			className="self-end sm:self-auto inline-flex h-[24px] w-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
 			title={tr({ no: "Bytt lys/mørk", en: "Toggle light/dark" })}
 			aria-label={tr({ no: "Bytt lys/mørk", en: "Toggle light/dark" })}
 		>
-			{isDark ? (
-				<>
-					<FiMoon className="h-4 w-4" />
-					<span className="w-[44px] text-center">
-						{tr({ no: "Mørk", en: "Dark" })}
-					</span>
-				</>
-			) : (
-				<>
-					<FiSun className="h-4 w-4" />
-					<span className="w-[44px] text-center">
-						{tr({ no: "Lys", en: "Light" })}
-					</span>
-				</>
-			)}
+			{isDark ? <FiMoon className="h-4 w-4" /> : <FiSun className="h-4 w-4" />}
 		</button>
 	);
 }
@@ -296,6 +282,9 @@ export default function Home() {
 	}, []);
 
 	const [rows, setRows] = useState<KSPreviewRow[] | null>(null);
+	const [sharedLogos, setSharedLogos] = useState<Record<string, string | null>>(
+		{}
+	);
 
 	// Address + history state
 	const [address, setAddress] = useState("");
@@ -603,12 +592,22 @@ export default function Home() {
 			});
 
 			if (!res.ok || !res.body) {
-				const j = await res.json().catch(() => ({ error: "Feil" }));
+				const text = await res.text().catch(() => "");
+				let errMsg = res.statusText;
+				try {
+					const j = text ? JSON.parse(text) : null;
+					errMsg =
+						(typeof j?.error === "string" && j.error) ||
+						(typeof j?.message === "string" && j.message) ||
+						errMsg;
+				} catch {
+					errMsg = text?.trim()?.slice(0, 300) || errMsg;
+				}
 				pushLog(
 					tr({ no: "❌ API-feil:", en: "❌ API error:" }) +
-						` ${j.error || res.statusText}`
+						` ${errMsg}`
 				);
-				throw new Error(j.error || res.statusText);
+				throw new Error(errMsg);
 			}
 
 			const reader = res.body.getReader();
@@ -627,6 +626,15 @@ export default function Home() {
 						const evt = JSON.parse(line);
 						if (evt.type === "log") {
 							pushLog(localizeStreamLog(evt.message));
+						} else if (evt.type === "error") {
+							const msg =
+								typeof evt.error === "string" && evt.error
+									? evt.error
+									: "Something went wrong";
+							setError(msg);
+							pushLog(
+								tr({ no: "❌ Feil:", en: "❌ Error:" }) + ` ${msg}`
+							);
 						} else if (evt.type === "page") {
 							const prefix =
 								evt.kind === "main"
@@ -734,7 +742,11 @@ export default function Home() {
 				};
 			}
 
-			const url = "/api/kryptosekken?useCache=1";
+			const url = cacheKeyRef.current
+				? `/api/kryptosekken?useCache=1&cacheKey=${encodeURIComponent(
+						cacheKeyRef.current
+				  )}`
+				: "/api/kryptosekken?useCache=1";
 			const res = await fetch(url, {
 				method: "POST",
 				headers: { "Content-Type": "application/json", Accept: "text/csv" },
@@ -758,7 +770,8 @@ export default function Home() {
 								en: "ℹ️ No cached preview — generating a preview now..."
 							})
 						);
-						const previewRes = await fetch("/api/kryptosekken", {
+						// Important: explicitly hit JSON mode so the server will scan+cache (CSV mode refuses to scan).
+						const previewRes = await fetch("/api/kryptosekken?format=json", {
 							method: "POST",
 							headers: {
 								"Content-Type": "application/json",
@@ -778,6 +791,7 @@ export default function Home() {
 						}
 						const pj = await previewRes.json();
 						const newKey = pj.cacheKey || cacheKey;
+						cacheKeyRef.current = newKey;
 						// Retry CSV download with cacheKey param
 						const csvUrl = `/api/kryptosekken?useCache=1&cacheKey=${encodeURIComponent(
 							newKey
@@ -940,7 +954,7 @@ export default function Home() {
 							<SiSolana className="h-4 w-4" aria-hidden />
 							Solana → Kryptosekken • CSV Generator
 						</div>
-						<div className="self-end sm:self-auto flex items-center gap-2">
+						<div className="w-full sm:w-auto flex items-center justify-between sm:justify-end gap-2">
 							<LocalePill />
 							<ThemePill />
 						</div>
@@ -1650,7 +1664,8 @@ export default function Home() {
 											:
 										</b>{" "}
 										{tr({ no: "Slår sammen små ", en: "Aggregates small " })}
-										<code>Overføring-Inn</code> og <code>Overføring-Ut</code> hver for seg fra hver{" "}
+										<code>Overføring-Inn</code> og <code>Overføring-Ut</code>{" "}
+										hver for seg fra hver{" "}
 										<i>{tr({ no: "signer-adresse", en: "signer address" })}</i>{" "}
 										{tr({
 											no: "per ",
@@ -1679,7 +1694,8 @@ export default function Home() {
 											:
 										</b>{" "}
 										{tr({ no: "Slår sammen små ", en: "Aggregates small " })}
-										<code>Overføring-Inn</code> og <code>Overføring-Ut</code> hver for seg per valgt periode
+										<code>Overføring-Inn</code> og <code>Overføring-Ut</code>{" "}
+										hver for seg per valgt periode
 										{tr({
 											no: " (uavhengig av sender).",
 											en: " (regardless of sender)."
@@ -1807,7 +1823,14 @@ export default function Home() {
 				{/* ========= Card: Current holdings (now always shows even if empty/error) ========= */}
 				{address?.trim() && (
 					<div className="mt-6">
-						<WalletHoldings address={address} includeNFT={false} enabled={ok} />
+						<WalletHoldings
+							address={address}
+							includeNFT={false}
+							enabled={ok}
+							onLogoMap={(logos) =>
+								setSharedLogos((prev) => ({ ...prev, ...logos }))
+							}
+						/>
 					</div>
 				)}
 
@@ -1821,6 +1844,10 @@ export default function Home() {
 								overrides={overrides}
 								setOverrides={setOverrides}
 								onDownloadCSV={downloadCSV}
+								walletName={walletName.trim() || undefined}
+								address={address.trim() || undefined}
+								timeframeLabel={formatRangeLabel(tr, locale, range)}
+								prefetchedLogos={sharedLogos}
 							/>
 						</div>
 

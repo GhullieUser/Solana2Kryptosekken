@@ -107,6 +107,88 @@ function redactApiKey(u: string) {
 	return u.replace(/(api-key=)[^&]+/i, "$1***");
 }
 
+const PUBLIC_SOL_RPC = "https://api.mainnet-beta.solana.com";
+
+async function fetchJsonRpcWithTimeout(
+	endpoint: string,
+	body: unknown,
+	timeoutMs: number
+): Promise<any> {
+	const ctrl = new AbortController();
+	const t = setTimeout(() => ctrl.abort(), timeoutMs);
+	try {
+		const res = await fetch(endpoint, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(body),
+			signal: ctrl.signal
+		});
+		const text = await res.text();
+		let json: any;
+		try {
+			json = text ? JSON.parse(text) : null;
+		} catch {
+			throw new Error(
+				`RPC parse error (${res.status}) — ${text?.slice(0, 300) || "no body"}`
+			);
+		}
+		if (!res.ok) {
+			const msg =
+				typeof json?.error?.message === "string"
+					? json.error.message
+					: text || res.statusText;
+			throw new Error(`RPC ${res.status} — ${msg}`);
+		}
+		if (json?.error) {
+			throw new Error(
+				`RPC error — ${
+					typeof json.error?.message === "string"
+						? json.error.message
+						: JSON.stringify(json.error).slice(0, 300)
+				}`
+			);
+		}
+		return json?.result;
+	} finally {
+		clearTimeout(t);
+	}
+}
+
+async function rpcCallWithFallback(
+	method: string,
+	params: any[],
+	apiKey?: string,
+	prefer: "helius-first" | "public-first" = "helius-first"
+): Promise<any> {
+	const heliusKey = (apiKey || "").trim() || (process.env.HELIUS_API_KEY || "").trim();
+	const heliusEndpoint = heliusKey
+		? `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(heliusKey)}`
+		: null;
+	const endpoints =
+		prefer === "helius-first"
+			? [heliusEndpoint, PUBLIC_SOL_RPC]
+			: [PUBLIC_SOL_RPC, heliusEndpoint];
+	const body = {
+		jsonrpc: "2.0",
+		id: Math.floor(Math.random() * 1e9),
+		method,
+		params
+	};
+
+	const errors: string[] = [];
+	for (const endpoint of endpoints) {
+		if (!endpoint) continue;
+		try {
+			return await fetchJsonRpcWithTimeout(endpoint, body, 15_000);
+		} catch (e: any) {
+			errors.push(`${endpoint}: ${e?.message || String(e)}`);
+		}
+	}
+	throw new Error(
+		`All RPC endpoints failed for ${method}. Details: ${errors.join(" | ")}`
+	);
+}
+
 async function throwHelius(res: Response, url: URL): Promise<never> {
 	const raw = await res.text().catch(() => "");
 	const detail = parseRetryBody(raw);
@@ -171,36 +253,19 @@ export async function getOwnersOfTokenAccounts(
 	const out = new Map<string, string>();
 	if (!tokenAccounts?.length) return out;
 
-	const key = resolveHeliusKey(apiKey);
-	const url = new URL(
-		`https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(key)}`
-	);
-
 	const chunk = <T>(arr: T[], n: number) =>
 		Array.from({ length: Math.ceil(arr.length / n) }, (_, i) =>
 			arr.slice(i * n, i * n + n)
 		);
 
 	for (const part of chunk(tokenAccounts, 100)) {
-		const body = {
-			jsonrpc: "2.0",
-			id: 1,
-			method: "getMultipleAccounts",
-			params: [part, { encoding: "jsonParsed" }]
-		};
-
-		const res = await fetchWithRetry(
-			url,
-			{
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify(body)
-			},
-			3
+		const result = await rpcCallWithFallback(
+			"getMultipleAccounts",
+			[part, { encoding: "jsonParsed" }],
+			apiKey,
+			"helius-first"
 		);
-
-		const raw = await res.json().catch(() => null);
-		const list: any[] = raw?.result?.value ?? [];
+		const list: any[] = result?.value ?? [];
 
 		for (let i = 0; i < part.length; i++) {
 			const acc = part[i];
@@ -328,39 +393,13 @@ export async function getTokenAccountsByOwner(
 	owner: string,
 	apiKey?: string
 ): Promise<string[]> {
-	const key = resolveHeliusKey(apiKey);
-	const url = new URL(
-		`https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(key)}`
+	const json = await rpcCallWithFallback(
+		"getTokenAccountsByOwner",
+		[owner, { programId: SPL_TOKEN_PROGRAM_ID }, { encoding: "jsonParsed" }],
+		apiKey,
+		"helius-first"
 	);
-	const body = {
-		jsonrpc: "2.0",
-		id: 1,
-		method: "getTokenAccountsByOwner",
-		params: [
-			owner,
-			{ programId: SPL_TOKEN_PROGRAM_ID },
-			{ encoding: "jsonParsed" }
-		]
-	};
-
-	const res = await fetchWithRetry(
-		url,
-		{
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify(body)
-		},
-		4
-	);
-
-	const text = await res.text();
-	let json: any;
-	try {
-		json = JSON.parse(text);
-	} catch {
-		throw new Error(`Helius RPC parse error — ${text || "no body"}`);
-	}
-	const value: any[] = json?.result?.value;
+	const value: any[] = json?.value;
 	if (!Array.isArray(value)) return [];
 	return value
 		.map((v) => v?.pubkey)

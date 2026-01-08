@@ -22,7 +22,9 @@ export default function StyledSelect<T extends string>({
 	ariaLabel,
 	usePortal = false,
 	portalZIndex = 100000,
-	placement = "auto"
+	placement = "auto",
+	minWidthLabel,
+	labelClassName
 }: {
 	value: T;
 	onChange: (next: T) => void;
@@ -36,6 +38,10 @@ export default function StyledSelect<T extends string>({
 	usePortal?: boolean;
 	portalZIndex?: number;
 	placement?: "auto" | "bottom" | "top";
+	/** If provided, forces the button to be at least wide enough to display this label. */
+	minWidthLabel?: string;
+	/** Customize label span styling (defaults to truncate). */
+	labelClassName?: string;
 }) {
 	const id = useId();
 	const listboxId = `${id}-listbox`;
@@ -124,7 +130,25 @@ export default function StyledSelect<T extends string>({
 				aria-label={ariaLabel}
 				onClick={() => setOpen((v) => !v)}
 			>
-				<span className="truncate">{selected?.label ?? value}</span>
+				{minWidthLabel ? (
+					<span className="relative min-w-0 flex-1">
+						<span aria-hidden className="invisible whitespace-nowrap">
+							{minWidthLabel}
+						</span>
+						<span
+							className={[
+								"absolute inset-0",
+								labelClassName ?? "truncate"
+							].join(" ")}
+						>
+							{selected?.label ?? value}
+						</span>
+					</span>
+				) : (
+					<span className={labelClassName ?? "truncate"}>
+						{selected?.label ?? value}
+					</span>
+				)}
 				<FiChevronDown className="h-4 w-4 shrink-0 opacity-70" />
 			</button>
 
