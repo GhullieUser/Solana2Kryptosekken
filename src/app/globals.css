@@ -152,6 +152,17 @@ button:disabled {
 	cursor: not-allowed;
 }
 
+/* Hide native number input spinners (they don't match our design and are hard to style) */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+	-webkit-appearance: none;
+	margin: 0;
+}
+input[type="number"] {
+	-moz-appearance: textfield;
+	appearance: textfield;
+}
+
 /* react-day-picker size tweaks */
 .rdp {
 	--rdp-cell-size: 24px;

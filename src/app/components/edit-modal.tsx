@@ -217,7 +217,7 @@ function CompactAddress({
 								? copyRaw && copyRaw !== raw
 									? `${raw} (${copyRaw})`
 									: raw
-							: tr({ no: "Ikke tilgjengelig", en: "Not available" })
+								: tr({ no: "Ikke tilgjengelig", en: "Not available" })
 						}
 					>
 						{displayValue}
@@ -851,39 +851,67 @@ function ModalActions({
 						className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-xl dark:border-white/10 dark:bg-[#0f172a] dark:text-slate-200"
 					>
 						<p className="mb-1 font-medium">
-							{tr({ no: "Hva betyr valgene?", en: "What do these options mean?" })}
+							{tr({
+								no: "Hva betyr valgene?",
+								en: "What do these options mean?"
+							})}
 						</p>
 						<ul className="list-disc space-y-1 pl-4">
 							<li>
-								<b>{tr({ no: "Bare dette feltet", en: "Only this field" })}</b> –{" "}
+								<b>{tr({ no: "Bare dette feltet", en: "Only this field" })}</b>{" "}
+								–{" "}
 								{tr({
 									no: "endrer kun denne cellen (én rad).",
 									en: "changes only this cell (one row)."
 								})}
 							</li>
 							<li>
-								<b>{tr({ no: "Alle med samme signer-adresse", en: "All with same signer address" })}</b> –{" "}
+								<b>
+									{tr({
+										no: "Alle med samme signer-adresse",
+										en: "All with same signer address"
+									})}
+								</b>{" "}
+								–{" "}
 								{tr({
 									no: "endrer alle rader der samme underskriver (signer) har signert.",
 									en: "changes all rows signed by the same signer."
 								})}
 							</li>
 							<li>
-								<b>{tr({ no: "Alle med samme avsender-adresse", en: "All with same sender address" })}</b> –{" "}
+								<b>
+									{tr({
+										no: "Alle med samme avsender-adresse",
+										en: "All with same sender address"
+									})}
+								</b>{" "}
+								–{" "}
 								{tr({
 									no: "endrer alle rader som har samme avsender/fra-adresse.",
 									en: "changes all rows with the same sender/from address."
 								})}
 							</li>
 							<li>
-								<b>{tr({ no: "Alle med samme signatur", en: "All with same signature" })}</b> –{" "}
+								<b>
+									{tr({
+										no: "Alle med samme signatur",
+										en: "All with same signature"
+									})}
+								</b>{" "}
+								–{" "}
 								{tr({
 									no: "endrer alle rader som tilhører samme transaksjon (signatur).",
 									en: "changes all rows belonging to the same transaction (signature)."
 								})}
 							</li>
 							<li>
-								<b>{tr({ no: "Alle fra samme marked", en: "All from same market" })}</b> –{" "}
+								<b>
+									{tr({
+										no: "Alle fra samme marked",
+										en: "All from same market"
+									})}
+								</b>{" "}
+								–{" "}
 								{tr({
 									no: "endrer alle rader med samme verdi i ",
 									en: "changes all rows with the same value in the "
@@ -892,14 +920,26 @@ function ModalActions({
 								{tr({ no: "-feltet.", en: " field." })}
 							</li>
 							<li>
-								<b>{tr({ no: "Alle med samme mottaker-adresse", en: "All with same recipient address" })}</b> –{" "}
+								<b>
+									{tr({
+										no: "Alle med samme mottaker-adresse",
+										en: "All with same recipient address"
+									})}
+								</b>{" "}
+								–{" "}
 								{tr({
 									no: "endrer alle rader som har samme mottaker (recipient).",
 									en: "changes all rows with the same recipient."
 								})}
 							</li>
 							<li>
-								<b>{tr({ no: "Alle med samme program ID", en: "All with same program ID" })}</b> –{" "}
+								<b>
+									{tr({
+										no: "Alle med samme program ID",
+										en: "All with same program ID"
+									})}
+								</b>{" "}
+								–{" "}
 								{tr({
 									no: "endrer alle rader som har samme program-adresse (Program ID).",
 									en: "changes all rows with the same program address (program ID)."
@@ -931,7 +971,10 @@ function ModalActions({
 					<button
 						ref={infoBtnRef}
 						type="button"
-						aria-label={tr({ no: "Forklaring av alternativer", en: "Explain options" })}
+						aria-label={tr({
+							no: "Forklaring av alternativer",
+							en: "Explain options"
+						})}
 						onClick={() => setOpen((v) => !v)}
 						className="shrink-0 rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10 dark:focus:bg-white/10"
 					>

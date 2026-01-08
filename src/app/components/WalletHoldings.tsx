@@ -331,7 +331,7 @@ export default function WalletHoldings({
 
 	return (
 		<section
-			className="mt-6 rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/15 ring-1 ring-slate-300/80 dark:ring-slate-800/60"
+			className="mt-6 rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 ring-1 ring-slate-300/80 dark:ring-white/10"
 			aria-label={tr({ no: "Beholdning", en: "Holdings" })}
 		>
 			{/* Header */}
@@ -375,7 +375,10 @@ export default function WalletHoldings({
 								<span className="hidden sm:inline">
 									{loading
 										? tr({ no: "Henter…", en: "Fetching…" })
-										: tr({ no: `${shown.length} tokens`, en: `${shown.length} tokens` })}
+										: tr({
+												no: `${shown.length} tokens`,
+												en: `${shown.length} tokens`
+										  })}
 								</span>
 							</div>
 						</div>
@@ -437,7 +440,10 @@ export default function WalletHoldings({
 
 				{!loading && err && (
 					<div className="text-sm text-red-600 dark:text-red-400">
-						{tr({ no: "Klarte ikke å hente beholdning:", en: "Failed to fetch holdings:" })}{" "}
+						{tr({
+							no: "Klarte ikke å hente beholdning:",
+							en: "Failed to fetch holdings:"
+						})}{" "}
 						{err}
 					</div>
 				)}
@@ -479,7 +485,10 @@ export default function WalletHoldings({
 												type="button"
 												onClick={() => handleSort("token")}
 												className="inline-flex items-center gap-1 hover:underline underline-offset-2"
-												title={tr({ no: "Sorter alfabetisk", en: "Sort alphabetically" })}
+												title={tr({
+													no: "Sorter alfabetisk",
+													en: "Sort alphabetically"
+												})}
 											>
 												{tr({ no: "Token", en: "Token" })}
 												<SortIcon active={sortKey === "token"} />
@@ -495,7 +504,10 @@ export default function WalletHoldings({
 												type="button"
 												onClick={() => handleSort("amount")}
 												className="inline-flex items-center gap-1 hover:underline underline-offset-2"
-												title={tr({ no: "Sorter etter mengde", en: "Sort by amount" })}
+												title={tr({
+													no: "Sorter etter mengde",
+													en: "Sort by amount"
+												})}
 											>
 												{tr({ no: "Mengde", en: "Amount" })}
 												<SortIcon active={sortKey === "amount"} />
@@ -511,7 +523,10 @@ export default function WalletHoldings({
 												type="button"
 												onClick={() => handleSort("mint")}
 												className="inline-flex items-center gap-1 hover:underline underline-offset-2"
-												title={tr({ no: "Sorter etter mint", en: "Sort by mint" })}
+												title={tr({
+													no: "Sorter etter mint",
+													en: "Sort by mint"
+												})}
 											>
 												{tr({ no: "Mint", en: "Mint" })}
 												<SortIcon active={sortKey === "mint"} />
@@ -606,7 +621,10 @@ export default function WalletHoldings({
 															type="button"
 															onClick={() => copyText(h.mint, h.mint)}
 															className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-1.5 py-0.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
-															title={tr({ no: "Kopier mint-adresse", en: "Copy mint address" })}
+															title={tr({
+																no: "Kopier mint-adresse",
+																en: "Copy mint address"
+															})}
 														>
 															{justCopied === h.mint ? (
 																<IoCheckmarkCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />

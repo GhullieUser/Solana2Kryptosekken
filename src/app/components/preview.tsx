@@ -1598,7 +1598,7 @@ export default function Preview({
 					{hasStretch && <col style={{ width: stretchWidth }} />}
 				</colgroup>
 
-				<thead className="sticky top-0 z-20 bg-white dark:bg-[#0e1729] text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25">
+				<thead className="sticky top-0 z-20 bg-white dark:bg-[#0e1729] text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/35">
 					<tr>
 						<PlainHeader label="Tidspunkt" colKey="tidspunkt" />
 						<HeaderWithFilter label="Type" field="Type" colKey="type" />
@@ -1797,7 +1797,10 @@ export default function Preview({
 												target="_blank"
 												rel="noopener noreferrer"
 												className="inline-flex items-center justify-center gap-1 text-indigo-600 hover:underline dark:text-indigo-400"
-												title={tr({ no: "Åpne i Solscan", en: "Open in Solscan" })}
+												title={tr({
+													no: "Åpne i Solscan",
+													en: "Open in Solscan"
+												})}
 											>
 												<FiExternalLink className="h-4 w-4" />
 												<span className="sr-only">Solscan</span>
@@ -1839,7 +1842,7 @@ export default function Preview({
 		<section className="mt-6">
 			<div
 				className={[
-					"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/15 ring-1 ring-slate-300/80 dark:ring-slate-800/60",
+					"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 ring-1 ring-slate-300/80 dark:ring-white/10",
 					isResizingCol ? "select-none cursor-col-resize" : ""
 				].join(" ")}
 			>
@@ -1849,7 +1852,10 @@ export default function Preview({
 						<div
 							className="flex flex-nowrap items-end -mb-px"
 							role="tablist"
-							aria-label={tr({ no: "Forhåndsvisning faner", en: "Preview tabs" })}
+							aria-label={tr({
+								no: "Forhåndsvisning faner",
+								en: "Preview tabs"
+							})}
 						>
 							<button
 								type="button"
@@ -1883,7 +1889,7 @@ export default function Preview({
 								title={tr({
 									no: "Uavklarte elementer som bør navngis",
 									en: "Unresolved items that should be named"
-							})}
+								})}
 								className={[
 									"relative flex-1 min-w-0 text-center rounded-t-md",
 									"px-2 pr-8 py-1.5 text-[11px] leading-5 sm:px-3 sm:py-2 sm:text-sm",
@@ -1897,7 +1903,15 @@ export default function Preview({
 									{tr({ no: "Trenger oppmerksomhet", en: "Needs attention" })}
 								</span>
 								{pendingIssuesCount > 0 && (
-									<span className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 dark:bg-amber-500/20 dark:text-amber-300">
+									<span
+										className={[
+											"absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded-full",
+											"bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 dark:bg-amber-500/20 dark:text-amber-300",
+											pendingIssuesCount > 0 && activeTab !== "attention"
+												? "animate-pulse motion-reduce:animate-none"
+												: ""
+										].join(" ")}
+									>
 										{pendingIssuesCount}
 									</span>
 								)}
@@ -1910,7 +1924,10 @@ export default function Preview({
 						<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 max-h-[80vh] sm:max-h-none overflow-y-auto overscroll-contain dark:border-amber-900/40 dark:bg-amber-500/10">
 							{issues.length === 0 ? (
 								<div className="text-sm text-emerald-700 dark:text-emerald-400">
-									{tr({ no: "Ingen uavklarte elementer 🎉", en: "No unresolved items 🎉" })}
+									{tr({
+										no: "Ingen uavklarte elementer 🎉",
+										en: "No unresolved items 🎉"
+									})}
 								</div>
 							) : (
 								<>
@@ -1921,9 +1938,12 @@ export default function Preview({
 											onClick={ignoreAllPending}
 											disabled={!issues.some((i) => i.status === "pending")}
 											className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm dark:shadow-black/25 hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-											title="Ignorer alle uavklarte elementer"
+											title={tr({
+												no: "Ignorer alle uavklarte elementer",
+												en: "Ignore all unresolved items"
+											})}
 										>
-											Ignorer alle
+											{tr({ no: "Ignorer alle", en: "Ignore all" })}
 										</button>
 									</div>
 
@@ -1938,15 +1958,16 @@ export default function Preview({
 											const statusBadge =
 												it.status === "pending" ? (
 													<span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
-														Avventer
+														{tr({ no: "Avventer", en: "Pending" })}
 													</span>
 												) : it.status === "renamed" ? (
 													<span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text:[11px] text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
-														Endret{it.newName ? ` → ${it.newName}` : ""}
+														{tr({ no: "Endret", en: "Renamed" })}
+														{it.newName ? ` → ${it.newName}` : ""}
 													</span>
 												) : (
 													<span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] text-slate-700 dark:bg-white/10 dark:text-slate-300">
-														Ignorert
+														{tr({ no: "Ignorert", en: "Ignored" })}
 													</span>
 												);
 
@@ -1970,13 +1991,22 @@ export default function Preview({
 														<div className="space-y-1">
 															<div className="text-sm font-medium text-slate-800 dark:text-slate-100">
 																{it.kind === "unknown-token"
-																	? tr({ no: "Ukjent token", en: "Unknown token" })
-																	: tr({ no: "Ukjent marked", en: "Unknown market" })}
+																	? tr({
+																			no: "Ukjent token",
+																			en: "Unknown token"
+																	  })
+																	: tr({
+																			no: "Ukjent marked",
+																			en: "Unknown market"
+																	  })}
 																: <code className="font-mono">{it.key}</code>
 																{statusBadge}
 															</div>
 															<div className="text-xs text-slate-600 dark:text-slate-400">
-																{tr({ no: `${it.count} forekomster`, en: `${it.count} occurrences` })}
+																{tr({
+																	no: `${it.count} forekomster`,
+																	en: `${it.count} occurrences`
+																})}
 															</div>
 														</div>
 
@@ -1987,10 +2017,13 @@ export default function Preview({
 																placeholder={
 																	it.kind === "unknown-token"
 																		? tr({
-																			no: "Ny tokensymbol (BTC, ETH, SOL...)",
-																			en: "New token symbol (BTC, ETH, SOL...)"
-																		})
-																		: tr({ no: "Nytt markedsnavn", en: "New market name" })
+																				no: "Ny tokensymbol (BTC, ETH, SOL...)",
+																				en: "New token symbol (BTC, ETH, SOL...)"
+																		  })
+																		: tr({
+																				no: "Nytt markedsnavn",
+																				en: "New market name"
+																		  })
 																}
 																className="w-full sm:w-56 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
 															/>
@@ -2014,7 +2047,10 @@ export default function Preview({
 																className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
 																title={
 																	it.status === "ignored"
-																		? tr({ no: "Angre ignorering", en: "Undo ignore" })
+																		? tr({
+																				no: "Angre ignorering",
+																				en: "Undo ignore"
+																		  })
 																		: tr({ no: "Ignorer", en: "Ignore" })
 																}
 															>
@@ -2035,8 +2071,14 @@ export default function Preview({
 																className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
 															>
 																{isOpen
-																	? "Skjul forekomster"
-																	: `Vis forekomster (${occurrenceRows.length})`}
+																	? tr({
+																			no: "Skjul forekomster",
+																			en: "Hide occurrences"
+																	  })
+																	: tr({
+																			no: `Vis forekomster (${occurrenceRows.length})`,
+																			en: `Show occurrences (${occurrenceRows.length})`
+																	  })}
 															</button>
 														</div>
 													</div>
@@ -2045,7 +2087,10 @@ export default function Preview({
 														<div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-2 dark:border-white/10 dark:bg-white/5">
 															{occurrenceRows.length === 0 ? (
 																<div className="text-xs text-slate-600 dark:text-slate-400">
-																	Ingen forekomster funnet.
+																	{tr({
+																		no: "Ingen forekomster funnet.",
+																		en: "No occurrences found."
+																	})}
 																</div>
 															) : (
 																<ul className="grid gap-2 sm:grid-cols-1 md:grid-cols-2">
@@ -2065,8 +2110,14 @@ export default function Preview({
 																					className="w-full rounded-md bg-white px-2 py-1.5 text-xs shadow-sm dark:shadow-black/25 ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
 																					title={
 																						sig
-																							? "Gå til rad i forhåndsvisning eller åpne i Solscan"
-																							: "Ingen signatur funnet"
+																							? tr({
+																									no: "Gå til rad i forhåndsvisning eller åpne i Solscan",
+																									en: "Jump to row in preview or open in Solscan"
+																							  })
+																							: tr({
+																									no: "Ingen signatur funnet",
+																									en: "No signature found"
+																							  })
 																					}
 																				>
 																					<div className="flex items-center justify-between gap-2">
@@ -2081,9 +2132,15 @@ export default function Preview({
 																								}
 																								disabled={!sig}
 																								className="text-[10px] text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400"
-																								title="Gå til rad"
+																								title={tr({
+																									no: "Gå til rad",
+																									en: "Go to row"
+																								})}
 																							>
-																								Gå til rad
+																								{tr({
+																									no: "Gå til rad",
+																									en: "Go to row"
+																								})}
 																							</button>
 																							{sig && solscan && (
 																								<Link
@@ -2091,7 +2148,10 @@ export default function Preview({
 																									target="_blank"
 																									rel="noopener noreferrer"
 																									className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:underline dark:text-indigo-400"
-																									title="Åpne i Solscan"
+																									title={tr({
+																										no: "Åpne i Solscan",
+																										en: "Open in Solscan"
+																									})}
 																								>
 																									<FiExternalLink className="h-3.5 w-3.5" />
 																									Solscan
@@ -2129,8 +2189,12 @@ export default function Preview({
 								<div className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-2">
 									<span>
 										{tr({
-											no: `Viser ${displayed.length} av ${effectiveRows.length} rader${filterHasAny ? " (filtrert)" : ""}.`,
-											en: `Showing ${displayed.length} of ${effectiveRows.length} rows${filterHasAny ? " (filtered)" : ""}.`
+											no: `Viser ${displayed.length} av ${
+												effectiveRows.length
+											} rader${filterHasAny ? " (filtrert)" : ""}.`,
+											en: `Showing ${displayed.length} of ${
+												effectiveRows.length
+											} rows${filterHasAny ? " (filtered)" : ""}.`
 										})}
 									</span>
 
@@ -2139,7 +2203,10 @@ export default function Preview({
 											type="button"
 											onClick={clearAllFilters}
 											className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-											title={tr({ no: "Nullstill alle filtre", en: "Reset all filters" })}
+											title={tr({
+												no: "Nullstill alle filtre",
+												en: "Reset all filters"
+											})}
 										>
 											{tr({ no: "Nullstill filtre", en: "Reset filters" })}
 										</button>
@@ -2157,8 +2224,14 @@ export default function Preview({
 											SELECT_STYLE
 										}
 										options={[
-											{ value: "desc", label: tr({ no: "Nyeste først", en: "Newest first" }) },
-											{ value: "asc", label: tr({ no: "Eldste først", en: "Oldest first" }) }
+											{
+												value: "desc",
+												label: tr({ no: "Nyeste først", en: "Newest first" })
+											},
+											{
+												value: "asc",
+												label: tr({ no: "Eldste først", en: "Oldest first" })
+											}
 										]}
 										ariaLabel={tr({ no: "Sorter", en: "Sort" })}
 									/>
@@ -2168,7 +2241,10 @@ export default function Preview({
 										onClick={undo}
 										disabled={!canUndo}
 										className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-										title={tr({ no: "Angre (Ctrl/⌘+Z)", en: "Undo (Ctrl/⌘+Z)" })}
+										title={tr({
+											no: "Angre (Ctrl/⌘+Z)",
+											en: "Undo (Ctrl/⌘+Z)"
+										})}
 									>
 										<FiRotateCcw className="h-4 w-4" />
 									</button>
@@ -2190,10 +2266,10 @@ export default function Preview({
 										onClick={toggleMaximize}
 										className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
 										title={
-										isMaximized
-											? tr({ no: "Lukk maksimering", en: "Exit maximize" })
-											: tr({ no: "Maksimer", en: "Maximize" })
-									}
+											isMaximized
+												? tr({ no: "Lukk maksimering", en: "Exit maximize" })
+												: tr({ no: "Maksimer", en: "Maximize" })
+										}
 										aria-pressed={isMaximized}
 									>
 										{isMaximized ? (
@@ -2223,7 +2299,10 @@ export default function Preview({
 									<div
 										onMouseDown={onResizeStart}
 										className="flex items-center justify-center h-4 cursor-ns-resize bg-slate-50 border-x border-b border-slate-200 rounded-b-xl select-none dark:bg-white/5 dark:border-white/10"
-										title={tr({ no: "Dra for å endre høyde", en: "Drag to resize height" })}
+										title={tr({
+											no: "Dra for å endre høyde",
+											en: "Drag to resize height"
+										})}
 									>
 										<div className="h-1 w-12 rounded-full bg-slate-300 dark:bg-slate-600" />
 									</div>
@@ -2240,8 +2319,12 @@ export default function Preview({
 										<div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 											<div className="text-xs text-slate-600 dark:text-slate-400">
 												{tr({
-													no: `Viser ${displayed.length} av ${effectiveRows.length} rader${filterHasAny ? " (filtrert)" : ""}.`,
-													en: `Showing ${displayed.length} of ${effectiveRows.length} rows${filterHasAny ? " (filtered)" : ""}.`
+													no: `Viser ${displayed.length} av ${
+														effectiveRows.length
+													} rader${filterHasAny ? " (filtrert)" : ""}.`,
+													en: `Showing ${displayed.length} of ${
+														effectiveRows.length
+													} rows${filterHasAny ? " (filtered)" : ""}.`
 												})}
 											</div>
 											<div className="flex flex-wrap items-center gap-2 text-xs">
@@ -2250,9 +2333,15 @@ export default function Preview({
 														type="button"
 														onClick={clearAllFilters}
 														className="rounded-md border border-slate-200 bg-white px-2 py-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-														title={tr({ no: "Nullstill alle filtre", en: "Reset all filters" })}
+														title={tr({
+															no: "Nullstill alle filtre",
+															en: "Reset all filters"
+														})}
 													>
-														{tr({ no: "Nullstill filtre", en: "Reset filters" })}
+														{tr({
+															no: "Nullstill filtre",
+															en: "Reset filters"
+														})}
 													</button>
 												)}
 												<span className="text-slate-600 dark:text-slate-300">
@@ -2266,8 +2355,20 @@ export default function Preview({
 														SELECT_STYLE
 													}
 													options={[
-														{ value: "desc", label: tr({ no: "Nyeste først", en: "Newest first" }) },
-														{ value: "asc", label: tr({ no: "Eldste først", en: "Oldest first" }) }
+														{
+															value: "desc",
+															label: tr({
+																no: "Nyeste først",
+																en: "Newest first"
+															})
+														},
+														{
+															value: "asc",
+															label: tr({
+																no: "Eldste først",
+																en: "Oldest first"
+															})
+														}
 													]}
 													ariaLabel={tr({ no: "Sorter", en: "Sort" })}
 												/>
@@ -2277,7 +2378,10 @@ export default function Preview({
 													onClick={undo}
 													disabled={!canUndo}
 													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-													title={tr({ no: "Angre (Ctrl/⌘+Z)", en: "Undo (Ctrl/⌘+Z)" })}
+													title={tr({
+														no: "Angre (Ctrl/⌘+Z)",
+														en: "Undo (Ctrl/⌘+Z)"
+													})}
 												>
 													<FiRotateCcw className="h-4 w-4" />
 												</button>
@@ -2287,9 +2391,9 @@ export default function Preview({
 													disabled={!canRedo}
 													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
 													title={tr({
-													no: "Gjør om (Ctrl/⌘+Shift+Z eller Ctrl/⌘+Y)",
-													en: "Redo (Ctrl/⌘+Shift+Z or Ctrl/⌘+Y)"
-												})}
+														no: "Gjør om (Ctrl/⌘+Shift+Z eller Ctrl/⌘+Y)",
+														en: "Redo (Ctrl/⌘+Shift+Z or Ctrl/⌘+Y)"
+													})}
 												>
 													<FiRotateCw className="h-4 w-4" />
 												</button>
@@ -2298,7 +2402,10 @@ export default function Preview({
 													type="button"
 													onClick={toggleMaximize}
 													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-													title={tr({ no: "Lukk maksimering", en: "Exit maximize" })}
+													title={tr({
+														no: "Lukk maksimering",
+														en: "Exit maximize"
+													})}
 												>
 													<FiMinimize className="h-4 w-4" />
 												</button>
@@ -2352,7 +2459,10 @@ export default function Preview({
 									className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:shadow-lg hover:from-indigo-700 hover:to-emerald-700 focus:outline-none focus:ring-4 focus:ring-indigo-200/60 dark:from-indigo-500 dark:to-emerald-500 dark:hover:from-indigo-500 dark:hover:to-emerald-500 dark:focus:ring-indigo-900/40 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
 									title={
 										pendingIssuesCount > 0
-											? tr({ no: "Løs ‘Trenger oppmerksomhet’ først", en: "Resolve ‘Needs attention’ first" })
+											? tr({
+													no: "Løs ‘Trenger oppmerksomhet’ først",
+													en: "Resolve ‘Needs attention’ first"
+											  })
 											: tr({ no: "Last ned CSV", en: "Download CSV" })
 									}
 								>

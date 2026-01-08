@@ -388,7 +388,10 @@ async function fetchHoldingsForAddress(address: string, includeNFT: boolean) {
 	// 1) Native SOL
 	let balRes: any;
 	try {
-		balRes = await rpcCall("getBalance", [address, { commitment: "confirmed" }]);
+		balRes = await rpcCall("getBalance", [
+			address,
+			{ commitment: "confirmed" }
+		]);
 	} catch (err: any) {
 		console.error("rpcCall getBalance failed:", err?.message || err);
 		throw new Error(`RPC getBalance failed: ${err?.message || String(err)}`);
@@ -406,8 +409,13 @@ async function fetchHoldingsForAddress(address: string, includeNFT: boolean) {
 			{ encoding: "jsonParsed", commitment: "confirmed" }
 		]);
 	} catch (err: any) {
-		console.error("rpcCall getTokenAccountsByOwner failed:", err?.message || err);
-		throw new Error(`RPC getTokenAccountsByOwner failed: ${err?.message || String(err)}`);
+		console.error(
+			"rpcCall getTokenAccountsByOwner failed:",
+			err?.message || err
+		);
+		throw new Error(
+			`RPC getTokenAccountsByOwner failed: ${err?.message || String(err)}`
+		);
 	}
 
 	type TokenAccountParsed = {
@@ -497,10 +505,10 @@ async function fetchHoldingsForAddress(address: string, includeNFT: boolean) {
 
 	// 4) Resolve symbol/decimals
 	const needMeta = raw.map((r) => r.mint).filter((m) => m !== SOL_MINT);
-	let jupMeta: Map<string, { symbol?: string; decimals?: number }> =
-		new Map();
+	let jupMeta: Map<string, { symbol?: string; decimals?: number }> = new Map();
 	try {
-		if (needMeta.length > 0) jupMeta = await fetchJupiterTokenMetadataMap(needMeta);
+		if (needMeta.length > 0)
+			jupMeta = await fetchJupiterTokenMetadataMap(needMeta);
 	} catch (err: any) {
 		console.error("Jupiter token metadata lookup failed:", err?.message || err);
 		jupMeta = new Map();
@@ -564,7 +572,10 @@ async function fetchHoldingsForAddress(address: string, includeNFT: boolean) {
 	}
 
 	// 6) Logos (Jupiter token list)
-	let tokenList: Map<string, { logoURI?: string; symbol?: string; decimals?: number }> = new Map();
+	let tokenList: Map<
+		string,
+		{ logoURI?: string; symbol?: string; decimals?: number }
+	> = new Map();
 	try {
 		tokenList = await getJupTokenListMap();
 	} catch (err: any) {

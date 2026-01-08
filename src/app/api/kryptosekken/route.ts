@@ -954,7 +954,8 @@ function processDust(
 function consolidateRowsBySignature(
 	rows: KSRow[],
 	txBySig: Map<string, HeliusTx> | undefined,
-	address: string
+	address: string,
+	dustThreshold?: number
 ): KSRow[] {
 	const groups = new Map<string, KSRow[]>();
 	const specials: KSRow[] = [];
@@ -1026,11 +1027,22 @@ function consolidateRowsBySignature(
 	};
 
 	const out: KSRow[] = [...specials];
+	const dustT = typeof dustThreshold === "number" && dustThreshold > 0 ? dustThreshold : 0;
 
 	for (const [sig, arr] of groups.entries()) {
 		if (arr.length === 1) {
 			out.push(arr[0]);
 			continue;
+		}
+
+		// If this signature contains *only* transfer rows and all legs are below the dust threshold,
+		// keep them as separate IN/OUT rows (do not collapse into a single net row).
+		if (dustT > 0 && arr.every(isTransferRow)) {
+			const legs = arr.map((r) => directionAndCurrency(r));
+			if (legs.every(Boolean) && legs.every((l) => (l as any).amt < dustT)) {
+				for (const r of arr) out.push(r);
+				continue;
+			}
 		}
 
 		// gather totals
@@ -2384,7 +2396,8 @@ function postProcessAndCache(
 	const consolidated = consolidateRowsBySignature(
 		processedAfterDust,
 		txMap,
-		ctx.address
+		ctx.address,
+		ctx.dustThreshold
 	);
 
 	// NEW: counterparty for in & out

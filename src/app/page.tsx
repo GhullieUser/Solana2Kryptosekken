@@ -87,12 +87,16 @@ function ThemePill() {
 			{isDark ? (
 				<>
 					<FiMoon className="h-4 w-4" />
-					<span className="w-[44px] text-center">{tr({ no: "Mørk", en: "Dark" })}</span>
+					<span className="w-[44px] text-center">
+						{tr({ no: "Mørk", en: "Dark" })}
+					</span>
 				</>
 			) : (
 				<>
 					<FiSun className="h-4 w-4" />
-					<span className="w-[44px] text-center">{tr({ no: "Lys", en: "Light" })}</span>
+					<span className="w-[44px] text-center">
+						{tr({ no: "Lys", en: "Light" })}
+					</span>
 				</>
 			)}
 		</button>
@@ -104,7 +108,8 @@ function LocalePill() {
 	const baseBtn =
 		"inline-flex h-[20px] w-[24px] items-center justify-center rounded-full leading-none transition";
 	const selected = "opacity-100 saturate-150";
-	const unselected = "opacity-60 saturate-0 hover:opacity-100 hover:saturate-100 hover:bg-black/5 dark:hover:bg-white/10";
+	const unselected =
+		"opacity-60 saturate-0 hover:opacity-100 hover:saturate-100 hover:bg-black/5 dark:hover:bg-white/10";
 
 	return (
 		<div
@@ -382,7 +387,7 @@ export default function Home() {
 					? tr({
 							no: `Henter beholdning for ${e.detail.address} …`,
 							en: `Fetching holdings for ${e.detail.address} …`
-						})
+					  })
 					: tr({ no: "Henter beholdning …", en: "Fetching holdings …" })
 			);
 		};
@@ -637,7 +642,10 @@ export default function Home() {
 									: `ATA ${evt.idx + 1}/${evt.totalATAs}`;
 							pushLog(
 								tr({ no: "Ferdig", en: "Done" }) +
-									` — ${prefix}: ${evt.pages} ${tr({ no: "sider", en: "pages" })} (${evt.addressShort})`
+									` — ${prefix}: ${evt.pages} ${tr({
+										no: "sider",
+										en: "pages"
+									})} (${evt.addressShort})`
 							);
 						} else if (evt.type === "done") {
 							const j = evt.data as {
@@ -679,7 +687,9 @@ export default function Home() {
 			}
 		} catch (err: any) {
 			if (err?.name === "AbortError") {
-				pushLog(tr({ no: "⏹️ Avbrutt av bruker.", en: "⏹️ Cancelled by user." }));
+				pushLog(
+					tr({ no: "⏹️ Avbrutt av bruker.", en: "⏹️ Cancelled by user." })
+				);
 			} else {
 				const message =
 					err instanceof Error
@@ -743,10 +753,10 @@ export default function Home() {
 					if (cacheKey) {
 						// Generate preview first, then retry CSV fetch using the returned cacheKey
 						pushLog(
-								tr({
-									no: "ℹ️ Ingen bufret forhåndsvisning — lager forhåndsvisning nå...",
-									en: "ℹ️ No cached preview — generating a preview now..."
-								})
+							tr({
+								no: "ℹ️ Ingen bufret forhåndsvisning — lager forhåndsvisning nå...",
+								en: "ℹ️ No cached preview — generating a preview now..."
+							})
 						);
 						const previewRes = await fetch("/api/kryptosekken", {
 							method: "POST",
@@ -799,7 +809,12 @@ export default function Home() {
 						a2.click();
 						a2.remove();
 						URL.revokeObjectURL(dlUrl2);
-						pushLog(tr({ no: "✅ CSV klar (med redigeringer).", en: "✅ CSV ready (with edits)." }));
+						pushLog(
+							tr({
+								no: "✅ CSV klar (med redigeringer).",
+								en: "✅ CSV ready (with edits)."
+							})
+						);
 						return;
 					}
 				}
@@ -815,7 +830,12 @@ export default function Home() {
 			a.click();
 			a.remove();
 			URL.revokeObjectURL(dlUrl);
-			pushLog(tr({ no: "✅ CSV klar (med redigeringer).", en: "✅ CSV ready (with edits)." }));
+			pushLog(
+				tr({
+					no: "✅ CSV klar (med redigeringer).",
+					en: "✅ CSV ready (with edits)."
+				})
+			);
 		} catch (err: unknown) {
 			const message =
 				err instanceof Error
@@ -895,8 +915,10 @@ export default function Home() {
 			setOk(false);
 		} catch (err: any) {
 			pushLog(
-				tr({ no: "❌ Klarte ikke å tømme cache:", en: "❌ Failed to clear cache:" }) +
-					` ${err?.message || err}`
+				tr({
+					no: "❌ Klarte ikke å tømme cache:",
+					en: "❌ Failed to clear cache:"
+				}) + ` ${err?.message || err}`
 			);
 		}
 	}
@@ -905,7 +927,7 @@ export default function Home() {
 
 	// Shared card class (proper light/dark)
 	const cardCn =
-		"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/15 ring-1 ring-slate-300/80 dark:ring-slate-800/60";
+		"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 ring-1 ring-slate-300/80 dark:ring-white/10";
 
 	return (
 		<main className="min-h-screen">
@@ -941,9 +963,7 @@ export default function Home() {
 									no: "Lim inn en Solana-adresse, velg tidsrom, ",
 									en: "Paste a Solana address, choose a date range, "
 								})}
-								<b>
-									{tr({ no: "sjekk lommeboken", en: "check the wallet" })}
-								</b>{" "}
+								<b>{tr({ no: "sjekk lommeboken", en: "check the wallet" })}</b>{" "}
 								{tr({
 									no: "og last ned en ",
 									en: "and download a "
@@ -991,7 +1011,10 @@ export default function Home() {
 										name="address"
 										required
 										autoComplete="off"
-										placeholder={tr({ no: "F.eks. ESURTD2D…", en: "e.g. ESURTD2D…" })}
+										placeholder={tr({
+											no: "F.eks. ESURTD2D…",
+											en: "e.g. ESURTD2D…"
+										})}
 										value={address}
 										onChange={(e) => {
 											setAddress(e.target.value);
@@ -1024,11 +1047,17 @@ export default function Home() {
 										{/* history */}
 										<button
 											type="button"
-											aria-label={tr({ no: "Adressehistorikk", en: "Address history" })}
+											aria-label={tr({
+												no: "Adressehistorikk",
+												en: "Address history"
+											})}
 											onMouseDown={(e) => e.preventDefault()}
 											onClick={() => setAddrMenuOpen((v) => !v)}
 											className="rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 h-6 w-6"
-											title={tr({ no: "Adressehistorikk", en: "Address history" })}
+											title={tr({
+												no: "Adressehistorikk",
+												en: "Address history"
+											})}
 										>
 											<FiClock className="h-4 w-4" />
 										</button>
@@ -1064,7 +1093,10 @@ export default function Home() {
 															</button>
 															<button
 																type="button"
-																aria-label={tr({ no: "Fjern fra historikk", en: "Remove from history" })}
+																aria-label={tr({
+																	no: "Fjern fra historikk",
+																	en: "Remove from history"
+																})}
 																onMouseDown={(e) => e.preventDefault()}
 																onClick={() => removeAddress(a)}
 																className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-600"
@@ -1076,7 +1108,10 @@ export default function Home() {
 												</ul>
 											) : (
 												<div className="px-3 py-2 text-sm text-slate-500 dark:text-slate-400">
-													{tr({ no: "Ingen treff i historikk", en: "No matches in history" })}
+													{tr({
+														no: "Ingen treff i historikk",
+														en: "No matches in history"
+													})}
 												</div>
 											)}
 											<div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-white/5 px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
@@ -1107,7 +1142,10 @@ export default function Home() {
 										<input
 											name="walletName"
 											autoComplete="off"
-											placeholder={tr({ no: "Navn (valgfritt)", en: "Name (optional)" })}
+											placeholder={tr({
+												no: "Navn (valgfritt)",
+												en: "Name (optional)"
+											})}
 											value={walletName}
 											onChange={(e) => setWalletName(e.target.value)}
 											className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-11 pr-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
@@ -1132,7 +1170,10 @@ export default function Home() {
 											title={
 												canOpenExplorer
 													? tr({ no: "Åpne i Solscan", en: "Open in Solscan" })
-													: tr({ no: "Skriv inn en adresse først", en: "Enter an address first" })
+													: tr({
+															no: "Skriv inn en adresse først",
+															en: "Enter an address first"
+													  })
 											}
 										>
 											<IoOpenOutline className="h-[17px] w-[17px]" />
@@ -1149,7 +1190,7 @@ export default function Home() {
 											no: " (eks. ",
 											en: " (e.g. "
 										})}
-													<b>{tr({ no: "MIN WALLET", en: "MY WALLET" })}</b>
+										<b>{tr({ no: "MIN WALLET", en: "MY WALLET" })}</b>
 										).
 									</p>
 								</div>
@@ -1163,10 +1204,9 @@ export default function Home() {
 									</label>
 									<div className="text-[11px] text-slate-500 dark:text-slate-400">
 										{tr({
-											no: "Avgrenser transaksjoner i perioden. Standard: ",
-											en: "Limits transactions to the selected period. Default: "
+											no: "Avgrenser transaksjoner til valgt periode.",
+											en: "Limits transactions to the selected period."
 										})}
-										<b>{tr({ no: "siste 30 dager", en: "last 30 days" })}</b>.
 									</div>
 								</div>
 
@@ -1184,7 +1224,7 @@ export default function Home() {
 										>
 											<span className="inline-flex items-center gap-2">
 												<FiCalendar className="h-4 w-4 text-slate-500 dark:text-slate-400" />
-													{formatRangeLabel(tr, locale, range)}
+												{formatRangeLabel(tr, locale, range)}
 											</span>
 											<FiChevronDown className="h-4 w-4 text-slate-400" />
 										</button>
@@ -1200,22 +1240,30 @@ export default function Home() {
 														onClick={() =>
 															range?.from && setCalMonth(range.from)
 														}
-																title={tr({ no: "Gå til Fra-måned", en: "Go to From month" })}
+														title={tr({
+															no: "Gå til Fra-måned",
+															en: "Go to From month"
+														})}
 													>
 														<span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-400/10 px-2 py-0.5 hover:bg-indigo-100 dark:hover:bg-indigo-400/20">
 															<span className="h-2 w-2 rounded-full bg-indigo-600" />
-																	{tr({ no: "Fra", en: "From" })}: <b>{nice(range?.from)}</b>
+															{tr({ no: "Fra", en: "From" })}:{" "}
+															<b>{nice(range?.from)}</b>
 														</span>
 													</button>
 													<button
 														type="button"
 														className="text-[11px] text-slate-600 dark:text-slate-300"
 														onClick={() => range?.to && setCalMonth(range.to)}
-															title={tr({ no: "Gå til Til-måned", en: "Go to To month" })}
+														title={tr({
+															no: "Gå til Til-måned",
+															en: "Go to To month"
+														})}
 													>
 														<span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-400/10 px-2 py-0.5 hover:bg-emerald-100 dark:hover:bg-emerald-400/20">
 															<span className="h-2 w-2 rounded-full bg-emerald-600" />
-																	{tr({ no: "Til", en: "To" })}: <b>{nice(range?.to)}</b>
+															{tr({ no: "Til", en: "To" })}:{" "}
+															<b>{nice(range?.to)}</b>
 														</span>
 													</button>
 												</div>
@@ -1256,7 +1304,7 @@ export default function Home() {
 														onClick={() => setCalOpen(false)}
 														className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 													>
-															{tr({ no: "Lukk", en: "Close" })}
+														{tr({ no: "Lukk", en: "Close" })}
 													</button>
 												</div>
 											</div>
@@ -1270,7 +1318,7 @@ export default function Home() {
 											onClick={() => presetDays(7)}
 											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 										>
-										{tr({ no: "Siste 7 dager", en: "Last 7 days" })}
+											{tr({ no: "Siste 7 dager", en: "Last 7 days" })}
 										</button>
 										<button
 											type="button"
@@ -1282,8 +1330,14 @@ export default function Home() {
 										<button
 											type="button"
 											onClick={ytd}
-											title={tr({ no: "Hittil i år — Fra 1. januar til i dag", en: "Year to date — From Jan 1 to today" })}
-											aria-label={tr({ no: "Hittil i år (Året så langt)", en: "Year to date" })}
+											title={tr({
+												no: "Hittil i år — Fra 1. januar til i dag",
+												en: "Year to date — From Jan 1 to today"
+											})}
+											aria-label={tr({
+												no: "Hittil i år (Året så langt)",
+												en: "Year to date"
+											})}
 											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 										>
 											{tr({ no: "Hittil i år", en: "Year to date" })}
@@ -1291,7 +1345,10 @@ export default function Home() {
 										<button
 											type="button"
 											onClick={lastYearWhole}
-											title={tr({ no: "Hele fjoråret — Fra 1. januar til 31. desember i fjor", en: "Last year — From Jan 1 to Dec 31" })}
+											title={tr({
+												no: "Hele fjoråret — Fra 1. januar til 31. desember i fjor",
+												en: "Last year — From Jan 1 to Dec 31"
+											})}
 											aria-label={tr({ no: "Hele fjoråret", en: "Last year" })}
 											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 										>
@@ -1312,15 +1369,27 @@ export default function Home() {
 									<Switch
 										checked={useOslo}
 										onChange={setUseOslo}
-										label={tr({ no: "Norsk tid (Europe/Oslo)", en: "Norway time (Europe/Oslo)" })}
+										label={tr({
+											no: "Norsk tid (Europe/Oslo)",
+											en: "Norway time (Europe/Oslo)"
+										})}
 									/>
 									<span className="text-sm font-medium text-slate-800 dark:text-slate-200">
-										{tr({ no: "Norsk tid (Europe/Oslo)", en: "Norway time (Europe/Oslo)" })}
+										{tr({
+											no: "Norsk tid (Europe/Oslo)",
+											en: "Norway time (Europe/Oslo)"
+										})}
 									</span>
 									<span className="text-[11px] text-slate-500 dark:text-slate-400">
-										{tr({ no: "CSV tidsstempler skrives i ", en: "CSV timestamps are written in " })}
+										{tr({
+											no: "CSV tidsstempler skrives i ",
+											en: "CSV timestamps are written in "
+										})}
 										{useOslo
-											? tr({ no: "Norsk tid (UTC+01:00 Europe/Oslo)", en: "Norway time (Europe/Oslo)" })
+											? tr({
+													no: "Norsk tid (UTC+01:00 Europe/Oslo)",
+													en: "Norway time (Europe/Oslo)"
+											  })
 											: "UTC"}
 										.
 									</span>
@@ -1334,10 +1403,16 @@ export default function Home() {
 										<Switch
 											checked={includeNFT}
 											onChange={setIncludeNFT}
-											label={tr({ no: "Inkluder NFT-overføringer", en: "Include NFT transfers" })}
+											label={tr({
+												no: "Inkluder NFT-overføringer",
+												en: "Include NFT transfers"
+											})}
 										/>
 										<span className="text-sm font-medium text-slate-800 dark:text-slate-200">
-											{tr({ no: "Inkluder NFT-overføringer", en: "Include NFT transfers" })}
+											{tr({
+												no: "Inkluder NFT-overføringer",
+												en: "Include NFT transfers"
+											})}
 										</span>
 									</div>
 									<div className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -1360,7 +1435,10 @@ export default function Home() {
 									<div className="relative group">
 										<button
 											type="button"
-											aria-label={tr({ no: "Hvorfor får jeg så mye støv i SOL?", en: "Why am I getting so much SOL dust?" })}
+											aria-label={tr({
+												no: "Hvorfor får jeg så mye støv i SOL?",
+												en: "Why am I getting so much SOL dust?"
+											})}
 											className="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 focus:outline-none"
 										>
 											<FiInfo className="h-4 w-4" />
@@ -1370,7 +1448,10 @@ export default function Home() {
 											className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl group-hover:block group-focus-within:block"
 										>
 											<p className="mb-1 font-medium">
-												{tr({ no: "Hvorfor så mye “støv” i SOL?", en: "Why so much SOL “dust”?" })}
+												{tr({
+													no: "Hvorfor så mye “støv” i SOL?",
+													en: "Why so much SOL “dust”?"
+												})}
 											</p>
 											<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
 												<li>
@@ -1388,7 +1469,13 @@ export default function Home() {
 													})}
 												</li>
 												<li>
-													<b>{tr({ no: "Konto-livssyklus", en: "Account lifecycle" })}:</b>{" "}
+													<b>
+														{tr({
+															no: "Konto-livssyklus",
+															en: "Account lifecycle"
+														})}
+														:
+													</b>{" "}
 													{tr({
 														no: "opprettelse/lukking og ",
 														en: "creation/closure and "
@@ -1400,14 +1487,26 @@ export default function Home() {
 													})}
 												</li>
 												<li>
-													<b>{tr({ no: "Program-interaksjoner", en: "Program interactions" })}:</b>{" "}
+													<b>
+														{tr({
+															no: "Program-interaksjoner",
+															en: "Program interactions"
+														})}
+														:
+													</b>{" "}
 													{tr({
 														no: "claim/reward/airdrop-skript som sender små beløp for å trigge varsler eller dekke minutt-gebyr.",
 														en: "claim/reward/airdrop scripts that send tiny amounts to trigger notifications or cover min-fees."
 													})}
 												</li>
 												<li>
-													<b>{tr({ no: "NFT/WSOL-håndtering", en: "NFT/WSOL handling" })}:</b>{" "}
+													<b>
+														{tr({
+															no: "NFT/WSOL-håndtering",
+															en: "NFT/WSOL handling"
+														})}
+														:
+													</b>{" "}
 													{tr({
 														no: "wrapping/unwrapping og ATA-endringer kan etterlate mikrobeløp.",
 														en: "wrapping/unwrapping and ATA changes can leave micro-amounts."
@@ -1430,19 +1529,34 @@ export default function Home() {
 											buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 											options={
 												[
-													{ value: "off", label: tr({ no: "Vis alle", en: "Show all" }) },
-													{ value: "remove", label: tr({ no: "Skjul", en: "Hide" }) },
+													{
+														value: "off",
+														label: tr({ no: "Vis alle", en: "Show all" })
+													},
+													{
+														value: "remove",
+														label: tr({ no: "Skjul", en: "Hide" })
+													},
 													{
 														value: "aggregate-signer",
-														label: tr({ no: "Slå sammen fra samme sender", en: "Aggregate by sender" })
+														label: tr({
+															no: "Slå sammen fra samme sender",
+															en: "Aggregate by sender"
+														})
 													},
 													{
 														value: "aggregate-period",
-														label: tr({ no: "Slå sammen periodisk", en: "Aggregate by period" })
+														label: tr({
+															no: "Slå sammen periodisk",
+															en: "Aggregate by period"
+														})
 													}
 												] as const
 											}
-										ariaLabel={tr({ no: "Velg støvmodus", en: "Choose dust mode" })}
+											ariaLabel={tr({
+												no: "Velg støvmodus",
+												en: "Choose dust mode"
+											})}
 										/>
 									</div>
 
@@ -1477,13 +1591,28 @@ export default function Home() {
 												buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 												options={
 													[
-														{ value: "day", label: tr({ no: "Dag", en: "Day" }) },
-														{ value: "week", label: tr({ no: "Uke", en: "Week" }) },
-														{ value: "month", label: tr({ no: "Måned", en: "Month" }) },
-														{ value: "year", label: tr({ no: "År", en: "Year" }) }
+														{
+															value: "day",
+															label: tr({ no: "Dag", en: "Day" })
+														},
+														{
+															value: "week",
+															label: tr({ no: "Uke", en: "Week" })
+														},
+														{
+															value: "month",
+															label: tr({ no: "Måned", en: "Month" })
+														},
+														{
+															value: "year",
+															label: tr({ no: "År", en: "Year" })
+														}
 													] as const
 												}
-											ariaLabel={tr({ no: "Velg periode", en: "Choose period" })}
+												ariaLabel={tr({
+													no: "Velg periode",
+													en: "Choose period"
+												})}
 											/>
 										</div>
 									)}
@@ -1493,7 +1622,10 @@ export default function Home() {
 								{dustMode === "off" && (
 									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
 										<b>{tr({ no: "Vis alle", en: "Show all" })}:</b>{" "}
-										{tr({ no: "Ingen støvbehandling.", en: "No dust processing." })}
+										{tr({
+											no: "Ingen støvbehandling.",
+											en: "No dust processing."
+										})}
 									</p>
 								)}
 								{dustMode === "remove" && (
@@ -1510,15 +1642,27 @@ export default function Home() {
 								)}
 								{dustMode === "aggregate-signer" && (
 									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-										<b>{tr({ no: "Slå sammen fra samme sender", en: "Aggregate by sender" })}:</b>{" "}
+										<b>
+											{tr({
+												no: "Slå sammen fra samme sender",
+												en: "Aggregate by sender"
+											})}
+											:
+										</b>{" "}
 										{tr({ no: "Slår sammen små ", en: "Aggregates small " })}
-										<code>Overføring-Inn/Ut</code> fra hver{" "}
+										<code>Overføring-Inn</code> og <code>Overføring-Ut</code> hver for seg fra hver{" "}
 										<i>{tr({ no: "signer-adresse", en: "signer address" })}</i>{" "}
 										{tr({
-											no: "til én linje ",
-											en: "into one line "
+											no: "per ",
+											en: "per "
 										})}
-										<b>{tr({ no: "per valgt periode", en: "per selected period" })}</b>.
+										<b>
+											{tr({
+												no: "per valgt periode",
+												en: "per selected period"
+											})}
+										</b>
+										.
 										{tr({
 											no: " Notatet viser hvem som sendte.",
 											en: " The note shows who sent it."
@@ -1527,10 +1671,19 @@ export default function Home() {
 								)}
 								{dustMode === "aggregate-period" && (
 									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-										<b>{tr({ no: "Slå sammen periodisk", en: "Aggregate by period" })}:</b>{" "}
+										<b>
+											{tr({
+												no: "Slå sammen periodisk",
+												en: "Aggregate by period"
+											})}
+											:
+										</b>{" "}
 										{tr({ no: "Slår sammen små ", en: "Aggregates small " })}
-										<code>Overføring-Inn/Ut</code> i én linje per valgt periode
-										{tr({ no: " (uavhengig av sender).", en: " (regardless of sender)." })}
+										<code>Overføring-Inn</code> og <code>Overføring-Ut</code> hver for seg per valgt periode
+										{tr({
+											no: " (uavhengig av sender).",
+											en: " (regardless of sender)."
+										})}
 									</p>
 								)}
 							</div>
@@ -1591,12 +1744,12 @@ export default function Home() {
 										type="button"
 										onClick={() => setLogOpen((v) => !v)}
 										className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto justify-center"
-												title={tr({ no: "Vis/skjul logg", en: "Show/hide log" })}
+										title={tr({ no: "Vis/skjul logg", en: "Show/hide log" })}
 									>
 										<FiActivity className="h-4 w-4" />
-												{logOpen
-													? tr({ no: "Skjul logg", en: "Hide log" })
-													: tr({ no: "Vis logg", en: "Show log" })}
+										{logOpen
+											? tr({ no: "Skjul logg", en: "Hide log" })
+											: tr({ no: "Vis logg", en: "Show log" })}
 									</button>
 								</div>
 							</div>
@@ -1609,7 +1762,10 @@ export default function Home() {
 								>
 									{logLines.length === 0 ? (
 										<div className="text-slate-500 dark:text-slate-400">
-												{tr({ no: "Ingen hendelser ennå.", en: "No events yet." })}
+											{tr({
+												no: "Ingen hendelser ennå.",
+												en: "No events yet."
+											})}
 										</div>
 									) : (
 										<ul className="space-y-1 font-mono">
@@ -1625,22 +1781,22 @@ export default function Home() {
 							{cacheKeyRef.current && !loading && (
 								<div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
 									<span>
-												{tr({
-													no: "Treff i cache for denne adressen/perioden. Du kan tømme cache hvis du vil foreta et nytt sjekk.",
-													en: "Cache hit for this address/period. You can clear the cache if you want to run a new check."
-												})}
+										{tr({
+											no: "Treff i cache for denne adressen/perioden. Du kan tømme cache hvis du vil foreta et nytt sjekk.",
+											en: "Cache hit for this address/period. You can clear the cache if you want to run a new check."
+										})}
 									</span>
 									<button
 										type="button"
 										onClick={clearCacheNow}
 										className="inline-flex items-center gap-1 rounded-md border border-amber-300 dark:border-amber-800 bg-white/60 dark:bg-white/10 px-2 py-1 hover:bg-white dark:hover:bg-white/15 whitespace-nowrap w-full sm:w-auto justify-center"
-												title={tr({
-													no: "Tøm mellomlager for denne forespørselen",
-													en: "Clear cache for this request"
-												})}
+										title={tr({
+											no: "Tøm mellomlager for denne forespørselen",
+											en: "Clear cache for this request"
+										})}
 									>
 										<FiTrash2 className="h-4 w-4" />
-												{tr({ no: "Tøm cache", en: "Clear cache" })}
+										{tr({ no: "Tøm cache", en: "Clear cache" })}
 									</button>
 								</div>
 							)}
