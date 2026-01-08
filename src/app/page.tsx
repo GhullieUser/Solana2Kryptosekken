@@ -31,6 +31,7 @@ import Preview from "@/app/components/preview";
 import WalletHoldings from "@/app/components/WalletHoldings";
 import KryptosekkenImportCard from "@/app/components/KryptosekkenImportCard";
 import StyledSelect from "@/app/components/styled-select";
+import { useLocale } from "@/app/components/locale-provider";
 
 /* ================= Client-only guard ================= */
 function ClientOnly({ children }: { children: React.ReactNode }) {
@@ -73,27 +74,76 @@ function useTheme() {
 }
 
 function ThemePill() {
+	const { tr } = useLocale();
 	const { isDark, toggle } = useTheme();
 	return (
 		<button
 			type="button"
 			onClick={toggle}
-			className="self-end sm:self-auto inline-flex h-[24px] items-center gap-2 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition "
-			title="Bytt lys/mørk"
-			aria-label="Bytt lys/mørk"
+			className="self-end sm:self-auto inline-flex h-[24px] w-[96px] items-center justify-center gap-2 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+			title={tr({ no: "Bytt lys/mørk", en: "Toggle light/dark" })}
+			aria-label={tr({ no: "Bytt lys/mørk", en: "Toggle light/dark" })}
 		>
 			{isDark ? (
 				<>
 					<FiMoon className="h-4 w-4" />
-					Mørk
+					<span className="w-[44px] text-center">{tr({ no: "Mørk", en: "Dark" })}</span>
 				</>
 			) : (
 				<>
 					<FiSun className="h-4 w-4" />
-					Lys
+					<span className="w-[44px] text-center">{tr({ no: "Lys", en: "Light" })}</span>
 				</>
 			)}
 		</button>
+	);
+}
+
+function LocalePill() {
+	const { locale, setLocale, tr } = useLocale();
+	const baseBtn =
+		"inline-flex h-[20px] w-[24px] items-center justify-center rounded-full leading-none transition";
+	const selected = "opacity-100 saturate-150";
+	const unselected = "opacity-60 saturate-0 hover:opacity-100 hover:saturate-100 hover:bg-black/5 dark:hover:bg-white/10";
+
+	return (
+		<div
+			className="inline-flex h-[24px] items-center gap-1 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-1.5 py-1 text-xs font-medium shadow-sm dark:shadow-black/25"
+			aria-label={tr({ no: "Språk", en: "Language" })}
+		>
+			<button
+				type="button"
+				onClick={() => setLocale("no")}
+				className={`${baseBtn} ${locale === "no" ? selected : unselected}`}
+				aria-label={tr({ no: "Norsk", en: "Norwegian" })}
+				title={tr({ no: "Norsk", en: "Norwegian" })}
+			>
+				<Image
+					src="/flag-no.svg"
+					alt={tr({ no: "Norsk", en: "Norwegian" })}
+					width={18}
+					height={13}
+					className="block"
+					priority
+				/>
+			</button>
+			<button
+				type="button"
+				onClick={() => setLocale("en")}
+				className={`${baseBtn} ${locale === "en" ? selected : unselected}`}
+				aria-label={tr({ no: "English", en: "English" })}
+				title={tr({ no: "English", en: "English" })}
+			>
+				<Image
+					src="/flag-gb.svg"
+					alt={tr({ no: "English", en: "English" })}
+					width={18}
+					height={13}
+					className="block"
+					priority
+				/>
+			</button>
+		</div>
 	);
 }
 
@@ -141,36 +191,14 @@ export type OverrideMaps = {
 	markets: Record<string, string>;
 };
 
-const PLACEHOLDER_RE = /^TOKEN-[0-9A-Z]{6}$/i;
 const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
-
-function isPlaceholderSymbol(s?: string) {
-	return !!s && (PLACEHOLDER_RE.test(s) || s.toUpperCase() === "UNKNOWN");
-}
-const KNOWN_MARKETS = new Set([
-	"solana",
-	"spl",
-	"solana dex",
-	"airdrop",
-	"stake",
-	"aggregert",
-	"pump.fun"
-]);
-function isUnknownMarket(m?: string) {
-	if (!m) return true;
-	const lc = m.trim().toLowerCase();
-	if (KNOWN_MARKETS.has(lc)) return false;
-	if (BASE58_RE.test(m)) return true;
-	if (m.toUpperCase() === "UNKNOWN") return true;
-	return false;
-}
 
 type DustMode = "off" | "remove" | "aggregate-signer" | "aggregate-period";
 type DustInterval = "day" | "week" | "month" | "year";
 
 /* Validation for payload sent to API */
 const schema = z.object({
-	address: z.string().min(32, "Ugyldig adresse"),
+	address: z.string().min(32, "Ugyldig adresse / Invalid address"),
 	fromISO: z.string().optional(),
 	toISO: z.string().optional(),
 	walletName: z.string().optional(),
@@ -243,6 +271,7 @@ const HISTORY_MAX = 10;
 const NAMES_KEY = "sol2ks.walletNames";
 
 export default function Home() {
+	const { tr, locale } = useLocale();
 	const formRef = useRef<HTMLFormElement | null>(null);
 	const lastPayloadRef = useRef<Payload | null>(null);
 	const abortRef = useRef<AbortController | null>(null);
@@ -311,6 +340,26 @@ export default function Home() {
 	const [logLines, setLogLines] = useState<string[]>([]);
 	const logRef = useRef<HTMLDivElement | null>(null);
 
+	const localizeStreamLog = useCallback(
+		(msg: string) => {
+			if (locale !== "en") return msg;
+			let out = msg;
+			out = out.replace(
+				"Henter token-kontoer (ATAer)",
+				"Fetching token accounts (ATAs)"
+			);
+			out = out.replace("Henter token metadata", "Fetching token metadata");
+			out = out.replace("Skanner hovedadresse", "Scanning main address");
+			out = out.replace("Skanner ATAer", "Scanning ATAs");
+			out = out.replace(
+				/Fant (\d+) tilknyttede token-kontoer \(ATAer\)\. Skanner alle for å få med SPL-bevegelser\./,
+				"Found $1 associated token accounts (ATAs). Scanning all to include SPL movements."
+			);
+			return out;
+		},
+		[locale]
+	);
+
 	const pushLog = useCallback((s: string) => {
 		setLogLines((prev) => [
 			...prev,
@@ -330,17 +379,30 @@ export default function Home() {
 		const onStart = (e: any) => {
 			pushLog(
 				e?.detail?.address
-					? `Henter beholdning for ${e.detail.address} …`
-					: "Henter beholdning …"
+					? tr({
+							no: `Henter beholdning for ${e.detail.address} …`,
+							en: `Fetching holdings for ${e.detail.address} …`
+						})
+					: tr({ no: "Henter beholdning …", en: "Fetching holdings …" })
 			);
 		};
 		const onSuccess = (e: any) => {
 			const n = e?.detail?.count ?? 0;
-			pushLog(`Beholdning oppdatert: ${n} aktiva.`);
+			pushLog(
+				tr({
+					no: `Beholdning oppdatert: ${n} aktiva.`,
+					en: `Holdings updated: ${n} assets.`
+				})
+			);
 		};
 		const onError = (e: any) => {
 			const msg = e?.detail?.error || "Ukjent feil";
-			pushLog(`❌ Beholdning-feil: ${msg}`);
+			pushLog(
+				tr({
+					no: `❌ Beholdning-feil: ${msg}`,
+					en: `❌ Holdings error: ${msg}`
+				})
+			);
 		};
 
 		window.addEventListener("sol2ks:holdings:start", onStart as EventListener);
@@ -364,7 +426,7 @@ export default function Home() {
 				onError as EventListener
 			);
 		};
-	}, [pushLog]);
+	}, [pushLog, tr]);
 
 	// Calendar popover
 	const [calOpen, setCalOpen] = useState(false);
@@ -503,13 +565,16 @@ export default function Home() {
 		const payload = buildPayload();
 		const parsed = schema.safeParse(payload);
 		if (!parsed.success) {
-			setError(parsed.error.issues[0]?.message ?? "Ugyldig input");
-			pushLog("❌ Ugyldig input");
+			setError(parsed.error.issues[0]?.message ?? "Invalid input");
+			pushLog(tr({ no: "❌ Ugyldig input", en: "❌ Invalid input" }));
 			setLogOpen(true);
 			return;
 		}
 
-		pushLog(`Ny sjekk ${q(payload.walletName)} ${q(payload.address)}`);
+		pushLog(
+			tr({ no: "Ny sjekk", en: "New check" }) +
+				` ${q(payload.walletName)} ${q(payload.address)}`
+		);
 		setLogOpen(true);
 
 		rememberAddress(parsed.data.address);
@@ -520,7 +585,10 @@ export default function Home() {
 		setLoading(true);
 		try {
 			pushLog(
-				"Starter sjekk… dette kan ta noen minutter for store lommebøker."
+				tr({
+					no: "Starter sjekk… dette kan ta noen minutter for store lommebøker.",
+					en: "Starting scan… this can take a few minutes for large wallets."
+				})
 			);
 			const res = await fetch("/api/kryptosekken?format=ndjson", {
 				method: "POST",
@@ -531,7 +599,10 @@ export default function Home() {
 
 			if (!res.ok || !res.body) {
 				const j = await res.json().catch(() => ({ error: "Feil" }));
-				pushLog(`❌ API-feil: ${j.error || res.statusText}`);
+				pushLog(
+					tr({ no: "❌ API-feil:", en: "❌ API error:" }) +
+						` ${j.error || res.statusText}`
+				);
 				throw new Error(j.error || res.statusText);
 			}
 
@@ -543,7 +614,6 @@ export default function Home() {
 				if (done) break;
 				buf += decoder.decode(value, { stream: true });
 				let nlIndex: number;
-				// eslint-disable-next-line no-cond-assign
 				while ((nlIndex = buf.indexOf("\n")) >= 0) {
 					const line = buf.slice(0, nlIndex).trim();
 					buf = buf.slice(nlIndex + 1);
@@ -551,20 +621,23 @@ export default function Home() {
 					try {
 						const evt = JSON.parse(line);
 						if (evt.type === "log") {
-							pushLog(evt.message);
+							pushLog(localizeStreamLog(evt.message));
 						} else if (evt.type === "page") {
 							const prefix =
 								evt.kind === "main"
-									? "Hovedadresse"
+									? tr({ no: "Hovedadresse", en: "Main address" })
 									: `ATA ${evt.idx + 1}/${evt.totalATAs}`;
-							pushLog(`${prefix}: side ${evt.page}`);
+							pushLog(
+								`${prefix}: ${tr({ no: "side", en: "page" })} ${evt.page}`
+							);
 						} else if (evt.type === "addrDone") {
 							const prefix =
 								evt.kind === "main"
-									? "Hovedadresse"
+									? tr({ no: "Hovedadresse", en: "Main address" })
 									: `ATA ${evt.idx + 1}/${evt.totalATAs}`;
 							pushLog(
-								`Ferdig — ${prefix}: ${evt.pages} sider (${evt.addressShort})`
+								tr({ no: "Ferdig", en: "Done" }) +
+									` — ${prefix}: ${evt.pages} ${tr({ no: "sider", en: "pages" })} (${evt.addressShort})`
 							);
 						} else if (evt.type === "done") {
 							const j = evt.data as {
@@ -579,12 +652,25 @@ export default function Home() {
 							setOk(true);
 							if (dustMode !== "off" && j.rawCount !== j.count) {
 								pushLog(
-									`Transaksjoner funnet (rå): ${j.rawCount}. Etter støvbehandling: ${j.count}.`
+									tr({
+										no: `Transaksjoner funnet (rå): ${j.rawCount}. Etter støvbehandling: ${j.count}.`,
+										en: `Transactions found (raw): ${j.rawCount}. After dust processing: ${j.count}.`
+									})
 								);
 							} else {
-								pushLog(`Transaksjoner funnet: ${j.count}.`);
+								pushLog(
+									tr({
+										no: `Transaksjoner funnet: ${j.count}.`,
+										en: `Transactions found: ${j.count}.`
+									})
+								);
 							}
-							pushLog(`✅ ${j.count} transaksjoner loggført.`);
+							pushLog(
+								tr({
+									no: `✅ ${j.count} transaksjoner loggført.`,
+									en: `✅ ${j.count} transactions logged.`
+								})
+							);
 						}
 					} catch {
 						// ignore bad chunk
@@ -593,14 +679,14 @@ export default function Home() {
 			}
 		} catch (err: any) {
 			if (err?.name === "AbortError") {
-				pushLog("⏹️ Avbrutt av bruker.");
+				pushLog(tr({ no: "⏹️ Avbrutt av bruker.", en: "⏹️ Cancelled by user." }));
 			} else {
 				const message =
 					err instanceof Error
 						? err.message
 						: typeof err === "string"
 						? err
-						: "Noe gikk galt";
+						: "Something went wrong";
 				setError(message);
 			}
 		} finally {
@@ -656,27 +742,52 @@ export default function Home() {
 					const cacheKey = j?.cacheKey;
 					if (cacheKey) {
 						// Generate preview first, then retry CSV fetch using the returned cacheKey
-						pushLog("ℹ️ Ingen bufret forhåndsvisning — lager forhåndsvisning nå...");
+						pushLog(
+								tr({
+									no: "ℹ️ Ingen bufret forhåndsvisning — lager forhåndsvisning nå...",
+									en: "ℹ️ No cached preview — generating a preview now..."
+								})
+						);
 						const previewRes = await fetch("/api/kryptosekken", {
 							method: "POST",
-							headers: { "Content-Type": "application/json", Accept: "application/json" },
-							body: JSON.stringify({ ...lastPayloadRef.current, overrides: currentOverrides, clientEdits })
+							headers: {
+								"Content-Type": "application/json",
+								Accept: "application/json"
+							},
+							body: JSON.stringify({
+								...lastPayloadRef.current,
+								overrides: currentOverrides,
+								clientEdits
+							})
 						});
 						if (!previewRes.ok) {
-							const pj = await previewRes.json().catch(() => ({ error: previewRes.statusText }));
+							const pj = await previewRes
+								.json()
+								.catch(() => ({ error: previewRes.statusText }));
 							throw new Error(pj.error || previewRes.statusText);
 						}
 						const pj = await previewRes.json();
 						const newKey = pj.cacheKey || cacheKey;
 						// Retry CSV download with cacheKey param
-						const csvUrl = `/api/kryptosekken?useCache=1&cacheKey=${encodeURIComponent(newKey)}`;
+						const csvUrl = `/api/kryptosekken?useCache=1&cacheKey=${encodeURIComponent(
+							newKey
+						)}`;
 						const csvRes = await fetch(csvUrl, {
 							method: "POST",
-							headers: { "Content-Type": "application/json", Accept: "text/csv" },
-							body: JSON.stringify({ ...lastPayloadRef.current, overrides: currentOverrides, clientEdits })
+							headers: {
+								"Content-Type": "application/json",
+								Accept: "text/csv"
+							},
+							body: JSON.stringify({
+								...lastPayloadRef.current,
+								overrides: currentOverrides,
+								clientEdits
+							})
 						});
 						if (!csvRes.ok) {
-							const cj = await csvRes.json().catch(() => ({ error: csvRes.statusText }));
+							const cj = await csvRes
+								.json()
+								.catch(() => ({ error: csvRes.statusText }));
 							throw new Error(cj.error || csvRes.statusText);
 						}
 						const blob2 = await csvRes.blob();
@@ -688,7 +799,7 @@ export default function Home() {
 						a2.click();
 						a2.remove();
 						URL.revokeObjectURL(dlUrl2);
-						pushLog("✅ CSV klar (med redigeringer).");
+						pushLog(tr({ no: "✅ CSV klar (med redigeringer).", en: "✅ CSV ready (with edits)." }));
 						return;
 					}
 				}
@@ -704,14 +815,14 @@ export default function Home() {
 			a.click();
 			a.remove();
 			URL.revokeObjectURL(dlUrl);
-			pushLog("✅ CSV klar (med redigeringer).");
+			pushLog(tr({ no: "✅ CSV klar (med redigeringer).", en: "✅ CSV ready (with edits)." }));
 		} catch (err: unknown) {
 			const message =
 				err instanceof Error
 					? err.message
 					: typeof err === "string"
 					? err
-					: "Noe gikk galt";
+					: "Something went wrong";
 			setError(message);
 		}
 	}
@@ -746,7 +857,12 @@ export default function Home() {
 		try {
 			const payload = lastPayloadRef.current || buildPayload();
 			if (!payload.address?.trim()) {
-				pushLog("⚠️ Ingen adresse valgt – kan ikke tømme cache.");
+				pushLog(
+					tr({
+						no: "⚠️ Ingen adresse valgt – kan ikke tømme cache.",
+						en: "⚠️ No address selected — cannot clear cache."
+					})
+				);
 				return;
 			}
 			const res = await fetch("/api/kryptosekken?clearCache=1", {
@@ -760,15 +876,28 @@ export default function Home() {
 			}
 			const j = await res.json();
 			if (j.cleared) {
-				pushLog("🧹 Mellomlager tømt for denne forespørselen.");
+				pushLog(
+					tr({
+						no: "🧹 Mellomlager tømt for denne forespørselen.",
+						en: "🧹 Cache cleared for this request."
+					})
+				);
 			} else {
-				pushLog("ℹ️ Fant ingen cache å tømme for disse parametrene.");
+				pushLog(
+					tr({
+						no: "ℹ️ Fant ingen cache å tømme for disse parametrene.",
+						en: "ℹ️ No cache found to clear for these parameters."
+					})
+				);
 			}
 			cacheKeyRef.current = null;
 			setRows(null);
 			setOk(false);
 		} catch (err: any) {
-			pushLog(`❌ Klarte ikke å tømme cache: ${err?.message || err}`);
+			pushLog(
+				tr({ no: "❌ Klarte ikke å tømme cache:", en: "❌ Failed to clear cache:" }) +
+					` ${err?.message || err}`
+			);
 		}
 	}
 
@@ -789,7 +918,8 @@ export default function Home() {
 							<SiSolana className="h-4 w-4" aria-hidden />
 							Solana → Kryptosekken • CSV Generator
 						</div>
-						<div className="self-end sm:self-auto">
+						<div className="self-end sm:self-auto flex items-center gap-2">
+							<LocalePill />
 							<ThemePill />
 						</div>
 					</div>
@@ -800,12 +930,29 @@ export default function Home() {
 						<div className="order-1 sm:order-none min-w-0 text-center sm:text-left">
 							<h1 className="text-balance text-3xl sm:text-4xl font-semibold tracking-tight">
 								<span className="bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">
-									Solana-transaksjoner gjort enklere
+									{tr({
+										no: "Solana-transaksjoner gjort enklere",
+										en: "Solana transactions, simplified"
+									})}
 								</span>
 							</h1>
 							<p className="mt-2 text-balance leading-relaxed max-w-[65ch] text-sm sm:text-base text-slate-700 dark:text-slate-300">
-								Lim inn en Solana-adresse, velg tidsrom, <b>sjekk lommeboken</b>{" "}
-								og last ned en <b>CSV-fil</b> klar for import i Kryptosekken.
+								{tr({
+									no: "Lim inn en Solana-adresse, velg tidsrom, ",
+									en: "Paste a Solana address, choose a date range, "
+								})}
+								<b>
+									{tr({ no: "sjekk lommeboken", en: "check the wallet" })}
+								</b>{" "}
+								{tr({
+									no: "og last ned en ",
+									en: "and download a "
+								})}
+								<b>CSV</b>{" "}
+								{tr({
+									no: "klar for import i Kryptosekken.",
+									en: "ready to import into Kryptosekken."
+								})}
 							</p>
 						</div>
 
@@ -833,7 +980,7 @@ export default function Home() {
 						>
 							{/* Address + Name with history */}
 							<label className="block mb-2 text-sm font-medium text-slate-800 dark:text-slate-200">
-								Lommebok
+								{tr({ no: "Lommebok", en: "Wallet" })}
 							</label>
 							<div className="grid gap-3 sm:grid-cols-[1fr_280px]">
 								{/* Address */}
@@ -844,7 +991,7 @@ export default function Home() {
 										name="address"
 										required
 										autoComplete="off"
-										placeholder="F.eks. ESURTD2D…"
+										placeholder={tr({ no: "F.eks. ESURTD2D…", en: "e.g. ESURTD2D…" })}
 										value={address}
 										onChange={(e) => {
 											setAddress(e.target.value);
@@ -861,7 +1008,7 @@ export default function Home() {
 										{hasAddressInput && (
 											<button
 												type="button"
-												aria-label="Tøm felt"
+												aria-label={tr({ no: "Tøm felt", en: "Clear field" })}
 												onMouseDown={(e) => e.preventDefault()}
 												onClick={() => {
 													setAddress("");
@@ -869,7 +1016,7 @@ export default function Home() {
 													setTimeout(() => addrInputRef.current?.focus(), 0);
 												}}
 												className="rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 h-6 w-6"
-												title="Tøm felt"
+												title={tr({ no: "Tøm felt", en: "Clear field" })}
 											>
 												<FiX className="h-4 w-4" />
 											</button>
@@ -877,11 +1024,11 @@ export default function Home() {
 										{/* history */}
 										<button
 											type="button"
-											aria-label="Adressehistorikk"
+											aria-label={tr({ no: "Adressehistorikk", en: "Address history" })}
 											onMouseDown={(e) => e.preventDefault()}
 											onClick={() => setAddrMenuOpen((v) => !v)}
 											className="rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 h-6 w-6"
-											title="Adressehistorikk"
+											title={tr({ no: "Adressehistorikk", en: "Address history" })}
 										>
 											<FiClock className="h-4 w-4" />
 										</button>
@@ -917,7 +1064,7 @@ export default function Home() {
 															</button>
 															<button
 																type="button"
-																aria-label="Fjern fra historikk"
+																aria-label={tr({ no: "Fjern fra historikk", en: "Remove from history" })}
 																onMouseDown={(e) => e.preventDefault()}
 																onClick={() => removeAddress(a)}
 																className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-600"
@@ -929,11 +1076,16 @@ export default function Home() {
 												</ul>
 											) : (
 												<div className="px-3 py-2 text-sm text-slate-500 dark:text-slate-400">
-													Ingen treff i historikk
+													{tr({ no: "Ingen treff i historikk", en: "No matches in history" })}
 												</div>
 											)}
 											<div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-white/5 px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
-												<span>{addrHistory.length} lagret</span>
+												<span>
+													{tr({
+														no: `${addrHistory.length} lagret`,
+														en: `${addrHistory.length} saved`
+													})}
+												</span>
 												<button
 													type="button"
 													onMouseDown={(e) => e.preventDefault()}
@@ -941,7 +1093,7 @@ export default function Home() {
 													className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-white dark:hover:bg-white/10"
 												>
 													<FiTrash2 className="h-3 w-3" />
-													Tøm historikk
+													{tr({ no: "Tøm historikk", en: "Clear history" })}
 												</button>
 											</div>
 										</div>
@@ -955,7 +1107,7 @@ export default function Home() {
 										<input
 											name="walletName"
 											autoComplete="off"
-											placeholder="Navn (valgfritt)"
+											placeholder={tr({ no: "Navn (valgfritt)", en: "Name (optional)" })}
 											value={walletName}
 											onChange={(e) => setWalletName(e.target.value)}
 											className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-11 pr-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
@@ -979,8 +1131,8 @@ export default function Home() {
 												}`}
 											title={
 												canOpenExplorer
-													? "Åpne i Solscan"
-													: "Skriv inn en adresse først"
+													? tr({ no: "Åpne i Solscan", en: "Open in Solscan" })
+													: tr({ no: "Skriv inn en adresse først", en: "Enter an address first" })
 											}
 										>
 											<IoOpenOutline className="h-[17px] w-[17px]" />
@@ -988,7 +1140,17 @@ export default function Home() {
 									</div>
 
 									<p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-										Vises i <b>Notat</b> (eks. <b>MIN WALLET</b>).
+										{tr({
+											no: "Vises i ",
+											en: "Shown in "
+										})}
+										<b>Notat</b>
+										{tr({
+											no: " (eks. ",
+											en: " (e.g. "
+										})}
+													<b>{tr({ no: "MIN WALLET", en: "MY WALLET" })}</b>
+										).
 									</p>
 								</div>
 							</div>
@@ -997,11 +1159,14 @@ export default function Home() {
 							<div className="mt-6">
 								<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
 									<label className="block text-sm font-medium text-slate-800 dark:text-slate-200">
-										Tidsrom
+										{tr({ no: "Tidsrom", en: "Date range" })}
 									</label>
 									<div className="text-[11px] text-slate-500 dark:text-slate-400">
-										Avgrenser transaksjoner i perioden. Standard:{" "}
-										<b>siste 30 dager</b>.
+										{tr({
+											no: "Avgrenser transaksjoner i perioden. Standard: ",
+											en: "Limits transactions to the selected period. Default: "
+										})}
+										<b>{tr({ no: "siste 30 dager", en: "last 30 days" })}</b>.
 									</div>
 								</div>
 
@@ -1019,7 +1184,7 @@ export default function Home() {
 										>
 											<span className="inline-flex items-center gap-2">
 												<FiCalendar className="h-4 w-4 text-slate-500 dark:text-slate-400" />
-												{formatRangeLabel(range)}
+													{formatRangeLabel(tr, locale, range)}
 											</span>
 											<FiChevronDown className="h-4 w-4 text-slate-400" />
 										</button>
@@ -1035,22 +1200,22 @@ export default function Home() {
 														onClick={() =>
 															range?.from && setCalMonth(range.from)
 														}
-														title="Gå til Fra-måned"
+																title={tr({ no: "Gå til Fra-måned", en: "Go to From month" })}
 													>
 														<span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-400/10 px-2 py-0.5 hover:bg-indigo-100 dark:hover:bg-indigo-400/20">
 															<span className="h-2 w-2 rounded-full bg-indigo-600" />
-															Fra: <b>{nice(range?.from)}</b>
+																	{tr({ no: "Fra", en: "From" })}: <b>{nice(range?.from)}</b>
 														</span>
 													</button>
 													<button
 														type="button"
 														className="text-[11px] text-slate-600 dark:text-slate-300"
 														onClick={() => range?.to && setCalMonth(range.to)}
-														title="Gå til Til-måned"
+															title={tr({ no: "Gå til Til-måned", en: "Go to To month" })}
 													>
 														<span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-400/10 px-2 py-0.5 hover:bg-emerald-100 dark:hover:bg-emerald-400/20">
 															<span className="h-2 w-2 rounded-full bg-emerald-600" />
-															Til: <b>{nice(range?.to)}</b>
+																	{tr({ no: "Til", en: "To" })}: <b>{nice(range?.to)}</b>
 														</span>
 													</button>
 												</div>
@@ -1091,7 +1256,7 @@ export default function Home() {
 														onClick={() => setCalOpen(false)}
 														className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 													>
-														Lukk
+															{tr({ no: "Lukk", en: "Close" })}
 													</button>
 												</div>
 											</div>
@@ -1105,39 +1270,39 @@ export default function Home() {
 											onClick={() => presetDays(7)}
 											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 										>
-											Siste 7 dager
+										{tr({ no: "Siste 7 dager", en: "Last 7 days" })}
 										</button>
 										<button
 											type="button"
 											onClick={() => presetDays(30)}
 											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 										>
-											Siste 30 dager
+											{tr({ no: "Siste 30 dager", en: "Last 30 days" })}
 										</button>
 										<button
 											type="button"
 											onClick={ytd}
-											title="Hittil i år — Fra 1. januar til i dag"
-											aria-label="Hittil i år (Året så langt)"
+											title={tr({ no: "Hittil i år — Fra 1. januar til i dag", en: "Year to date — From Jan 1 to today" })}
+											aria-label={tr({ no: "Hittil i år (Året så langt)", en: "Year to date" })}
 											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 										>
-											Hittil i år
+											{tr({ no: "Hittil i år", en: "Year to date" })}
 										</button>
 										<button
 											type="button"
 											onClick={lastYearWhole}
-											title="Hele fjoråret — Fra 1. januar til 31. desember i fjor"
-											aria-label="Hele fjoråret"
+											title={tr({ no: "Hele fjoråret — Fra 1. januar til 31. desember i fjor", en: "Last year — From Jan 1 to Dec 31" })}
+											aria-label={tr({ no: "Hele fjoråret", en: "Last year" })}
 											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 										>
-											Hele fjoråret
+											{tr({ no: "Hele fjoråret", en: "Last year" })}
 										</button>
 										<button
 											type="button"
 											onClick={clearDates}
 											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 										>
-											Nullstill
+											{tr({ no: "Nullstill", en: "Reset" })}
 										</button>
 									</div>
 								</div>
@@ -1147,14 +1312,17 @@ export default function Home() {
 									<Switch
 										checked={useOslo}
 										onChange={setUseOslo}
-										label="Norsk tid (Europe/Oslo)"
+										label={tr({ no: "Norsk tid (Europe/Oslo)", en: "Norway time (Europe/Oslo)" })}
 									/>
 									<span className="text-sm font-medium text-slate-800 dark:text-slate-200">
-										Norsk tid (Europe/Oslo)
+										{tr({ no: "Norsk tid (Europe/Oslo)", en: "Norway time (Europe/Oslo)" })}
 									</span>
 									<span className="text-[11px] text-slate-500 dark:text-slate-400">
-										CSV tidsstempler skrives i{" "}
-										{useOslo ? "Norsk tid (UTC+01:00 Europe/Oslo)" : "UTC"}.
+										{tr({ no: "CSV tidsstempler skrives i ", en: "CSV timestamps are written in " })}
+										{useOslo
+											? tr({ no: "Norsk tid (UTC+01:00 Europe/Oslo)", en: "Norway time (Europe/Oslo)" })
+											: "UTC"}
+										.
 									</span>
 								</div>
 							</div>
@@ -1166,15 +1334,17 @@ export default function Home() {
 										<Switch
 											checked={includeNFT}
 											onChange={setIncludeNFT}
-											label="Inkluder NFT-overføringer"
+											label={tr({ no: "Inkluder NFT-overføringer", en: "Include NFT transfers" })}
 										/>
 										<span className="text-sm font-medium text-slate-800 dark:text-slate-200">
-											Inkluder NFT-overføringer
+											{tr({ no: "Inkluder NFT-overføringer", en: "Include NFT transfers" })}
 										</span>
 									</div>
 									<div className="text-[11px] text-slate-500 dark:text-slate-400">
-										Tar med bevegelser av NFT-er. (Ingen prising, kun
-										overføringer.)
+										{tr({
+											no: "Tar med bevegelser av NFT-er. (Ingen prising, kun overføringer.)",
+											en: "Includes NFT movements. (No pricing, transfers only.)"
+										})}
 									</div>
 								</div>
 							</div>
@@ -1184,13 +1354,13 @@ export default function Home() {
 								<div className="mb-3 flex items-center justify-between">
 									<div className="inline-flex items-center gap-2 text-sm font-medium text-slate-800 dark:text-slate-200">
 										<FiSliders className="h-4 w-4" />
-										Støvtransaksjoner
+										{tr({ no: "Støvtransaksjoner", en: "Dust transactions" })}
 									</div>
 
 									<div className="relative group">
 										<button
 											type="button"
-											aria-label="Hvorfor får jeg så mye støv i SOL?"
+											aria-label={tr({ no: "Hvorfor får jeg så mye støv i SOL?", en: "Why am I getting so much SOL dust?" })}
 											className="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 focus:outline-none"
 										>
 											<FiInfo className="h-4 w-4" />
@@ -1200,30 +1370,48 @@ export default function Home() {
 											className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl group-hover:block group-focus-within:block"
 										>
 											<p className="mb-1 font-medium">
-												Hvorfor så mye “støv” i SOL?
+												{tr({ no: "Hvorfor så mye “støv” i SOL?", en: "Why so much SOL “dust”?" })}
 											</p>
 											<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
 												<li>
-													<b>Spam / dusting:</b> små innbetalinger for å lokke
-													klikk eller spore lommebøker.
+													<b>Spam / dusting:</b>{" "}
+													{tr({
+														no: "små innbetalinger for å lokke klikk eller spore lommebøker.",
+														en: "tiny deposits used to lure clicks or track wallets."
+													})}
 												</li>
 												<li>
-													<b>DEX/protokoll-refusjoner:</b> bitte små
-													rest-lamports/fee-reverseringer etter swaps/tx.
+													<b>DEX/protocol refunds:</b>{" "}
+													{tr({
+														no: "bitte små rest-lamports/fee-reverseringer etter swaps/tx.",
+														en: "tiny leftover lamports/fee reversals after swaps/tx."
+													})}
 												</li>
 												<li>
-													<b>Konto-livssyklus:</b> opprettelse/lukking og{" "}
-													<i>rent-exempt</i> topp-ups kan sende/returnere små
-													SOL-beløp.
+													<b>{tr({ no: "Konto-livssyklus", en: "Account lifecycle" })}:</b>{" "}
+													{tr({
+														no: "opprettelse/lukking og ",
+														en: "creation/closure and "
+													})}
+													<i>rent-exempt</i>{" "}
+													{tr({
+														no: "topp-ups kan sende/returnere små SOL-beløp.",
+														en: "top-ups can send/return small SOL amounts."
+													})}
 												</li>
 												<li>
-													<b>Program-interaksjoner:</b>{" "}
-													claim/reward/airdrop-skript som sender små beløp for å
-													trigge varsler eller dekke minutt-gebyr.
+													<b>{tr({ no: "Program-interaksjoner", en: "Program interactions" })}:</b>{" "}
+													{tr({
+														no: "claim/reward/airdrop-skript som sender små beløp for å trigge varsler eller dekke minutt-gebyr.",
+														en: "claim/reward/airdrop scripts that send tiny amounts to trigger notifications or cover min-fees."
+													})}
 												</li>
 												<li>
-													<b>NFT/WSOL-håndtering:</b> wrapping/unwrapping og
-													ATA-endringer kan etterlate mikrobeløp.
+													<b>{tr({ no: "NFT/WSOL-håndtering", en: "NFT/WSOL handling" })}:</b>{" "}
+													{tr({
+														no: "wrapping/unwrapping og ATA-endringer kan etterlate mikrobeløp.",
+														en: "wrapping/unwrapping and ATA changes can leave micro-amounts."
+													})}
 												</li>
 											</ul>
 										</div>
@@ -1234,25 +1422,27 @@ export default function Home() {
 									{/* Mode */}
 									<div className="flex flex-col gap-1">
 										<label className="text-xs text-slate-600 dark:text-slate-400">
-											Modus
+											{tr({ no: "Modus", en: "Mode" })}
 										</label>
 										<StyledSelect
 											value={dustMode}
 											onChange={(v) => setDustMode(v)}
 											buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
-											options={[
-												{ value: "off", label: "Vis alle" },
-												{ value: "remove", label: "Skjul" },
-												{
-													value: "aggregate-signer",
-													label: "Slå sammen fra samme sender"
-												},
-												{
-													value: "aggregate-period",
-													label: "Slå sammen periodisk"
-												}
-											] as const}
-											ariaLabel="Velg støvmodus"
+											options={
+												[
+													{ value: "off", label: tr({ no: "Vis alle", en: "Show all" }) },
+													{ value: "remove", label: tr({ no: "Skjul", en: "Hide" }) },
+													{
+														value: "aggregate-signer",
+														label: tr({ no: "Slå sammen fra samme sender", en: "Aggregate by sender" })
+													},
+													{
+														value: "aggregate-period",
+														label: tr({ no: "Slå sammen periodisk", en: "Aggregate by period" })
+													}
+												] as const
+											}
+										ariaLabel={tr({ no: "Velg støvmodus", en: "Choose dust mode" })}
 										/>
 									</div>
 
@@ -1260,7 +1450,7 @@ export default function Home() {
 									{dustMode !== "off" && (
 										<div className="flex flex-col gap-1">
 											<label className="text-xs text-slate-600 dark:text-slate-400">
-												Grense (beløp)
+												{tr({ no: "Grense (beløp)", en: "Threshold (amount)" })}
 											</label>
 											<input
 												type="number"
@@ -1279,19 +1469,21 @@ export default function Home() {
 										dustMode === "aggregate-signer") && (
 										<div className="flex flex-col gap-1">
 											<label className="text-xs text-slate-600 dark:text-slate-400">
-												Periode
+												{tr({ no: "Periode", en: "Period" })}
 											</label>
 											<StyledSelect
 												value={dustInterval}
 												onChange={(v) => setDustInterval(v)}
 												buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
-												options={[
-													{ value: "day", label: "Dag" },
-													{ value: "week", label: "Uke" },
-													{ value: "month", label: "Måned" },
-													{ value: "year", label: "År" }
-												] as const}
-												ariaLabel="Velg periode"
+												options={
+													[
+														{ value: "day", label: tr({ no: "Dag", en: "Day" }) },
+														{ value: "week", label: tr({ no: "Uke", en: "Week" }) },
+														{ value: "month", label: tr({ no: "Måned", en: "Month" }) },
+														{ value: "year", label: tr({ no: "År", en: "Year" }) }
+													] as const
+												}
+											ariaLabel={tr({ no: "Velg periode", en: "Choose period" })}
 											/>
 										</div>
 									)}
@@ -1300,29 +1492,45 @@ export default function Home() {
 								{/* Info text – specific per mode */}
 								{dustMode === "off" && (
 									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-										<b>Vis alle:</b> Ingen støvbehandling.
+										<b>{tr({ no: "Vis alle", en: "Show all" })}:</b>{" "}
+										{tr({ no: "Ingen støvbehandling.", en: "No dust processing." })}
 									</p>
 								)}
 								{dustMode === "remove" && (
 									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-										<b>Skjul:</b> Filtrerer vekk alle overføringer under
-										grensen.{" "}
-										<span className="text-amber-700">(Ikke anbefalt)</span>
+										<b>{tr({ no: "Skjul", en: "Hide" })}:</b>{" "}
+										{tr({
+											no: "Filtrerer vekk alle overføringer under grensen.",
+											en: "Filters out all transfers below the threshold."
+										})}{" "}
+										<span className="text-amber-700">
+											({tr({ no: "Ikke anbefalt", en: "Not recommended" })})
+										</span>
 									</p>
 								)}
 								{dustMode === "aggregate-signer" && (
 									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-										<b>Slå sammen fra samme sender:</b> Slår sammen små{" "}
+										<b>{tr({ no: "Slå sammen fra samme sender", en: "Aggregate by sender" })}:</b>{" "}
+										{tr({ no: "Slår sammen små ", en: "Aggregates small " })}
 										<code>Overføring-Inn/Ut</code> fra hver{" "}
-										<i>signer-adresse</i> til én linje <b>per valgt periode</b>.
-										Notatet viser hvem som sendte.
+										<i>{tr({ no: "signer-adresse", en: "signer address" })}</i>{" "}
+										{tr({
+											no: "til én linje ",
+											en: "into one line "
+										})}
+										<b>{tr({ no: "per valgt periode", en: "per selected period" })}</b>.
+										{tr({
+											no: " Notatet viser hvem som sendte.",
+											en: " The note shows who sent it."
+										})}
 									</p>
 								)}
 								{dustMode === "aggregate-period" && (
 									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-										<b>Slå sammen periodisk:</b> Slår sammen små{" "}
+										<b>{tr({ no: "Slå sammen periodisk", en: "Aggregate by period" })}:</b>{" "}
+										{tr({ no: "Slår sammen små ", en: "Aggregates small " })}
 										<code>Overføring-Inn/Ut</code> i én linje per valgt periode
-										(uavhengig av sender).
+										{tr({ no: " (uavhengig av sender).", en: " (regardless of sender)." })}
 									</p>
 								)}
 							</div>
@@ -1339,7 +1547,7 @@ export default function Home() {
 									) : (
 										<FiEye className="h-4 w-4" />
 									)}
-									Sjekk lommebok
+									{tr({ no: "Sjekk lommebok", en: "Check wallet" })}
 								</button>
 								{loading && (
 									<button
@@ -1348,7 +1556,7 @@ export default function Home() {
 										className="inline-flex  items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 shadow-sm dark:shadow-black/25 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300 active:scale-[0.99] w-full sm:w-auto"
 									>
 										<FiX className="h-4 w-4" />
-										Avbryt
+										{tr({ no: "Avbryt", en: "Cancel" })}
 									</button>
 								)}
 								<button
@@ -1356,7 +1564,7 @@ export default function Home() {
 									onClick={onReset}
 									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] w-full sm:w-auto"
 								>
-									Nullstill
+									{tr({ no: "Nullstill", en: "Reset" })}
 								</button>
 
 								{error && (
@@ -1370,7 +1578,10 @@ export default function Home() {
 								)}
 								{!error && effectiveRows && effectiveRows.length > 0 && (
 									<span className="sm:ml-2 text-sm text-emerald-700 dark:text-emerald-400">
-										{effectiveRows.length} transaksjoner funnet ✅
+										{tr({
+											no: `${effectiveRows.length} transaksjoner funnet ✅`,
+											en: `${effectiveRows.length} transactions found ✅`
+										})}
 									</span>
 								)}
 
@@ -1380,10 +1591,12 @@ export default function Home() {
 										type="button"
 										onClick={() => setLogOpen((v) => !v)}
 										className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto justify-center"
-										title="Vis/skjul logg"
+												title={tr({ no: "Vis/skjul logg", en: "Show/hide log" })}
 									>
 										<FiActivity className="h-4 w-4" />
-										{logOpen ? "Skjul logg" : "Vis logg"}
+												{logOpen
+													? tr({ no: "Skjul logg", en: "Hide log" })
+													: tr({ no: "Vis logg", en: "Show log" })}
 									</button>
 								</div>
 							</div>
@@ -1396,7 +1609,7 @@ export default function Home() {
 								>
 									{logLines.length === 0 ? (
 										<div className="text-slate-500 dark:text-slate-400">
-											Ingen hendelser ennå.
+												{tr({ no: "Ingen hendelser ennå.", en: "No events yet." })}
 										</div>
 									) : (
 										<ul className="space-y-1 font-mono">
@@ -1412,17 +1625,22 @@ export default function Home() {
 							{cacheKeyRef.current && !loading && (
 								<div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
 									<span>
-										Treff i cache for denne adressen/perioden. Du kan tømme
-										cache hvis du vil foreta et nytt sjekk.
+												{tr({
+													no: "Treff i cache for denne adressen/perioden. Du kan tømme cache hvis du vil foreta et nytt sjekk.",
+													en: "Cache hit for this address/period. You can clear the cache if you want to run a new check."
+												})}
 									</span>
 									<button
 										type="button"
 										onClick={clearCacheNow}
 										className="inline-flex items-center gap-1 rounded-md border border-amber-300 dark:border-amber-800 bg-white/60 dark:bg-white/10 px-2 py-1 hover:bg-white dark:hover:bg-white/15 whitespace-nowrap w-full sm:w-auto justify-center"
-										title="Tøm mellomlager for denne forespørselen"
+												title={tr({
+													no: "Tøm mellomlager for denne forespørselen",
+													en: "Clear cache for this request"
+												})}
 									>
 										<FiTrash2 className="h-4 w-4" />
-										Tøm cache
+												{tr({ no: "Tøm cache", en: "Clear cache" })}
 									</button>
 								</div>
 							)}
@@ -1459,8 +1677,10 @@ export default function Home() {
 
 				{/* Footer */}
 				<footer className="mt-6 text-xs text-slate-500 dark:text-slate-400">
-					Resultatet kan inneholde feil. Kontroller i lommeboken og i
-					Kryptosekken før innlevering.
+					{tr({
+						no: "Resultatet kan inneholde feil. Kontroller i lommeboken og i Kryptosekken før innlevering.",
+						en: "The result may contain errors. Verify in the wallet and in Kryptosekken before filing."
+					})}
 				</footer>
 			</div>
 		</main>
@@ -1468,9 +1688,15 @@ export default function Home() {
 }
 
 /* ========== local helpers used only by this file ========== */
-function formatRangeLabel(r?: DateRange) {
-	if (!r?.from && !r?.to) return "Velg datoer";
-	const f = (d?: Date) => (d ? d.toLocaleDateString("no-NO") : "–");
+function formatRangeLabel(
+	tr: (o: { no: string; en: string }) => string,
+	locale: "no" | "en",
+	r?: DateRange
+) {
+	if (!r?.from && !r?.to) return tr({ no: "Velg datoer", en: "Choose dates" });
+	const dateLocale = locale === "en" ? "en-GB" : "no-NO";
+	const fmt = new Intl.DateTimeFormat(dateLocale);
+	const f = (d?: Date) => (d ? fmt.format(d) : "–");
 	if (r?.from && r?.to) return `${f(r.from)} → ${f(r.to)}`;
 	return `${f(r?.from)} → …`;
 }

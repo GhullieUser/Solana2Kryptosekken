@@ -1,9 +1,11 @@
-// app/components/preview.tsx
 "use client";
+
+// app/components/preview.tsx
 
 import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useLocale } from "@/app/components/locale-provider";
 import {
 	FiExternalLink,
 	FiEdit,
@@ -17,7 +19,10 @@ import {
 } from "react-icons/fi";
 
 import type { KSRow, KSPreviewRow, OverrideMaps } from "../page";
-import ModalEditor, { type EditScope, type TextEditMode } from "@components/edit-modal";
+import ModalEditor, {
+	type EditScope,
+	type TextEditMode
+} from "@components/edit-modal";
 import StyledSelect from "@components/styled-select";
 
 /* ---------- local helpers & constants (duplicated here for isolation) ---------- */
@@ -416,6 +421,7 @@ export default function Preview({
 	setOverrides,
 	onDownloadCSV
 }: Props) {
+	const { tr } = useLocale();
 	const [activeTab, setActiveTab] = useState<"preview" | "attention">(
 		"preview"
 	);
@@ -1018,20 +1024,21 @@ export default function Preview({
 				const effectiveNext = next.map((r, idx) => ({
 					r: {
 						...r,
-						"Inn-Valuta": overrides.symbols?.[r["Inn-Valuta"]] ?? r["Inn-Valuta"],
+						"Inn-Valuta":
+							overrides.symbols?.[r["Inn-Valuta"]] ?? r["Inn-Valuta"],
 						"Ut-Valuta": overrides.symbols?.[r["Ut-Valuta"]] ?? r["Ut-Valuta"],
 						Marked: overrides.markets?.[r.Marked] ?? r.Marked
 					} as KSPreviewRow,
 					idx
 				}));
-				
+
 				const visibleIndices = new Set<number>();
 				for (const { r, idx } of effectiveNext) {
 					if (matchesFilters(r)) {
 						visibleIndices.add(idx);
 					}
 				}
-				
+
 				for (let i = 0; i < next.length; i++) {
 					if (visibleIndices.has(i)) {
 						const row = { ...next[i] } as any;
@@ -1166,7 +1173,10 @@ export default function Preview({
 			<div
 				role="separator"
 				aria-orientation="vertical"
-				title="Dra for å endre kolonnebredde (dbl-klikk: reset)"
+				title={tr({
+					no: "Dra for å endre kolonnebredde (dbl-klikk: reset)",
+					en: "Drag to resize column (double-click: reset)"
+				})}
 				onMouseDown={(e) => handleResizerMouseDown(colKey, e)}
 				onDoubleClick={() => resetWidthToDefault(colKey)}
 				className="group/resize absolute top-0 right-0 h-full w-4 cursor-col-resize select-none z-10"
@@ -1787,7 +1797,7 @@ export default function Preview({
 												target="_blank"
 												rel="noopener noreferrer"
 												className="inline-flex items-center justify-center gap-1 text-indigo-600 hover:underline dark:text-indigo-400"
-												title="Åpne i Solscan"
+												title={tr({ no: "Åpne i Solscan", en: "Open in Solscan" })}
 											>
 												<FiExternalLink className="h-4 w-4" />
 												<span className="sr-only">Solscan</span>
@@ -1839,7 +1849,7 @@ export default function Preview({
 						<div
 							className="flex flex-nowrap items-end -mb-px"
 							role="tablist"
-							aria-label="Forhåndsvisning faner"
+							aria-label={tr({ no: "Forhåndsvisning faner", en: "Preview tabs" })}
 						>
 							<button
 								type="button"
@@ -1858,7 +1868,7 @@ export default function Preview({
 										: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
 								].join(" ")}
 							>
-								Forhåndsvisning
+								{tr({ no: "Forhåndsvisning", en: "Preview" })}
 							</button>
 
 							<button
@@ -1870,7 +1880,10 @@ export default function Preview({
 									setActiveTab("attention");
 									setOpenFilter(null);
 								}}
-								title="Uavklarte elementer som bør navngis"
+								title={tr({
+									no: "Uavklarte elementer som bør navngis",
+									en: "Unresolved items that should be named"
+							})}
 								className={[
 									"relative flex-1 min-w-0 text-center rounded-t-md",
 									"px-2 pr-8 py-1.5 text-[11px] leading-5 sm:px-3 sm:py-2 sm:text-sm",
@@ -1881,7 +1894,7 @@ export default function Preview({
 								].join(" ")}
 							>
 								<span className="pointer-events-none">
-									Trenger oppmerksomhet
+									{tr({ no: "Trenger oppmerksomhet", en: "Needs attention" })}
 								</span>
 								{pendingIssuesCount > 0 && (
 									<span className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded-full bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 dark:bg-amber-500/20 dark:text-amber-300">
@@ -1897,7 +1910,7 @@ export default function Preview({
 						<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 max-h-[80vh] sm:max-h-none overflow-y-auto overscroll-contain dark:border-amber-900/40 dark:bg-amber-500/10">
 							{issues.length === 0 ? (
 								<div className="text-sm text-emerald-700 dark:text-emerald-400">
-									Ingen uavklarte elementer 🎉
+									{tr({ no: "Ingen uavklarte elementer 🎉", en: "No unresolved items 🎉" })}
 								</div>
 							) : (
 								<>
@@ -1957,13 +1970,13 @@ export default function Preview({
 														<div className="space-y-1">
 															<div className="text-sm font-medium text-slate-800 dark:text-slate-100">
 																{it.kind === "unknown-token"
-																	? "Ukjent token"
-																	: "Ukjent marked"}
+																	? tr({ no: "Ukjent token", en: "Unknown token" })
+																	: tr({ no: "Ukjent marked", en: "Unknown market" })}
 																: <code className="font-mono">{it.key}</code>
 																{statusBadge}
 															</div>
 															<div className="text-xs text-slate-600 dark:text-slate-400">
-																{it.count} forekomster
+																{tr({ no: `${it.count} forekomster`, en: `${it.count} occurrences` })}
 															</div>
 														</div>
 
@@ -1973,8 +1986,11 @@ export default function Preview({
 																defaultValue={it.newName ?? ""}
 																placeholder={
 																	it.kind === "unknown-token"
-																		? "Ny tokensymbol (BTC, ETH, SOL...)"
-																		: "Nytt markedsnavn"
+																		? tr({
+																			no: "Ny tokensymbol (BTC, ETH, SOL...)",
+																			en: "New token symbol (BTC, ETH, SOL...)"
+																		})
+																		: tr({ no: "Nytt markedsnavn", en: "New market name" })
 																}
 																className="w-full sm:w-56 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
 															/>
@@ -1990,7 +2006,7 @@ export default function Preview({
 																}}
 																className="rounded-md bg-indigo-600 text-white px-2 py-1 text-sm disabled:opacity-60 dark:bg-indigo-500"
 															>
-																Lagre
+																{tr({ no: "Lagre", en: "Save" })}
 															</button>
 															<button
 																type="button"
@@ -1998,11 +2014,13 @@ export default function Preview({
 																className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
 																title={
 																	it.status === "ignored"
-																		? "Angre ignorering"
-																		: "Ignorer"
+																		? tr({ no: "Angre ignorering", en: "Undo ignore" })
+																		: tr({ no: "Ignorer", en: "Ignore" })
 																}
 															>
-																{it.status === "ignored" ? "Angre" : "Ignorer"}
+																{it.status === "ignored"
+																	? tr({ no: "Angre", en: "Undo" })
+																	: tr({ no: "Ignorer", en: "Ignore" })}
 															</button>
 															<button
 																type="button"
@@ -2110,8 +2128,10 @@ export default function Preview({
 							<div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 								<div className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-2">
 									<span>
-										Viser {displayed.length} av {effectiveRows.length} rader
-										{filterHasAny ? " (filtrert)" : ""}.
+										{tr({
+											no: `Viser ${displayed.length} av ${effectiveRows.length} rader${filterHasAny ? " (filtrert)" : ""}.`,
+											en: `Showing ${displayed.length} of ${effectiveRows.length} rows${filterHasAny ? " (filtered)" : ""}.`
+										})}
 									</span>
 
 									{filterHasAny && (
@@ -2119,28 +2139,28 @@ export default function Preview({
 											type="button"
 											onClick={clearAllFilters}
 											className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-											title="Nullstill alle filtre"
+											title={tr({ no: "Nullstill alle filtre", en: "Reset all filters" })}
 										>
-											Nullstill filtre
+											{tr({ no: "Nullstill filtre", en: "Reset filters" })}
 										</button>
 									)}
 								</div>
 								<div className="flex flex-wrap items-center gap-2 text-xs">
 									<span className="text-slate-600 dark:text-slate-300">
-										Sorter:
+										{tr({ no: "Sorter:", en: "Sort:" })}
 									</span>
 									<StyledSelect
 										value={sortOrder}
 										onChange={(v) => setSortOrder(v as SortOrder)}
 										buttonClassName={
 											"w-full sm:w-auto inline-flex items-center justify-between gap-2 " +
-												SELECT_STYLE
+											SELECT_STYLE
 										}
 										options={[
-											{ value: "desc", label: "Nyeste først" },
-											{ value: "asc", label: "Eldste først" }
+											{ value: "desc", label: tr({ no: "Nyeste først", en: "Newest first" }) },
+											{ value: "asc", label: tr({ no: "Eldste først", en: "Oldest first" }) }
 										]}
-										ariaLabel="Sorter"
+										ariaLabel={tr({ no: "Sorter", en: "Sort" })}
 									/>
 
 									<button
@@ -2148,7 +2168,7 @@ export default function Preview({
 										onClick={undo}
 										disabled={!canUndo}
 										className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-										title="Angre (Ctrl/⌘+Z)"
+										title={tr({ no: "Angre (Ctrl/⌘+Z)", en: "Undo (Ctrl/⌘+Z)" })}
 									>
 										<FiRotateCcw className="h-4 w-4" />
 									</button>
@@ -2157,7 +2177,10 @@ export default function Preview({
 										onClick={redo}
 										disabled={!canRedo}
 										className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-										title="Gjør om (Ctrl/⌘+Shift+Z eller Ctrl/⌘+Y)"
+										title={tr({
+											no: "Gjør om (Ctrl/⌘+Shift+Z eller Ctrl/⌘+Y)",
+											en: "Redo (Ctrl/⌘+Shift+Z or Ctrl/⌘+Y)"
+										})}
 									>
 										<FiRotateCw className="h-4 w-4" />
 									</button>
@@ -2166,7 +2189,11 @@ export default function Preview({
 										type="button"
 										onClick={toggleMaximize}
 										className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-										title={isMaximized ? "Lukk maksimering" : "Maksimer"}
+										title={
+										isMaximized
+											? tr({ no: "Lukk maksimering", en: "Exit maximize" })
+											: tr({ no: "Maksimer", en: "Maximize" })
+									}
 										aria-pressed={isMaximized}
 									>
 										{isMaximized ? (
@@ -2196,7 +2223,7 @@ export default function Preview({
 									<div
 										onMouseDown={onResizeStart}
 										className="flex items-center justify-center h-4 cursor-ns-resize bg-slate-50 border-x border-b border-slate-200 rounded-b-xl select-none dark:bg-white/5 dark:border-white/10"
-										title="Dra for å endre høyde"
+										title={tr({ no: "Dra for å endre høyde", en: "Drag to resize height" })}
 									>
 										<div className="h-1 w-12 rounded-full bg-slate-300 dark:bg-slate-600" />
 									</div>
@@ -2212,8 +2239,10 @@ export default function Preview({
 									<div className="h-full flex flex-col p-4 sm:p-6">
 										<div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 											<div className="text-xs text-slate-600 dark:text-slate-400">
-												Viser {displayed.length} av {effectiveRows.length} rader
-												{filterHasAny ? " (filtrert)" : ""}.
+												{tr({
+													no: `Viser ${displayed.length} av ${effectiveRows.length} rader${filterHasAny ? " (filtrert)" : ""}.`,
+													en: `Showing ${displayed.length} of ${effectiveRows.length} rows${filterHasAny ? " (filtered)" : ""}.`
+												})}
 											</div>
 											<div className="flex flex-wrap items-center gap-2 text-xs">
 												{filterHasAny && (
@@ -2221,13 +2250,13 @@ export default function Preview({
 														type="button"
 														onClick={clearAllFilters}
 														className="rounded-md border border-slate-200 bg-white px-2 py-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-														title="Nullstill alle filtre"
+														title={tr({ no: "Nullstill alle filtre", en: "Reset all filters" })}
 													>
-														Nullstill filtre
+														{tr({ no: "Nullstill filtre", en: "Reset filters" })}
 													</button>
 												)}
 												<span className="text-slate-600 dark:text-slate-300">
-													Sorter:
+													{tr({ no: "Sorter:", en: "Sort:" })}
 												</span>
 												<StyledSelect
 													value={sortOrder}
@@ -2237,10 +2266,10 @@ export default function Preview({
 														SELECT_STYLE
 													}
 													options={[
-														{ value: "desc", label: "Nyeste først" },
-														{ value: "asc", label: "Eldste først" }
+														{ value: "desc", label: tr({ no: "Nyeste først", en: "Newest first" }) },
+														{ value: "asc", label: tr({ no: "Eldste først", en: "Oldest first" }) }
 													]}
-													ariaLabel="Sorter"
+													ariaLabel={tr({ no: "Sorter", en: "Sort" })}
 												/>
 
 												<button
@@ -2248,7 +2277,7 @@ export default function Preview({
 													onClick={undo}
 													disabled={!canUndo}
 													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-													title="Angre (Ctrl/⌘+Z)"
+													title={tr({ no: "Angre (Ctrl/⌘+Z)", en: "Undo (Ctrl/⌘+Z)" })}
 												>
 													<FiRotateCcw className="h-4 w-4" />
 												</button>
@@ -2257,7 +2286,10 @@ export default function Preview({
 													onClick={redo}
 													disabled={!canRedo}
 													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-													title="Gjør om (Ctrl/⌘+Shift+Z eller Ctrl/⌘+Y)"
+													title={tr({
+													no: "Gjør om (Ctrl/⌘+Shift+Z eller Ctrl/⌘+Y)",
+													en: "Redo (Ctrl/⌘+Shift+Z or Ctrl/⌘+Y)"
+												})}
 												>
 													<FiRotateCw className="h-4 w-4" />
 												</button>
@@ -2266,7 +2298,7 @@ export default function Preview({
 													type="button"
 													onClick={toggleMaximize}
 													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-													title="Lukk maksimering"
+													title={tr({ no: "Lukk maksimering", en: "Exit maximize" })}
 												>
 													<FiMinimize className="h-4 w-4" />
 												</button>
@@ -2300,11 +2332,14 @@ export default function Preview({
 										onClick={() => setActiveTab("attention")}
 										className="text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 hover:bg-amber-100 dark:text-amber-300 dark:bg-amber-500/10 dark:border-amber-900/40 dark:hover:bg-amber-500/20"
 									>
-										Løs ‘Trenger oppmerksomhet’ først ({pendingIssuesCount})
+										{tr({
+											no: `Løs ‘Trenger oppmerksomhet’ først (${pendingIssuesCount})`,
+											en: `Resolve ‘Needs attention’ first (${pendingIssuesCount})`
+										})}
 									</button>
 								) : (
 									<span className="text-emerald-700 dark:text-emerald-400">
-										Alt OK ✅
+										{tr({ no: "Alt OK ✅", en: "All good ✅" })}
 									</span>
 								)}
 							</div>
@@ -2317,12 +2352,12 @@ export default function Preview({
 									className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:shadow-lg hover:from-indigo-700 hover:to-emerald-700 focus:outline-none focus:ring-4 focus:ring-indigo-200/60 dark:from-indigo-500 dark:to-emerald-500 dark:hover:from-indigo-500 dark:hover:to-emerald-500 dark:focus:ring-indigo-900/40 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
 									title={
 										pendingIssuesCount > 0
-											? "Løs ‘Trenger oppmerksomhet’ først"
-											: "Last ned CSV"
+											? tr({ no: "Løs ‘Trenger oppmerksomhet’ først", en: "Resolve ‘Needs attention’ first" })
+											: tr({ no: "Last ned CSV", en: "Download CSV" })
 									}
 								>
 									<FiDownload className="h-4 w-4" />
-									Last ned CSV
+									{tr({ no: "Last ned CSV", en: "Download CSV" })}
 								</button>
 							</div>
 						</div>

@@ -13,6 +13,7 @@ import {
 
 import type { KSRow, KSPreviewRow } from "../page";
 import StyledSelect from "./styled-select";
+import { useLocale } from "./locale-provider";
 
 /* ---------- utils ---------- */
 function extractSig(row: KSPreviewRow): string | undefined {
@@ -90,6 +91,7 @@ function TypeBadge({ type }: { type?: string }) {
 
 /* ---------- ONE-LINE row preview (NO gebyr / NO notat) ---------- */
 function OneLineRowPreview({ row }: { row: KSPreviewRow | null | undefined }) {
+	const { tr } = useLocale();
 	if (!row) return null;
 
 	const type = (row as any).Type as string | undefined;
@@ -108,11 +110,11 @@ function OneLineRowPreview({ row }: { row: KSPreviewRow | null | undefined }) {
 	const utText = hasVal(utAmt) ? `${utAmt} ${utSym || ""}`.trim() : "";
 
 	const titleParts = [
-		type ? `Type: ${type}` : "",
-		marked ? `Marked: ${marked}` : "",
-		time ? `Tid: ${time}` : "",
-		innText ? `Inn: ${innText}` : "",
-		utText ? `Ut: ${utText}` : ""
+		type ? `${tr({ no: "Type", en: "Type" })}: ${type}` : "",
+		marked ? `${tr({ no: "Marked", en: "Market" })}: ${marked}` : "",
+		time ? `${tr({ no: "Tid", en: "Time" })}: ${time}` : "",
+		innText ? `${tr({ no: "Inn", en: "In" })}: ${innText}` : "",
+		utText ? `${tr({ no: "Ut", en: "Out" })}: ${utText}` : ""
 	].filter(Boolean);
 	const title = titleParts.join(" • ");
 
@@ -128,7 +130,7 @@ function OneLineRowPreview({ row }: { row: KSPreviewRow | null | undefined }) {
 				{/* INN chip */}
 				{innText ? (
 					<span className="min-w-0 max-w-full sm:max-w-[34%] truncate inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] ring-1 ring-emerald-200 bg-emerald-50 text-emerald-700 dark:ring-emerald-900/40 dark:bg-emerald-500/10 dark:text-emerald-300">
-						<span className="opacity-70">Inn</span>
+						<span className="opacity-70">{tr({ no: "Inn", en: "In" })}</span>
 						<span className="font-mono truncate">{innText}</span>
 					</span>
 				) : null}
@@ -136,7 +138,7 @@ function OneLineRowPreview({ row }: { row: KSPreviewRow | null | undefined }) {
 				{/* UT chip */}
 				{utText ? (
 					<span className="min-w-0 max-w-full sm:max-w-[34%] truncate inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] ring-1 ring-rose-200 bg-rose-50 text-rose-700 dark:ring-rose-900/40 dark:bg-rose-500/10 dark:text-rose-300">
-						<span className="opacity-70">Ut</span>
+						<span className="opacity-70">{tr({ no: "Ut", en: "Out" })}</span>
 						<span className="font-mono truncate">{utText}</span>
 					</span>
 				) : null}
@@ -175,6 +177,7 @@ function CompactAddress({
 	copyValue?: string | null;
 	link?: string;
 }) {
+	const { tr } = useLocale();
 	const [justCopied, setJustCopied] = useState(false);
 	const isAvailable = typeof value === "string" && value.trim().length > 0;
 	const raw = (value || "").trim();
@@ -214,7 +217,7 @@ function CompactAddress({
 								? copyRaw && copyRaw !== raw
 									? `${raw} (${copyRaw})`
 									: raw
-								: "Ikke tilgjengelig"
+							: tr({ no: "Ikke tilgjengelig", en: "Not available" })
 						}
 					>
 						{displayValue}
@@ -226,7 +229,11 @@ function CompactAddress({
 						onClick={onCopy}
 						disabled={!isAvailable}
 						className="p-0.5 hover:bg-slate-200 dark:hover:bg-white/20 rounded disabled:opacity-30"
-						title={justCopied ? "Kopiert!" : "Kopier"}
+						title={
+							justCopied
+								? tr({ no: "Kopiert!", en: "Copied!" })
+								: tr({ no: "Kopier", en: "Copy" })
+						}
 					>
 						{justCopied ? (
 							<IoCheckmarkCircle className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
@@ -240,7 +247,7 @@ function CompactAddress({
 							target="_blank"
 							rel="noopener noreferrer"
 							className="p-0.5 hover:bg-slate-200 dark:hover:bg-white/20 rounded"
-							title="Åpne i explorer"
+							title={tr({ no: "Åpne i explorer", en: "Open in explorer" })}
 						>
 							<IoOpenOutline className="h-3 w-3" />
 						</Link>
@@ -279,8 +286,10 @@ function MetaBox({
 
 	// Only shorten if it looks like a Solana address (base58, 32-44 chars)
 	const looksLikeAddress = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(raw);
-	const displayValue = isAvailable 
-		? (looksLikeAddress ? shorten12(raw) : raw)
+	const displayValue = isAvailable
+		? looksLikeAddress
+			? shorten12(raw)
+			: raw
 		: "Ikke tilgjengelig";
 	const titleValue = isAvailable ? raw : "Ikke tilgjengelig";
 
@@ -435,6 +444,7 @@ export default function ModalEditor({
 	setEditScope,
 	applyEdit
 }: Props) {
+	const { tr } = useLocale();
 	const modalCardRef = useRef<HTMLDivElement | null>(null);
 	const backdropMouseDownRef = useRef(false);
 	const [mounted, setMounted] = useState(false);
@@ -496,8 +506,12 @@ export default function ModalEditor({
 		(currentRow && (currentRow as KSPreviewRow).signer) ??
 		undefined;
 	const recipient = currentRow ? getRecipientFromRow(currentRow) : undefined;
-	const programAddress = currentRow ? getProgramAddressFromRow(currentRow) : undefined;
-	const programName = currentRow ? getProgramNameFromRow(currentRow) : undefined;
+	const programAddress = currentRow
+		? getProgramAddressFromRow(currentRow)
+		: undefined;
+	const programName = currentRow
+		? getProgramNameFromRow(currentRow)
+		: undefined;
 	const programDisplay = programName || programAddress || undefined;
 
 	return createPortal(
@@ -526,13 +540,14 @@ export default function ModalEditor({
 						id="edit-dialog-title"
 						className="text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-100"
 					>
-						Rediger felt: <code className="font-mono">{editTarget.label}</code>
+						{tr({ no: "Rediger felt:", en: "Edit field:" })}{" "}
+						<code className="font-mono">{editTarget.label}</code>
 					</h3>
 					<button
 						type="button"
 						onClick={onClose}
 						className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5"
-						aria-label="Lukk"
+						aria-label={tr({ no: "Lukk", en: "Close" })}
 					>
 						<IoCloseOutline className="h-5 w-5" />
 					</button>
@@ -553,21 +568,29 @@ export default function ModalEditor({
 							<CompactAddress
 								label="Signer"
 								value={signer}
-								link={signer ? `https://solscan.io/address/${signer}` : undefined}
+								link={
+									signer ? `https://solscan.io/address/${signer}` : undefined
+								}
 							/>
 							<CompactAddress
 								label="Avsender"
 								value={getSenderFromRow(currentRow)}
 								link={
 									getSenderFromRow(currentRow)
-										? `https://solscan.io/address/${getSenderFromRow(currentRow)}`
+										? `https://solscan.io/address/${getSenderFromRow(
+												currentRow
+										  )}`
 										: undefined
 								}
 							/>
 							<CompactAddress
 								label="Mottaker"
 								value={recipient}
-								link={recipient ? `https://solscan.io/address/${recipient}` : undefined}
+								link={
+									recipient
+										? `https://solscan.io/address/${recipient}`
+										: undefined
+								}
 							/>
 							<CompactAddress
 								label="Program ID"
@@ -709,6 +732,7 @@ function ModalActions({
 	) => void;
 	modalRef: React.RefObject<HTMLDivElement | null>;
 }) {
+	const { tr } = useLocale();
 	const [open, setOpen] = useState(false);
 	const infoBtnRef = useRef<HTMLButtonElement | null>(null);
 	const tooltipRef = useRef<HTMLDivElement | null>(null);
@@ -826,38 +850,67 @@ function ModalActions({
 						}}
 						className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-xl dark:border-white/10 dark:bg-[#0f172a] dark:text-slate-200"
 					>
-						<p className="mb-1 font-medium">Hva betyr valgene?</p>
+						<p className="mb-1 font-medium">
+							{tr({ no: "Hva betyr valgene?", en: "What do these options mean?" })}
+						</p>
 						<ul className="list-disc space-y-1 pl-4">
 							<li>
-								<b>Bare dette feltet</b> – endrer kun denne cellen (én rad).
+								<b>{tr({ no: "Bare dette feltet", en: "Only this field" })}</b> –{" "}
+								{tr({
+									no: "endrer kun denne cellen (én rad).",
+									en: "changes only this cell (one row)."
+								})}
 							</li>
 							<li>
-								<b>Alle med samme signer-adresse</b> – endrer alle rader der
-								samme underskriver (signer) har signert.
+								<b>{tr({ no: "Alle med samme signer-adresse", en: "All with same signer address" })}</b> –{" "}
+								{tr({
+									no: "endrer alle rader der samme underskriver (signer) har signert.",
+									en: "changes all rows signed by the same signer."
+								})}
 							</li>
 							<li>
-								<b>Alle med samme avsender-adresse</b> – endrer alle rader som
-								har samme avsender/fra-adresse.
+								<b>{tr({ no: "Alle med samme avsender-adresse", en: "All with same sender address" })}</b> –{" "}
+								{tr({
+									no: "endrer alle rader som har samme avsender/fra-adresse.",
+									en: "changes all rows with the same sender/from address."
+								})}
 							</li>
 							<li>
-								<b>Alle med samme signatur</b> – endrer alle rader som tilhører
-								samme transaksjon (signatur).
+								<b>{tr({ no: "Alle med samme signatur", en: "All with same signature" })}</b> –{" "}
+								{tr({
+									no: "endrer alle rader som tilhører samme transaksjon (signatur).",
+									en: "changes all rows belonging to the same transaction (signature)."
+								})}
 							</li>
 							<li>
-								<b>Alle fra samme marked</b> – endrer alle rader med samme verdi
-								i <code className="ml-1">Marked</code>-feltet.
+								<b>{tr({ no: "Alle fra samme marked", en: "All from same market" })}</b> –{" "}
+								{tr({
+									no: "endrer alle rader med samme verdi i ",
+									en: "changes all rows with the same value in the "
+								})}
+								<code className="ml-1">Marked</code>
+								{tr({ no: "-feltet.", en: " field." })}
 							</li>
 							<li>
-								<b>Alle med samme mottaker-adresse</b> – endrer alle rader som
-								har samme mottaker (recipient).
+								<b>{tr({ no: "Alle med samme mottaker-adresse", en: "All with same recipient address" })}</b> –{" "}
+								{tr({
+									no: "endrer alle rader som har samme mottaker (recipient).",
+									en: "changes all rows with the same recipient."
+								})}
 							</li>
 							<li>
-								<b>Alle med samme program ID</b> – endrer alle rader som
-								har samme program-adresse (Program ID).
+								<b>{tr({ no: "Alle med samme program ID", en: "All with same program ID" })}</b> –{" "}
+								{tr({
+									no: "endrer alle rader som har samme program-adresse (Program ID).",
+									en: "changes all rows with the same program address (program ID)."
+								})}
 							</li>
 							<li>
-								<b>Kun synlige</b> – endrer alle rader som er synlige etter
-								gjeldende filtre.
+								<b>{tr({ no: "Kun synlige", en: "Only visible" })}</b> –{" "}
+								{tr({
+									no: "endrer alle rader som er synlige etter gjeldende filtre.",
+									en: "changes all rows currently visible after filters."
+								})}
 							</li>
 						</ul>
 					</div>,
@@ -870,12 +923,15 @@ function ModalActions({
 			<div className="flex flex-col gap-2">
 				<div className="flex items-center justify-between gap-3">
 					<div className="text-[11px] text-slate-500 dark:text-slate-400">
-						Velg hvor endringen skal gjelde.
+						{tr({
+							no: "Velg hvor endringen skal gjelde.",
+							en: "Choose where the change should apply."
+						})}
 					</div>
 					<button
 						ref={infoBtnRef}
 						type="button"
-						aria-label="Forklaring av alternativer"
+						aria-label={tr({ no: "Forklaring av alternativer", en: "Explain options" })}
 						onClick={() => setOpen((v) => !v)}
 						className="shrink-0 rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10 dark:focus:bg-white/10"
 					>
@@ -924,7 +980,7 @@ function ModalActions({
 							},
 							{ value: "byVisible", label: "Kun synlige" }
 						]}
-						ariaLabel="Velg omfang"
+						ariaLabel={tr({ no: "Velg omfang", en: "Choose scope" })}
 					/>
 
 					{(() => {
@@ -942,7 +998,7 @@ function ModalActions({
 									disabled={scopeDisabled}
 									className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-indigo-500 dark:hover:bg-indigo-600"
 								>
-									Lagre
+									{tr({ no: "Lagre", en: "Save" })}
 								</button>
 							</div>
 						);

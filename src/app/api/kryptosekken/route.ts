@@ -837,12 +837,12 @@ function processDust(
 			const signerNote =
 				v.signer && v.signer !== "UNKNOWN" ? short(v.signer) : "ukjent";
 
-				const startMs = bucketStartDateMs(v.bucketKey, interval);
-				const startCappedMs = Math.min(startMs, cappedMs);
-				const startTs = toNorwayTimeString(startCappedMs, useOslo);
-				const endTs = toNorwayTimeString(cappedMs, useOslo);
+			const startMs = bucketStartDateMs(v.bucketKey, interval);
+			const startCappedMs = Math.min(startMs, cappedMs);
+			const startTs = toNorwayTimeString(startCappedMs, useOslo);
+			const endTs = toNorwayTimeString(cappedMs, useOslo);
 
-				aggRows.push({
+			aggRows.push({
 				Tidspunkt: ts,
 				Type: type,
 				Inn: toAmountString(inn),
@@ -851,9 +851,9 @@ function processDust(
 				"Ut-Valuta": v.dir === "UT" ? currencyCode(v.sym) : "",
 				Gebyr: toAmountString(gebyr),
 				"Gebyr-Valuta": v.totalFeeSOL > 0 ? "SOL" : "",
-					Marked: "AGG-DUST",
-					Notat: `Aggregert: ${v.count} støv mindre enn ${threshold} fra:${signerNote} tidsrom: ${startTs} - ${endTs}`
-				});
+				Marked: "AGG-DUST",
+				Notat: `Aggregert: ${v.count} støv mindre enn ${threshold} fra:${signerNote} tidsrom: ${startTs} - ${endTs}`
+			});
 		}
 
 		return finish(keep, aggRows);
@@ -941,9 +941,9 @@ function processDust(
 				"Ut-Valuta": v.dir === "UT" ? currencyCode(v.sym) : "",
 				Gebyr: toAmountString(gebyr),
 				"Gebyr-Valuta": v.totalFeeSOL > 0 ? "SOL" : "",
-			    Marked: "AGG-DUST",
-			    Notat: `Aggregert: ${v.count} støv mindre enn ${threshold} tidsrom: ${startTs} - ${endTs}`
-		    });
+				Marked: "AGG-DUST",
+				Notat: `Aggregert: ${v.count} støv mindre enn ${threshold} tidsrom: ${startTs} - ${endTs}`
+			});
 		}
 
 		return finish(keep, aggRows);
@@ -1946,7 +1946,7 @@ const attachSigAndSigner = (
 		// - everything else (Overføring-Inn, Handel, Erverv, Inntekt, Tap, …) -> self
 		let recipient: string | undefined;
 		let sender: string | undefined;
-		
+
 		if (r.Type === "Overføring-Ut") {
 			recipient = sig ? otherMap.get(sig!) : undefined;
 			sender = signer; // For outgoing, sender is the signer (self)
@@ -1994,7 +1994,7 @@ const getOrNull = (key: string) => {
 				recipients: v.recipients ?? {},
 				programIds: v.programIds ?? {},
 				programNames: v.programNames ?? {}
-			}
+		  }
 		: null;
 };
 
@@ -2156,7 +2156,6 @@ async function scanAddresses(
 	const sigToProgramId = new Map<string, string>();
 	const sigToProgramName = new Map<string, string>();
 	const missing = new Set<string>();
-	
 
 	for (let ai = 0; ai < addressesToQuery.length; ai++) {
 		const who = addressesToQuery[ai];
@@ -2187,11 +2186,11 @@ async function scanAddresses(
 				} else {
 					missing.add(tx.signature);
 				}
-				
+
 				// Extract program address from instructions array + friendly name from source
 				let extractedProgramAddress: string | undefined;
 				let extractedProgramName: string | undefined;
-				
+
 				const instructions = (tx as any).instructions;
 				if (Array.isArray(instructions)) {
 					// Common system programs to filter out
@@ -2203,7 +2202,7 @@ async function scanAddresses(
 						"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", // Associated Token Program
 						"MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr" // Memo Program
 					]);
-					
+
 					// Find first non-system program
 					for (const instr of instructions) {
 						const pid = instr?.programId;
@@ -2680,7 +2679,7 @@ export async function POST(req: NextRequest) {
 				scan.sigToProgramId, // ← pass precomputed program IDs
 				scan.sigToProgramName
 			);
-			
+
 			const rowsOutRaw = attachSigAndSigner(
 				result.rowsProcessed,
 				walletTagStr,

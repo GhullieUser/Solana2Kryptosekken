@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import AppProviders from "@/app/components/app-providers";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -42,7 +43,9 @@ export default function RootLayout({
 				/>
 			</head>
 			{/* No gradient utilities here; globals.css controls background/gradients */}
-			<body className="min-h-dvh font-sans antialiased">{children}</body>
+			<body className="min-h-dvh font-sans antialiased">
+				<AppProviders>{children}</AppProviders>
+			</body>
 		</html>
 	);
 }

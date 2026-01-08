@@ -9,6 +9,7 @@ import {
 	IoCheckmarkCircle
 } from "react-icons/io5";
 import { FiChevronDown, FiChevronUp } from "react-icons/fi";
+import { useLocale } from "./locale-provider";
 
 type Props = {
 	address: string;
@@ -45,6 +46,7 @@ export default function WalletHoldings({
 	includeNFT = false,
 	enabled = false
 }: Props) {
+	const { tr } = useLocale();
 	const [loading, setLoading] = useState(false);
 	const [err, setErr] = useState<string | null>(null);
 	const [holdings, setHoldings] = useState<Holding[]>([]);
@@ -322,12 +324,15 @@ export default function WalletHoldings({
 			<span className="inline-block w-4" />
 		);
 
-	const valueHeaderLabel = currency === "USD" ? "Verdi (USD)" : "Verdi (NOK)";
+	const valueHeaderLabel =
+		currency === "USD"
+			? tr({ no: "Verdi (USD)", en: "Value (USD)" })
+			: tr({ no: "Verdi (NOK)", en: "Value (NOK)" });
 
 	return (
 		<section
 			className="mt-6 rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/15 ring-1 ring-slate-300/80 dark:ring-slate-800/60"
-			aria-label="Beholdning"
+			aria-label={tr({ no: "Beholdning", en: "Holdings" })}
 		>
 			{/* Header */}
 			<div
@@ -344,7 +349,7 @@ export default function WalletHoldings({
 
 						<div className="min-w-0">
 							<h2 className="text-base sm:text-lg font-semibold text-slate-800 dark:text-slate-100">
-								Nåværende beholdning
+								{tr({ no: "Nåværende beholdning", en: "Current holdings" })}
 							</h2>
 
 							<div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 min-w-0">
@@ -360,15 +365,17 @@ export default function WalletHoldings({
 									onClick={() => copyText(committed.address || "", "wallet")}
 									disabled={!committed.address}
 									className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] ring-1 ring-slate-200 dark:ring-slate-700 hover:bg-slate-100 dark:hover:bg-white/10 disabled:opacity-50"
-									title="Kopier adresse"
-									aria-label="Kopier adresse"
+									title={tr({ no: "Kopier adresse", en: "Copy address" })}
+									aria-label={tr({ no: "Kopier adresse", en: "Copy address" })}
 								>
 									<IoCopyOutline className="h-3.5 w-3.5" />
 								</button>
 
 								<span className="opacity-50 hidden sm:inline">•</span>
 								<span className="hidden sm:inline">
-									{loading ? "Henter…" : `${shown.length} tokens`}
+									{loading
+										? tr({ no: "Henter…", en: "Fetching…" })
+										: tr({ no: `${shown.length} tokens`, en: `${shown.length} tokens` })}
 								</span>
 							</div>
 						</div>
@@ -378,14 +385,17 @@ export default function WalletHoldings({
 					<div className="flex w-full sm:w-auto flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
 						<div className="flex items-baseline justify-between sm:block">
 							<div className="text-[11px] text-slate-500 dark:text-slate-400">
-								Total verdi
+								{tr({ no: "Total verdi", en: "Total value" })}
 							</div>
 							<div className="text-base sm:text-lg font-semibold text-emerald-700 dark:text-emerald-400">
 								{totalValueText}
 							</div>
 							{currency === "NOK" && fxErr && (
 								<div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
-									(Bruker fallback-kurs {usdToNok.toFixed(2)})
+									{tr({
+										no: `(Bruker fallback-kurs ${usdToNok.toFixed(2)})`,
+										en: `(Using fallback rate ${usdToNok.toFixed(2)})`
+									})}
 								</div>
 							)}
 						</div>
@@ -399,12 +409,12 @@ export default function WalletHoldings({
 							{collapsed ? (
 								<>
 									<FiChevronDown className="h-4 w-4" />
-									Vis tokens
+									{tr({ no: "Vis tokens", en: "Show tokens" })}
 								</>
 							) : (
 								<>
 									<FiChevronUp className="h-4 w-4" />
-									Skjul tokens
+									{tr({ no: "Skjul tokens", en: "Hide tokens" })}
 								</>
 							)}
 						</button>
@@ -427,13 +437,17 @@ export default function WalletHoldings({
 
 				{!loading && err && (
 					<div className="text-sm text-red-600 dark:text-red-400">
-						Klarte ikke å hente beholdning: {err}
+						{tr({ no: "Klarte ikke å hente beholdning:", en: "Failed to fetch holdings:" })}{" "}
+						{err}
 					</div>
 				)}
 
 				{!loading && !err && shown.length === 0 && (
 					<div className="text-sm text-slate-600 dark:text-slate-300">
-						Ingen tokens funnet for denne lommeboken.
+						{tr({
+							no: "Ingen tokens funnet for denne lommeboken.",
+							en: "No tokens found for this wallet."
+						})}
 					</div>
 				)}
 
@@ -465,9 +479,9 @@ export default function WalletHoldings({
 												type="button"
 												onClick={() => handleSort("token")}
 												className="inline-flex items-center gap-1 hover:underline underline-offset-2"
-												title="Sorter alfabetisk"
+												title={tr({ no: "Sorter alfabetisk", en: "Sort alphabetically" })}
 											>
-												Token
+												{tr({ no: "Token", en: "Token" })}
 												<SortIcon active={sortKey === "token"} />
 											</button>
 										</th>
@@ -481,9 +495,9 @@ export default function WalletHoldings({
 												type="button"
 												onClick={() => handleSort("amount")}
 												className="inline-flex items-center gap-1 hover:underline underline-offset-2"
-												title="Sorter etter mengde"
+												title={tr({ no: "Sorter etter mengde", en: "Sort by amount" })}
 											>
-												Mengde
+												{tr({ no: "Mengde", en: "Amount" })}
 												<SortIcon active={sortKey === "amount"} />
 											</button>
 										</th>
@@ -497,9 +511,9 @@ export default function WalletHoldings({
 												type="button"
 												onClick={() => handleSort("mint")}
 												className="inline-flex items-center gap-1 hover:underline underline-offset-2"
-												title="Sorter etter mint"
+												title={tr({ no: "Sorter etter mint", en: "Sort by mint" })}
 											>
-												Mint
+												{tr({ no: "Mint", en: "Mint" })}
 												<SortIcon active={sortKey === "mint"} />
 											</button>
 										</th>
@@ -515,7 +529,10 @@ export default function WalletHoldings({
 													type="button"
 													onClick={() => handleSort("usd")}
 													className="inline-flex items-center gap-1 hover:underline underline-offset-2"
-													title={`Sorter etter verdi (${currency})`}
+													title={tr({
+														no: `Sorter etter verdi (${currency})`,
+														en: `Sort by value (${currency})`
+													})}
 												>
 													{valueHeaderLabel}
 													<SortIcon active={sortKey === "usd"} />
@@ -589,7 +606,7 @@ export default function WalletHoldings({
 															type="button"
 															onClick={() => copyText(h.mint, h.mint)}
 															className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-1.5 py-0.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
-															title="Kopier mint-adresse"
+															title={tr({ no: "Kopier mint-adresse", en: "Copy mint address" })}
 														>
 															{justCopied === h.mint ? (
 																<IoCheckmarkCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
@@ -632,11 +649,12 @@ function CurrencyToggle({
 	currency: "USD" | "NOK";
 	onChange: (c: "USD" | "NOK") => void;
 }) {
+	const { tr } = useLocale();
 	return (
 		<div
 			className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-white dark:bg-slate-900"
 			role="group"
-			aria-label="Valuta"
+			aria-label={tr({ no: "Valuta", en: "Currency" })}
 		>
 			<button
 				type="button"
