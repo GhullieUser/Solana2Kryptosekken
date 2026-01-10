@@ -281,9 +281,10 @@ async function getJupTokenListMap(): Promise<Map<string, JupMinimal>> {
 	return map;
 }
 
-let JUP_SYMBOL_LOGO_CACHE:
-	| { map: Map<string, string | null>; ts: number }
-	| null = null;
+let JUP_SYMBOL_LOGO_CACHE: {
+	map: Map<string, string | null>;
+	ts: number;
+} | null = null;
 
 async function getJupSymbolToLogoMap(): Promise<Map<string, string | null>> {
 	const now = Date.now();
@@ -636,9 +637,7 @@ async function fetchHoldingsForAddress(address: string, includeNFT: boolean) {
 			typeof priceUSD === "number" ? priceUSD * (r.amountNum ?? 0) : undefined;
 
 		const logoURI =
-			r.mint === SOL_MINT
-				? SOL_LOGO
-				: normalizeLogoUrl(jupLogo) || undefined; // DS fallback added below
+			r.mint === SOL_MINT ? SOL_LOGO : normalizeLogoUrl(jupLogo) || undefined; // DS fallback added below
 
 		return {
 			mint: r.mint,

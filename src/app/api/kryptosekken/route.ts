@@ -53,6 +53,7 @@ function mkCacheKey(input: {
 	const s = JSON.stringify(input);
 	return crypto.createHash("sha256").update(s).digest("hex");
 }
+
 function getCache(key: string): CacheVal | null {
 	const v = CACHE.get(key);
 	if (!v) return null;
@@ -62,6 +63,7 @@ function getCache(key: string): CacheVal | null {
 	}
 	return v;
 }
+
 function setCache(key: string, val: CacheVal) {
 	CACHE.set(key, val);
 }
@@ -74,7 +76,16 @@ function lamportsToSol(l: number | string): number {
 	const n = typeof l === "string" ? parseInt(l, 10) : l;
 	return n / LAMPORTS_PER_SOL;
 }
-
+// Debug flag: set DEBUG_KS=1 to emit classification traces.
+const DEBUG_KS = process.env.DEBUG_KS === "1";
+function dbg(label: string, payload: any) {
+	if (!DEBUG_KS) return;
+	try {
+		console.log(`[KS-DEBUG] ${label}: ${JSON.stringify(payload)}`);
+	} catch {
+		console.log(`[KS-DEBUG] ${label}`);
+	}
+}
 function pickNativeRecipient(tx: HeliusTx, self: string): string | undefined {
 	const outs = (tx.nativeTransfers ?? []).filter(
 		(n) => n?.fromUserAccount === self
@@ -319,6 +330,99 @@ function amountFromTransfer(
 	return { amountNum: 0, amountText: "0", symbol, decimals };
 }
 
+// Some indexers omit tokenTransfers for balance deltas surfaced in accountData; synthesize lightweight transfers so swaps can still be classified.
+function synthesizeTokenTransfersFromAccountData(
+	tx: HeliusTx,
+	address: string,
+	existing?: TokenTransferPlus[]
+): TokenTransferPlus[] {
+	const out: TokenTransferPlus[] = [];
+	const data = (tx as any)?.accountData;
+	if (!Array.isArray(data)) return out;
+
+	const addrLc = address.toLowerCase();
+	const existingTokenAccounts = new Set<string>();
+	for (const t of existing ?? []) {
+		if (t?.fromTokenAccount) existingTokenAccounts.add(t.fromTokenAccount);
+		if (t?.toTokenAccount) existingTokenAccounts.add(t.toTokenAccount);
+	}
+
+	for (const entry of data) {
+		const changes = entry?.tokenBalanceChanges;
+		if (!Array.isArray(changes)) continue;
+
+		for (const ch of changes) {
+			const user =
+				typeof ch?.userAccount === "string" ? ch.userAccount : undefined;
+			if (!user || user.toLowerCase() !== addrLc) continue;
+
+			const mint = typeof ch?.mint === "string" ? ch.mint : undefined;
+			const tokenAccount =
+				typeof ch?.tokenAccount === "string" ? ch.tokenAccount : undefined;
+			const rawObj = ch?.rawTokenAmount || {};
+			const tokenAmountRaw =
+				typeof rawObj?.tokenAmount === "string"
+					? rawObj.tokenAmount
+					: typeof ch?.tokenAmount === "string"
+					? ch.tokenAmount
+					: undefined;
+			const decimals =
+				typeof rawObj?.decimals === "number"
+					? rawObj.decimals
+					: typeof ch?.decimals === "number"
+					? ch.decimals
+					: undefined;
+
+			if (!mint || !tokenAmountRaw) continue;
+			if (tokenAccount && existingTokenAccounts.has(tokenAccount)) continue; // already have a concrete transfer for this ATA
+			const trimmed = tokenAmountRaw.trim();
+			if (!trimmed) continue;
+
+			const isOut = trimmed.startsWith("-");
+			const absRaw = isOut ? trimmed.slice(1) : trimmed;
+			if (!absRaw || Number(absRaw) === 0) continue;
+
+			out.push({
+				mint,
+				rawTokenAmount: { tokenAmount: absRaw, decimals },
+				fromUserAccount: isOut ? address : undefined,
+				toUserAccount: isOut ? undefined : address,
+				fromTokenAccount: isOut ? tokenAccount : undefined,
+				toTokenAccount: isOut ? undefined : tokenAccount,
+				tokenStandard: ch?.tokenStandard,
+				isNFT: ch?.isNFT
+			});
+		}
+	}
+
+	return out;
+}
+
+function mergeTokenTransfers(
+	base: TokenTransferPlus[],
+	extras: TokenTransferPlus[]
+): TokenTransferPlus[] {
+	const sig = (t: TokenTransferPlus) =>
+		[
+			t.mint,
+			t.fromUserAccount || "",
+			t.toUserAccount || "",
+			t.fromTokenAccount || "",
+			t.toTokenAccount || "",
+			t.rawTokenAmount?.tokenAmount || t.tokenAmount || ""
+		].join("|");
+
+	const seen = new Set<string>(base.map(sig));
+	const out = [...base];
+	for (const t of extras) {
+		const k = sig(t);
+		if (seen.has(k)) continue;
+		seen.add(k);
+		out.push(t);
+	}
+	return out;
+}
+
 /* ========== Swap helpers ========== */
 
 function buildTxATAsSet(
@@ -403,7 +507,6 @@ function collapseTokenNetToSingleHandel(
 		if (v > 0) positives.push([sym, v]);
 		else negatives.push([sym, -v]);
 	}
-
 	if (!positives.length || !negatives.length) return null;
 
 	positives.sort((a, b) => b[1] - a[1]);
@@ -452,7 +555,8 @@ function collapseHybridTokenNativeSwap(
 		symbol?: string,
 		decimals?: number
 	) => { symbol: string; decimals: number },
-	srcU: string
+	srcU: string,
+	lamportsDeltaSOL?: number
 ): {
 	inAmt: number;
 	inSym: string;
@@ -476,14 +580,31 @@ function collapseHybridTokenNativeSwap(
 		if (v > 0) positives.push([sym, v]);
 		else negatives.push([sym, -v]);
 	}
+	const totalPos = positives.reduce((a, [, v]) => a + v, 0);
+	const totalNeg = negatives.reduce((a, [, v]) => a + v, 0);
 
 	// Native SOL flows
-	const {
-		inSOL: nativeInSOL,
-		outSOL: nativeOutSOL,
-		outs,
-		ins
-	} = nativeSolInOut(nativeTransfers, address);
+	const base = nativeSolInOut(nativeTransfers, address);
+	let nativeInSOL = base.inSOL;
+	let nativeOutSOL = base.outSOL;
+	const outs = [...base.outs];
+	const ins = [...base.ins];
+
+	// If no native in/out is present but lamports delta indicates net flow, synthesize it (helps Pump.fun sells without nativeTransfers in the record).
+	if (
+		typeof lamportsDeltaSOL === "number" &&
+		Math.abs(lamportsDeltaSOL) > 1e-9
+	) {
+		if (lamportsDeltaSOL > 0 && nativeInSOL === 0) {
+			nativeInSOL = lamportsDeltaSOL;
+			ins.push(lamportsDeltaSOL);
+		} else if (lamportsDeltaSOL < 0 && nativeOutSOL === 0) {
+			const amt = -lamportsDeltaSOL;
+			nativeOutSOL = amt;
+			outs.push(amt);
+		}
+	}
+
 	const maxOut = outs.length ? Math.max(...outs) : 0;
 	const maxIn = ins.length ? Math.max(...ins) : 0;
 
@@ -526,6 +647,28 @@ function collapseHybridTokenNativeSwap(
 		if (extraTipSOL > 0.5) extraTipSOL = 0;
 
 		return { inAmt, inSym, outAmt, outSym, extraTipSOL };
+	}
+
+	// --- SELL heuristic (relaxed for Pump/GMGN): dominant token out, small token-in noise allowed
+	if (
+		negatives.length >= 1 &&
+		nativeInSOL > 0 &&
+		(srcU.includes("PUMP") || srcU.includes("GMGN"))
+	) {
+		const sortedNeg = [...negatives].sort((a, b) => b[1] - a[1]);
+		const [outSym, outAmt] = sortedNeg[0];
+		const otherNeg = totalNeg - outAmt;
+		const posNoise = totalPos;
+		const dominant = outAmt >= 0.7 * totalNeg;
+		const noiseSmall = posNoise <= 0.05 * outAmt && otherNeg <= 0.05 * outAmt;
+		if (dominant && noiseSmall) {
+			const inSym = "SOL";
+			const inAmt = maxIn;
+			let extraTipSOL = sum(outs, (x) => x);
+			if (!Number.isFinite(extraTipSOL) || extraTipSOL < 0) extraTipSOL = 0;
+			if (extraTipSOL > 0.5) extraTipSOL = 0;
+			return { inAmt, inSym, outAmt, outSym, extraTipSOL };
+		}
 	}
 
 	return null;
@@ -748,6 +891,12 @@ function processDust(
 	if (mode === "remove") {
 		return rows.filter((r) => {
 			if (!isTransferRow(r)) return true;
+			if (
+				String(r.Marked || "")
+					.toUpperCase()
+					.includes("LIQUIDITY")
+			)
+				return true;
 			const info = directionAndCurrency(r);
 			if (!info) return true;
 			return info.amt >= threshold; // Keep rows above threshold
@@ -777,6 +926,15 @@ function processDust(
 
 		for (const r of rows) {
 			if (!isTransferRow(r)) {
+				keep.push(r);
+				continue;
+			}
+
+			if (
+				String(r.Marked || "")
+					.toUpperCase()
+					.includes("LIQUIDITY")
+			) {
 				keep.push(r);
 				continue;
 			}
@@ -1036,6 +1194,22 @@ function consolidateRowsBySignature(
 			continue;
 		}
 
+		// Keep liquidity rows separate; they represent per-asset swaps vs LP token.
+		if (
+			arr.some(
+				(r) =>
+					String(r.Marked || "")
+						.toUpperCase()
+						.includes("LIQUIDITY") ||
+					String(r.Notat || "")
+						.toUpperCase()
+						.includes("LIQUIDITY")
+			)
+		) {
+			for (const r of arr) out.push(r);
+			continue;
+		}
+
 		// If this signature contains *only* transfer rows and all legs are below the dust threshold,
 		// keep them as separate IN/OUT rows (do not collapse into a single net row).
 		if (dustT > 0 && arr.every(isTransferRow)) {
@@ -1189,12 +1363,52 @@ type LiquidityKind =
 
 type LiquidityDetection = {
 	kind: LiquidityKind;
-	protocol: "RAYDIUM" | "ORCA" | "METEORA" | "SABER" | "PUMPFUN" | "UNKNOWN";
+	protocol:
+		| "RAYDIUM"
+		| "ORCA"
+		| "METEORA"
+		| "SABER"
+		| "PUMPFUN"
+		| "LIFINITY"
+		| "ALDRIN"
+		| "MERCURIAL"
+		| "CREMA"
+		| "UNKNOWN";
 	note: "LIQUIDITY ADD" | "LIQUIDITY REMOVE";
 	outs?: Array<{ sym: string; amount: number | string }>;
 	ins?: Array<{ sym: string; amount: number | string }>;
+	lpToken?: { symbol: string; amountText: string } | null;
 	nft?: { symbol: string; amountText: string } | null;
 };
+
+function buildLpSymbol(
+	outs: Array<{ sym: string; amount: number | string }>,
+	ins: Array<{ sym: string; amount: number | string }>,
+	fallback?: string
+): string | undefined {
+	const isLpSymbol = (sym: string) =>
+		/(^LP$|[-_ ]LP$|\bLP\b|LP TOKEN)/i.test(String(sym || "").trim());
+	const norm = (s: string | undefined) => currencyCode(s || "");
+	const all = [...outs, ...ins]
+		.map((x) => ({
+			sym: norm(x.sym),
+			amt: decStrToNum(String(x.amount ?? "0"))
+		}))
+		.filter((x) => x.sym && !isLpSymbol(x.sym) && x.sym !== "UNKNOWN");
+	all.sort((a, b) => Math.abs(b.amt) - Math.abs(a.amt));
+	const uniq: string[] = [];
+	for (const x of all) {
+		if (!uniq.includes(x.sym)) uniq.push(x.sym);
+		if (uniq.length >= 2) break;
+	}
+	const hasSOL = all.some((x) => x.sym === "SOL");
+	if (uniq.length === 2) return `${uniq[0]}-${uniq[1]}-LP`;
+	if (uniq.length === 1) {
+		if (hasSOL && uniq[0] !== "SOL") return `${uniq[0]}-SOL-LP`;
+		return `${uniq[0]}-LP`;
+	}
+	return fallback || undefined;
+}
 
 function isLikelyNFT(t: TokenTransferPlus): boolean {
 	if (t.tokenStandard === "nft" || (t as any).isNFT) return true;
@@ -1213,6 +1427,10 @@ function protocolFromSource(source: string): LiquidityDetection["protocol"] {
 	if (s.includes("ORCA")) return "ORCA";
 	if (s.includes("METEORA") || s.includes("DLMM")) return "METEORA";
 	if (s.includes("SABER")) return "SABER";
+	if (s.includes("LIFINITY")) return "LIFINITY";
+	if (s.includes("ALDRIN")) return "ALDRIN";
+	if (s.includes("MERCURIAL")) return "MERCURIAL";
+	if (s.includes("CREMA")) return "CREMA";
 	return "UNKNOWN";
 }
 
@@ -1241,7 +1459,8 @@ function detectLiquidityEvent(
 		symbol?: string,
 		decimals?: number
 	) => { symbol: string; decimals: number },
-	source: string
+	source: string,
+	sig?: string
 ): LiquidityDetection | null {
 	const srcU = String(source || "").toUpperCase();
 
@@ -1262,8 +1481,13 @@ function detectLiquidityEvent(
 		(t.toTokenAccount ? myATAs.has(t.toTokenAccount) : false);
 
 	// Split NFTs vs fungibles
-	const nftIn = tokenTransfers.filter((t) => ownsTo(t) && isLikelyNFT(t));
+	const nftInOwned = tokenTransfers.filter((t) => ownsTo(t) && isLikelyNFT(t));
 	const nftOut = tokenTransfers.filter((t) => ownsFrom(t) && isLikelyNFT(t));
+	// Some CLMM position NFTs are minted to a fresh ATA in the same tx without toUserAccount set; pick them up as inbound evidence.
+	const nftMinted = tokenTransfers.filter(
+		(t) => !ownsTo(t) && !ownsFrom(t) && isLikelyNFT(t)
+	);
+	const nftIn = [...nftInOwned, ...nftMinted];
 	const fIn = tokenTransfers.filter((t) => ownsTo(t) && !isLikelyNFT(t));
 	const fOut = tokenTransfers.filter((t) => ownsFrom(t) && !isLikelyNFT(t));
 
@@ -1322,76 +1546,242 @@ function detectLiquidityEvent(
 		protocol === "ORCA" ||
 		protocol === "METEORA" ||
 		protocol === "SABER" ||
-		protocol === "PUMPFUN";
+		protocol === "PUMPFUN" ||
+		protocol === "LIFINITY" ||
+		protocol === "ALDRIN" ||
+		protocol === "MERCURIAL" ||
+		protocol === "CREMA";
 
-	// --- Strong signals
-	const lpIn = fIn.filter((t) =>
-		amountFromTransfer(t, resolveSymDec).symbol.includes("LP")
-	);
-	const lpOut = fOut.filter((t) =>
-		amountFromTransfer(t, resolveSymDec).symbol.includes("LP")
-	);
-	const hasLPToken = lpIn.length > 0 || lpOut.length > 0;
-	const hasLPNFT = nftIn.length > 0 || nftOut.length > 0;
+	// --- LP token detection
+	// IMPORTANT: Do NOT use a broad "mint not in other side" heuristic for lpIn on remove,
+	// otherwise we can accidentally pick the *underlying* token as the LP token.
+	const isLpSymbol = (sym: string) =>
+		/(^LP$|[-_ ]LP$|\bLP\b|LP TOKEN)/i.test(String(sym || "").trim());
+	const outMints = new Set(fOut.map((t) => String(t.mint || "")));
+	const inMints = new Set(fIn.map((t) => String(t.mint || "")));
+
+	const pickLargest = <T>(arr: T[], score: (t: T) => number) =>
+		arr.length ? [...arr].sort((a, b) => score(b) - score(a))[0] : undefined;
+	const pickLpFromSide = (side: "in" | "out") => {
+		const arr = side === "in" ? fIn : fOut;
+		const otherMints = side === "in" ? outMints : inMints;
+		const bySym = arr.filter((t) =>
+			isLpSymbol(amountFromTransfer(t, resolveSymDec).symbol)
+		);
+		if (bySym.length) {
+			return pickLargest(
+				bySym,
+				(x) => amountFromTransfer(x, resolveSymDec).amountNum
+			);
+		}
+		// Structural fallback: often LP is the only token transfer on the minority side
+		if (arr.length === 1) return arr[0];
+		// Conservative mint-unique fallback: only if there is exactly one unique mint candidate
+		const uniq = arr.filter((t) => {
+			const mint = String(t.mint || "");
+			return mint && !otherMints.has(mint);
+		});
+		const uniqMintCount = new Set(uniq.map((t) => String(t.mint || ""))).size;
+		if (uniq.length && uniqMintCount === 1) {
+			return pickLargest(
+				uniq,
+				(x) => amountFromTransfer(x, resolveSymDec).amountNum
+			);
+		}
+		return undefined;
+	};
+
+	// Candidates (side-aware)
+	const lpTokAdd = distinctOuts >= 2 ? pickLpFromSide("in") : undefined;
+	const lpTokRemove = distinctIns >= 2 ? pickLpFromSide("out") : undefined;
+	const hasLPToken = Boolean(lpTokAdd || lpTokRemove);
+	let hasLPNFT = nftIn.length > 0 || nftOut.length > 0;
+
+	// Fallback: some CLMM/Token-2022 mints may not surface as owned yet; infer a position NFT when a 0-decimal, qty≈1 mint is present anywhere in the tx.
+	let inferredNFT: LiquidityDetection["nft"] = null;
+	if (!hasLPToken && !hasLPNFT) {
+		const nftCand = tokenTransfers.find((t) => {
+			const dec =
+				typeof t.rawTokenAmount?.decimals === "number"
+					? t.rawTokenAmount.decimals
+					: t.decimals;
+			if (dec !== 0) return false;
+			const amt = amountFromTransfer(t, resolveSymDec).amountNum;
+			return Math.abs(amt - 1) <= 1e-6;
+		});
+		if (nftCand) {
+			const { symbol, amountText } = amountFromTransfer(nftCand, resolveSymDec);
+			inferredNFT = {
+				symbol: symbol || `${protocol} LP`,
+				amountText: amountText || "1"
+			};
+			hasLPNFT = true;
+		}
+	}
+
+	const lpTokenFor = (side: "in" | "out"): LiquidityDetection["lpToken"] => {
+		const t = side === "in" ? lpTokAdd : lpTokRemove;
+		if (!t) return null;
+		const { symbol, amountText } = amountFromTransfer(t, resolveSymDec);
+		return { symbol, amountText };
+	};
 
 	// If the protocol is UNKNOWN and there is no LP token/NFT evidence, don't mark as liquidity.
 	if (!isKnownAMM && !hasLPToken && !hasLPNFT) {
 		return null;
 	}
 
-	// --- Preferred: explicit CLMM (when NFT is visible)
-	if (nftIn.length >= 1 && distinctOuts >= 2) {
-		const firstNFT = nftIn[0];
-		const { symbol } = amountFromTransfer(firstNFT, resolveSymDec);
+	// Structural liquidity rules (program-agnostic)
+	const lpMintToken = lpTokenFor("in");
+	const lpBurnToken = lpTokenFor("out");
+	const lpNftMint = nftIn.length
+		? nftIn[0]
+		: inferredNFT
+		? ({
+				amountText: inferredNFT.amountText,
+				symbol: inferredNFT.symbol
+		  } as any)
+		: null;
+	const lpNftBurn = nftOut.length ? nftOut[0] : null;
+	const lpMintEvidence = Boolean(lpMintToken || lpNftMint);
+	const lpBurnEvidence = Boolean(lpBurnToken || lpNftBurn);
+
+	const lpSymAdd =
+		lpMintToken?.symbol ||
+		(lpNftMint
+			? amountFromTransfer(lpNftMint as any, resolveSymDec).symbol
+			: undefined);
+	const lpSymRemove =
+		lpBurnToken?.symbol ||
+		(lpNftBurn
+			? amountFromTransfer(lpNftBurn as any, resolveSymDec).symbol
+			: undefined);
+
+	const lpLabel = buildLpSymbol(outs, ins, lpSymAdd || lpSymRemove);
+	const withLpLabel = <T extends LiquidityDetection["lpToken"]>(lp: T) =>
+		lp ? { ...lp, symbol: lpLabel || lp.symbol } : lp;
+
+	const nonLpOutSyms = new Set(
+		outs
+			.map((o) => String(o.sym || ""))
+			.filter(
+				(s) =>
+					s &&
+					!isLpSymbol(s) &&
+					(!lpSymAdd || s.toUpperCase() !== String(lpSymAdd).toUpperCase())
+			)
+	);
+
+	const nonLpInSyms = new Set(
+		ins
+			.map((i) => String(i.sym || ""))
+			.filter(
+				(s) =>
+					s &&
+					!isLpSymbol(s) &&
+					(!lpSymRemove ||
+						s.toUpperCase() !== String(lpSymRemove).toUpperCase())
+			)
+	);
+
+	const isAddStruct =
+		lpMintEvidence && nonLpOutSyms.size >= 2 && !lpBurnEvidence;
+	const isRemoveStruct =
+		lpBurnEvidence && nonLpInSyms.size >= 2 && !lpMintEvidence;
+	const isRemoveNoLp =
+		!lpMintEvidence &&
+		!lpBurnEvidence &&
+		nonLpInSyms.size >= 2 &&
+		distinctOuts === 0;
+
+	const lpTokAddSymbol = lpTokAdd
+		? amountFromTransfer(lpTokAdd, resolveSymDec).symbol
+		: null;
+	const lpTokRemoveSymbol = lpTokRemove
+		? amountFromTransfer(lpTokRemove, resolveSymDec).symbol
+		: null;
+
+	dbg("liq-detect", {
+		sig,
+		source,
+		protocol,
+		distinctIns,
+		distinctOuts,
+		lpMintEvidence,
+		lpBurnEvidence,
+		lpTokAdd: lpTokAddSymbol,
+		lpTokRemove: lpTokRemoveSymbol,
+		nftIn: nftIn.length,
+		nftOut: nftOut.length,
+		inferredNFT: Boolean(inferredNFT),
+		lpLabel,
+		isAddStruct,
+		isRemoveStruct,
+		outs: outs.map((o) => o.sym),
+		ins: ins.map((i) => i.sym)
+	});
+
+	// Pump.fun: if no LP evidence, let swap path handle it (avoid mislabeling sells as liquidity)
+	if (protocol === "PUMPFUN" && !isAddStruct && !isRemoveStruct) return null;
+
+	if (isRemoveNoLp) {
 		return {
-			kind: "clmm-add",
+			kind: modelCLMM ? "clmm-remove" : "amm-remove",
+			protocol,
+			note: "LIQUIDITY REMOVE",
+			ins,
+			outs,
+			lpToken: null,
+			nft: null
+		};
+	}
+
+	if (isAddStruct) {
+		return {
+			kind: modelCLMM ? "clmm-add" : "cpmm-add",
 			protocol,
 			note: "LIQUIDITY ADD",
 			outs,
-			nft: { symbol: symbol || "LP-NFT", amountText: "1" }
-		};
-	}
-	if (nftOut.length >= 1 && distinctIns >= 2) {
-		return {
-			kind: "clmm-remove",
-			protocol,
-			note: "LIQUIDITY REMOVE",
-			ins
+			lpToken: withLpLabel(
+				lpMintToken ??
+					(lpNftMint
+						? amountFromTransfer(lpNftMint as any, resolveSymDec)
+						: null)
+			),
+			nft: lpNftMint
+				? {
+						symbol:
+							lpLabel ||
+							amountFromTransfer(lpNftMint as any, resolveSymDec).symbol ||
+							"LP-NFT",
+						amountText: amountFromTransfer(lpNftMint as any, resolveSymDec)
+							.amountText
+				  }
+				: undefined
 		};
 	}
 
-	// Fungible LP heuristics (works for CPMM and some CLMM with fungible LP)
-	if (lpIn.length >= 1 && distinctOuts >= 2) {
-		return {
-			kind: modelCLMM ? "clmm-add" : "cpmm-add",
-			protocol,
-			note: "LIQUIDITY ADD",
-			outs
-		};
-	}
-	if (lpOut.length >= 1 && distinctIns >= 2) {
+	if (isRemoveStruct) {
 		return {
 			kind: modelCLMM ? "clmm-remove" : "cpmm-remove",
 			protocol,
 			note: "LIQUIDITY REMOVE",
-			ins
-		};
-	}
-
-	// --- Strict leg patterns: only allow when we positively recognize a known AMM
-	if (isKnownAMM && distinctOuts >= 2 && distinctIns === 0) {
-		return {
-			kind: modelCLMM ? "clmm-add" : "cpmm-add",
-			protocol,
-			note: "LIQUIDITY ADD",
-			outs
-		};
-	}
-	if (isKnownAMM && distinctIns >= 2 && distinctOuts === 0) {
-		return {
-			kind: modelCLMM ? "clmm-remove" : "cpmm-remove",
-			protocol,
-			note: "LIQUIDITY REMOVE",
+			lpToken: withLpLabel(
+				lpBurnToken ??
+					(lpNftBurn
+						? amountFromTransfer(lpNftBurn as any, resolveSymDec)
+						: null)
+			),
+			nft: lpNftBurn
+				? {
+						symbol:
+							lpLabel ||
+							amountFromTransfer(lpNftBurn as any, resolveSymDec).symbol ||
+							"LP-NFT",
+						amountText: amountFromTransfer(lpNftBurn as any, resolveSymDec)
+							.amountText
+				  }
+				: undefined,
 			ins
 		};
 	}
@@ -1445,9 +1835,15 @@ function classifyTxToRows(opts: {
 		? tx.nativeTransfers
 		: [];
 
-	const tokenTransfers: TokenTransferPlus[] = Array.isArray(tx.tokenTransfers)
+	const tokenTransfersRaw: TokenTransferPlus[] = Array.isArray(
+		tx.tokenTransfers
+	)
 		? (tx.tokenTransfers as TokenTransferPlus[])
 		: [];
+	const tokenTransfers = mergeTokenTransfers(
+		tokenTransfersRaw,
+		synthesizeTokenTransfersFromAccountData(tx, address, tokenTransfersRaw)
+	);
 
 	const txATAs = buildTxATAsSet(tokenTransfers, address, myATAs);
 
@@ -1486,19 +1882,119 @@ function classifyTxToRows(opts: {
 		address,
 		txATAs,
 		resolveSymDec,
-		source
+		source,
+		sig
 	);
 	if (liq) {
 		const market =
 			liq.protocol === "PUMPFUN"
-				? "Pump.fun-LIQUIDITY"
-				: `${liq.protocol}-LIQUIDITY`;
+				? "Pump.fun LIQUIDITY"
+				: `${liq.protocol} LIQUIDITY`;
 
-		if (
+		const isAdd =
 			liq.kind === "clmm-add" ||
 			liq.kind === "cpmm-add" ||
-			liq.kind === "amm-add"
-		) {
+			liq.kind === "amm-add";
+
+		// Required: represent add/remove liquidity as swaps vs the LP token.
+		// ADD: sell each deposited token, buy equal share of LP token.
+		// REMOVE: buy each received token, sell equal share of LP token.
+		// Use explicit LP token when available; otherwise fall back to CLMM NFT positions as LP token.
+		const lp =
+			liq.lpToken ??
+			(liq.nft
+				? { symbol: liq.nft.symbol, amountText: liq.nft.amountText }
+				: null);
+		const hasRealLP = Boolean(liq.lpToken && liq.lpToken.symbol);
+		// Pump.fun: allow Handel only when a real LP token is present; otherwise stay Tap/Erverv.
+		const lpSwapAllowed = liq.protocol !== "PUMPFUN" || hasRealLP;
+		if (lpSwapAllowed && lp?.symbol && lp?.amountText) {
+			const lpSym = currencyCode(lp.symbol);
+			let lpTotal = decStrToNum(lp.amountText);
+			if (!Number.isFinite(lpTotal) || lpTotal <= 0) lpTotal = 1; // fallback for position NFTs
+			const isLpSymbol = (sym: string) =>
+				/(^LP$|[-_ ]LP$|\bLP\b|LP TOKEN)/i.test(String(sym || "").trim());
+
+			const legsRaw = (isAdd ? liq.outs : liq.ins) ?? [];
+			const legsMap = new Map<string, number>();
+			for (const leg of legsRaw) {
+				const symRaw = String(leg.sym || "").trim();
+				const sym = symRaw || "UNKNOWN";
+				if (sym.toUpperCase() === lpSym.toUpperCase()) continue;
+				if (isLpSymbol(sym)) continue;
+				const amt =
+					typeof leg.amount === "number"
+						? leg.amount
+						: decStrToNum(String(leg.amount));
+				if (!Number.isFinite(amt) || amt <= 0) continue;
+				legsMap.set(sym, (legsMap.get(sym) || 0) + amt);
+			}
+
+			let syms = [...legsMap.keys()];
+			if (!syms.length && legsRaw.length) {
+				// Fallback: use raw legs even if symbols were blank
+				for (const leg of legsRaw) {
+					const sym = String(leg.sym || "UNKNOWN").trim() || "UNKNOWN";
+					const amt =
+						typeof leg.amount === "number"
+							? leg.amount
+							: decStrToNum(String(leg.amount));
+					if (!Number.isFinite(amt) || amt <= 0) continue;
+					legsMap.set(sym, (legsMap.get(sym) || 0) + amt);
+				}
+				syms = [...legsMap.keys()];
+			}
+
+			const parts = syms.length;
+			const lpPer = parts > 0 ? lpTotal / parts : 0;
+			if (lpPer > 0 && parts > 0) {
+				for (const sym of syms) {
+					const amt = legsMap.get(sym) || 0;
+					pushRow(
+						isAdd
+							? {
+									Type: "Handel",
+									Inn: lpPer,
+									"Inn-Valuta": lpSym,
+									Ut: amt,
+									"Ut-Valuta": sym,
+									Marked: market
+							  }
+							: {
+									Type: "Handel",
+									Inn: amt,
+									"Inn-Valuta": sym,
+									Ut: lpPer,
+									"Ut-Valuta": lpSym,
+									Marked: market
+							  },
+						liq.note
+					);
+				}
+				return rows;
+			}
+		}
+
+		// Fallback if LP token cannot be determined
+		if (!isAdd) {
+			for (const leg of liq.ins ?? []) {
+				pushRow(
+					{
+						Type: "Erverv",
+						Inn: leg.amount,
+						"Inn-Valuta": leg.sym,
+						Ut: 0,
+						"Ut-Valuta": "",
+						Marked: market
+					},
+					liq.note
+				);
+			}
+			return rows;
+		}
+
+		// Fallback if LP token cannot be determined
+		if (isAdd) {
 			for (const leg of liq.outs ?? []) {
 				pushRow(
 					{
@@ -1508,19 +2004,6 @@ function classifyTxToRows(opts: {
 						Ut: leg.amount,
 						"Ut-Valuta": leg.sym,
 						Marked: market
-					},
-					liq.note
-				);
-			}
-			if (includeNFT && liq.nft) {
-				pushRow(
-					{
-						Type: "Erverv",
-						Inn: liq.nft.amountText,
-						"Inn-Valuta": currencyCode(liq.nft.symbol || "LP-NFT"),
-						Ut: 0,
-						"Ut-Valuta": "",
-						Marked: "SOLANA-NFT"
 					},
 					liq.note
 				);
@@ -1585,14 +2068,30 @@ function classifyTxToRows(opts: {
 
 	// === 2b) NEW collapse: token ↔ native SOL (Pump.fun buys/sells)
 	{
+		const lamDelta = getUserLamportsDeltaSOL(tx, address);
+		// Some PUMP/GMGN swaps lack nativeTransfers; fall back to lamport delta so we still classify as Handel.
+		let hybridNative = nativeTransfers;
+		if (!hybridNative.length && lamDelta && Math.abs(lamDelta) > 1e-9) {
+			const lamports = Math.round(lamDelta * LAMPORTS_PER_SOL);
+			hybridNative = [
+				lamDelta > 0
+					? ({ amount: lamports, toUserAccount: address } as NativeTransfer)
+					: ({
+							amount: Math.abs(lamports),
+							fromUserAccount: address
+					  } as NativeTransfer)
+			];
+		}
+
 		const hybrid = collapseHybridTokenNativeSwap(
 			tokenTransfers,
-			nativeTransfers,
+			hybridNative,
 			address,
 			txATAs,
 			includeNFT,
 			resolveSymDec,
-			srcU
+			srcU,
+			lamDelta ?? undefined
 		);
 		if (hybrid) {
 			const { inAmt, inSym, outAmt, outSym, extraTipSOL } = hybrid;
@@ -1928,7 +2427,8 @@ const attachSigAndSigner = (
 	sigToOtherParty?: Map<string, string> | Record<string, string>,
 	selfAddress?: string,
 	sigToProgramId?: Map<string, string> | Record<string, string>,
-	sigToProgramName?: Map<string, string> | Record<string, string>
+	sigToProgramName?: Map<string, string> | Record<string, string>,
+	sigMap?: Map<string, HeliusTx>
 ) => {
 	const signerMap =
 		sigToSigner instanceof Map
@@ -1953,6 +2453,7 @@ const attachSigAndSigner = (
 		const signer = sig ? signerMap.get(sig!) : undefined;
 		const programId = sig ? programMap.get(sig!) : undefined;
 		const programName = sig ? programNameMap.get(sig!) : undefined;
+		const debugTx = sig ? sigMap?.get(sig) : undefined;
 
 		// Recipient shown per *row*:
 		// - Overføring-Ut  -> actual counterparty (resolved)
@@ -1980,7 +2481,8 @@ const attachSigAndSigner = (
 			sender,
 			programId,
 			programName,
-			rowId
+			rowId,
+			debugTx
 		} as any;
 	});
 };
@@ -2605,7 +3107,8 @@ export async function POST(req: NextRequest) {
 							recipients,
 							address,
 							scan.sigToProgramId,
-							scan.sigToProgramName
+							scan.sigToProgramName,
+							scan.sigMap
 						);
 
 						await send({
@@ -2709,7 +3212,8 @@ export async function POST(req: NextRequest) {
 				recipients,
 				address,
 				scan.sigToProgramId,
-				scan.sigToProgramName
+				scan.sigToProgramName,
+				scan.sigMap
 			);
 
 			let rowsOut = applyClientEdits(rowsOutRaw, body.clientEdits);

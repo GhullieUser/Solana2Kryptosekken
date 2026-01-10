@@ -20,6 +20,7 @@ import {
 	FiSun,
 	FiMoon
 } from "react-icons/fi";
+import type { HeliusTx } from "@/lib/helius";
 import { IoWalletOutline, IoOpenOutline } from "react-icons/io5";
 import { SiSolana } from "react-icons/si";
 
@@ -175,6 +176,8 @@ export type KSPreviewRow = KSRow & {
 	rowId?: string;
 	/** hidden; used for “Alle med samme mottaker-adresse” */
 	recipient?: string;
+	/** raw Helius tx used to classify this row (when available) */
+	debugTx?: HeliusTx;
 };
 
 export type OverrideMaps = {
@@ -603,10 +606,7 @@ export default function Home() {
 				} catch {
 					errMsg = text?.trim()?.slice(0, 300) || errMsg;
 				}
-				pushLog(
-					tr({ no: "❌ API-feil:", en: "❌ API error:" }) +
-						` ${errMsg}`
-				);
+				pushLog(tr({ no: "❌ API-feil:", en: "❌ API error:" }) + ` ${errMsg}`);
 				throw new Error(errMsg);
 			}
 
@@ -632,9 +632,7 @@ export default function Home() {
 									? evt.error
 									: "Something went wrong";
 							setError(msg);
-							pushLog(
-								tr({ no: "❌ Feil:", en: "❌ Error:" }) + ` ${msg}`
-							);
+							pushLog(tr({ no: "❌ Feil:", en: "❌ Error:" }) + ` ${msg}`);
 						} else if (evt.type === "page") {
 							const prefix =
 								evt.kind === "main"
@@ -1748,8 +1746,8 @@ export default function Home() {
 								{!error && effectiveRows && effectiveRows.length > 0 && (
 									<span className="sm:ml-2 text-sm text-emerald-700 dark:text-emerald-400">
 										{tr({
-											no: `${effectiveRows.length} transaksjoner funnet ✅`,
-											en: `${effectiveRows.length} transactions found ✅`
+											no: `${effectiveRows.length} transaksjoner loggført ✅`,
+											en: `${effectiveRows.length} transactions logged ✅`
 										})}
 									</span>
 								)}

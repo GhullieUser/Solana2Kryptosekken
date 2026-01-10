@@ -167,7 +167,9 @@ export default function WalletHoldings({
 					if (cb) {
 						const logos: Record<string, string | null> = {};
 						for (const h of filtered) {
-							const sym = String(h.symbol ?? "").trim().toUpperCase();
+							const sym = String(h.symbol ?? "")
+								.trim()
+								.toUpperCase();
 							if (!sym) continue;
 							const url = normalizeLogoUrl(h.logoURI);
 							logos[sym] = url ?? null;
@@ -358,7 +360,7 @@ export default function WalletHoldings({
 			{/* Header */}
 			<div
 				className={`px-4 py-3 sm:px-10 sm:py-6 ${
-						!collapsed ? "border-b border-slate-200 dark:border-slate-800" : ""
+					!collapsed ? "border-b border-slate-200 dark:border-slate-800" : ""
 				}`}
 			>
 				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -603,7 +605,7 @@ export default function WalletHoldings({
 											<tr
 												key={`${h.mint}-${h.symbol}`}
 												ref={idx === 0 ? firstRowRef : undefined}
-															className="border-t border-slate-200 dark:border-slate-800"
+												className="border-t border-slate-200 dark:border-slate-800"
 											>
 												<td className="py-2 pr-4">
 													<div className="flex items-center gap-2 min-w-0">

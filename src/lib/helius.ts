@@ -160,7 +160,8 @@ async function rpcCallWithFallback(
 	apiKey?: string,
 	prefer: "helius-first" | "public-first" = "helius-first"
 ): Promise<any> {
-	const heliusKey = (apiKey || "").trim() || (process.env.HELIUS_API_KEY || "").trim();
+	const heliusKey =
+		(apiKey || "").trim() || (process.env.HELIUS_API_KEY || "").trim();
 	const heliusEndpoint = heliusKey
 		? `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(heliusKey)}`
 		: null;

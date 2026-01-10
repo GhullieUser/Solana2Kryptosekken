@@ -17,7 +17,9 @@ import {
 	FiMinimize,
 	FiFilter,
 	FiRotateCcw,
-	FiRotateCw
+	FiRotateCw,
+	FiInfo,
+	FiCopy
 } from "react-icons/fi";
 
 import type { KSRow, KSPreviewRow, OverrideMaps } from "../page";
@@ -186,7 +188,8 @@ type ColKey =
 	| "gebyrValuta"
 	| "marked"
 	| "notat"
-	| "explorer";
+	| "explorer"
+	| "debug";
 
 /** Single source of truth: default widths in px. */
 const DEFAULT_COL_WIDTHS: Record<ColKey, number> = {
@@ -200,7 +203,8 @@ const DEFAULT_COL_WIDTHS: Record<ColKey, number> = {
 	gebyrValuta: 120,
 	marked: 140,
 	notat: 300,
-	explorer: 120
+	explorer: 120,
+	debug: 70
 };
 
 const MIN_COL_WIDTH = 60;
@@ -217,7 +221,8 @@ const COL_ORDER: ColKey[] = [
 	"gebyrValuta",
 	"marked",
 	"notat",
-	"explorer"
+	"explorer",
+	"debug"
 ];
 
 /** Unified select styling (match expanded counterpart; avoid bright white border) */
@@ -513,6 +518,8 @@ export default function Preview({
 	const [containerWidth, setContainerWidth] = useState<number>(0);
 	const stretchWidth = Math.max(0, containerWidth - tableColsWidth);
 	const hasStretch = stretchWidth > 0;
+
+	const [debugRow, setDebugRow] = useState<KSPreviewRow | null>(null);
 
 	/** visual lock while dragging (cursor + user-select) */
 	const [isResizingCol, setIsResizingCol] = useState(false);
@@ -1236,7 +1243,9 @@ export default function Preview({
 
 		const normalizeSummaryType = (
 			typeRaw: unknown,
-			side: "inn" | "ut"
+			side: "inn" | "ut",
+			marketRaw: unknown,
+			noteRaw: unknown
 		): string => {
 			const t = String(typeRaw ?? "").trim() || "(ukjent)";
 			if (t === "Handel") {
@@ -1264,12 +1273,13 @@ export default function Preview({
 			typeRaw: unknown,
 			amount: number,
 			side: "inn" | "ut",
-			marketRaw: unknown
+			marketRaw: unknown,
+			noteRaw: unknown
 		) => {
 			const currency = String(currencyRaw ?? "").trim();
 			if (!currency) return;
 			if (!amount) return;
-			const type = normalizeSummaryType(typeRaw, side);
+			const type = normalizeSummaryType(typeRaw, side, marketRaw, noteRaw);
 			addToMap(allMap, currency, type, amount);
 			const market = String(marketRaw ?? "").trim();
 			if (market) {
@@ -1288,13 +1298,17 @@ export default function Preview({
 		};
 
 		const allMap = new Map<string, Map<string, number>>();
-		const byMarketMap = new Map<
-			string,
-			Map<string, Map<string, number>>
-		>();
+		const byMarketMap = new Map<string, Map<string, Map<string, number>>>();
 		for (const { r } of displayed) {
-			add(r["Inn-Valuta"], r.Type, parseAmount(r.Inn), "inn", r.Marked);
-			add(r["Ut-Valuta"], r.Type, parseAmount(r.Ut), "ut", r.Marked);
+			add(
+				r["Inn-Valuta"],
+				r.Type,
+				parseAmount(r.Inn),
+				"inn",
+				r.Marked,
+				r.Notat
+			);
+			add(r["Ut-Valuta"], r.Type, parseAmount(r.Ut), "ut", r.Marked, r.Notat);
 		}
 
 		const summaryTypeOrderList: string[] = [];
@@ -1420,7 +1434,9 @@ export default function Preview({
 					{ signal: ctrl.signal }
 				);
 				if (!res.ok) return;
-				const j = (await res.json()) as { logos?: Record<string, string | null> };
+				const j = (await res.json()) as {
+					logos?: Record<string, string | null>;
+				};
 				if (!j?.logos) return;
 				setSummaryLogos((prev) => ({ ...prev, ...j.logos }));
 			} catch {
@@ -1903,6 +1919,17 @@ export default function Preview({
 							</CellPad>
 							<Resizer colKey="explorer" />
 						</th>
+						<th
+							className="relative whitespace-nowrap text-center"
+							style={{ width: colWidths.debug }}
+						>
+							<CellPad>
+								<div className="select-none overflow-hidden truncate whitespace-nowrap">
+									Debug
+								</div>
+							</CellPad>
+							<Resizer colKey="debug" />
+						</th>
 						{hasStretch && (
 							<th
 								style={{ width: stretchWidth, padding: 0 }}
@@ -2054,6 +2081,7 @@ export default function Preview({
 											openEditCell={openEditCell}
 										/>
 									</td>
+
 									<td className="text-center hidden md:table-cell">
 										{solscan ? (
 											<Link
@@ -2074,6 +2102,18 @@ export default function Preview({
 												—
 											</span>
 										)}
+									</td>
+									<td className="text-center" style={{ padding: 0 }}>
+										<CellPad>
+											<button
+												type="button"
+												onClick={() => setDebugRow(r)}
+												className="inline-flex items-center justify-center rounded-full p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
+												title="Vis debug-data"
+											>
+												<FiInfo className="h-4 w-4" />
+											</button>
+										</CellPad>
 									</td>
 
 									{hasStretch && (
@@ -2102,818 +2142,895 @@ export default function Preview({
 
 	/* ============== RENDER ============== */
 
-	return (
-		<section className="mt-6">
-			<div
-				className={[
-					"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 ring-1 ring-slate-300/80 dark:ring-white/10",
-					isResizingCol ? "select-none cursor-col-resize" : ""
-				].join(" ")}
-			>
-				<div className="p-4 sm:p-10">
-					{/* Tabs header */}
-					<div className="border-b border-slate-200 dark:border-white/10">
-						<div
-							className="flex flex-nowrap items-end -mb-px"
-							role="tablist"
-							aria-label={tr({
-								no: "Forhåndsvisning faner",
-								en: "Preview tabs"
-							})}
-						>
-							<button
-								type="button"
-								role="tab"
-								aria-selected={activeTab === "preview"}
-								onClick={() => {
-									setActiveTab("preview");
-									setOpenFilter(null);
-								}}
-								className={[
-									"relative flex-1 min-w-0 text-center rounded-t-md",
-									"px-2 pr-6 py-1.5 text-[11px] leading-5 sm:px-3 sm:py-2 sm:text-sm",
-									"-mb-px border-b-2 transition-colors",
-									activeTab === "preview"
-										? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
-										: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
-								].join(" ")}
-							>
-								{tr({ no: "Forhåndsvisning", en: "Preview" })}
-							</button>
-
-							<button
-								type="button"
-								role="tab"
-								aria-selected={activeTab === "attention"}
-								onClick={() => {
-									persistPreviewScroll();
-									setActiveTab("attention");
-									setOpenFilter(null);
-								}}
-								title={tr({
-									no: "Uavklarte elementer som bør navngis",
-									en: "Unresolved items that should be named"
-								})}
-								className={[
-									"relative flex-1 min-w-0 text-center rounded-t-md",
-									"px-2 pr-8 py-1.5 text-[11px] leading-5 sm:px-3 sm:py-2 sm:text-sm",
-									"-mb-px border-b-2 transition-colors",
-									activeTab === "attention"
-										? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
-										: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
-								].join(" ")}
-							>
-								<span className="pointer-events-none">
-									<span className="sm:hidden">{tr({ no: "Obs", en: "Attention" })}</span>
-									<span className="hidden sm:inline">
-										{tr({ no: "Trenger oppmerksomhet", en: "Needs attention" })}
-									</span>
-								</span>
-								{pendingIssuesCount > 0 && (
-									<span
-										className={[
-											"absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded-full",
-											"bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 dark:bg-amber-500/20 dark:text-amber-300",
-											pendingIssuesCount > 0 && activeTab !== "attention"
-												? "animate-pulse motion-reduce:animate-none"
-												: ""
-										].join(" ")}
-									>
-										{pendingIssuesCount}
-									</span>
-								)}
-							</button>
-
-							<button
-								type="button"
-								role="tab"
-								aria-selected={activeTab === "summary"}
-								onClick={() => {
-									persistPreviewScroll();
-									setActiveTab("summary");
-									setOpenFilter(null);
-								}}
-								className={[
-									"relative flex-1 min-w-0 text-center rounded-t-md",
-									"px-2 pr-6 py-1.5 text-[11px] leading-5 sm:px-3 sm:py-2 sm:text-sm",
-									"-mb-px border-b-2 transition-colors",
-									activeTab === "summary"
-										? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
-										: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
-								].join(" ")}
-							>
-								{tr({ no: "Oppsummering", en: "Summary" })}
-							</button>
-						</div>
-					</div>
-
-					{/* Tabs content */}
-					{activeTab === "attention" ? (
-						<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 max-h-[80vh] sm:max-h-none overflow-y-auto overscroll-contain dark:border-amber-900/40 dark:bg-amber-500/10">
-							{issues.length === 0 ? (
-								<div className="text-sm text-emerald-700 dark:text-emerald-400">
-									{tr({
-										no: "Ingen uavklarte elementer 🎉",
-										en: "No unresolved items 🎉"
-									})}
-								</div>
-							) : (
-								<>
-									{/* Mass action bar */}
-									<div className="mb-2 flex items-center justify-end">
-										<button
-											type="button"
-											onClick={ignoreAllPending}
-											disabled={!issues.some((i) => i.status === "pending")}
-											className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm dark:shadow-black/25 hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-											title={tr({
-												no: "Ignorer alle uavklarte elementer",
-												en: "Ignore all unresolved items"
-											})}
-										>
-											{tr({ no: "Ignorer alle", en: "Ignore all" })}
-										</button>
-									</div>
-
-									<ul className="space-y-3">
-										{issues.map((it) => {
-											const inputId = `issue-${it.kind}-${it.key.replace(
-												/[^a-z0-9\-]/gi,
-												"_"
-											)}`;
-											const isOpen = openIssues.has(inputId);
-
-											const statusBadge =
-												it.status === "pending" ? (
-													<span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
-														{tr({ no: "Avventer", en: "Pending" })}
-													</span>
-												) : it.status === "renamed" ? (
-													<span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text:[11px] text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
-														{tr({ no: "Endret", en: "Renamed" })}
-														{it.newName ? ` → ${it.newName}` : ""}
-													</span>
-												) : (
-													<span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] text-slate-700 dark:bg-white/10 dark:text-slate-300">
-														{tr({ no: "Ignorert", en: "Ignored" })}
-													</span>
-												);
-
-											const occurrenceRows =
-												rows?.filter((r) => {
-													if (it.kind === "unknown-token") {
-														return (
-															r["Inn-Valuta"] === it.key ||
-															r["Ut-Valuta"] === it.key
-														);
-													}
-													return r.Marked === it.key;
-												}) ?? [];
-
-											return (
-												<li
-													key={`${it.kind}:${it.key}`}
-													className="rounded-lg bg-white p-3 ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
-												>
-													<div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-														<div className="space-y-1">
-															<div className="text-sm font-medium text-slate-800 dark:text-slate-100">
-																{it.kind === "unknown-token"
-																	? tr({
-																			no: "Ukjent token",
-																			en: "Unknown token"
-																	  })
-																	: tr({
-																			no: "Ukjent marked",
-																			en: "Unknown market"
-																	  })}
-																: <code className="font-mono">{it.key}</code>
-																{statusBadge}
-															</div>
-															<div className="text-xs text-slate-600 dark:text-slate-400">
-																{tr({
-																	no: `${it.count} forekomster`,
-																	en: `${it.count} occurrences`
-																})}
-															</div>
-														</div>
-
-														<div className="flex flex-wrap items-center gap-2 sm:justify-end">
-															<input
-																id={inputId}
-																defaultValue={it.newName ?? ""}
-																placeholder={
-																	it.kind === "unknown-token"
-																		? tr({
-																				no: "Ny tokensymbol (BTC, ETH, SOL...)",
-																				en: "New token symbol (BTC, ETH, SOL...)"
-																		  })
-																		: tr({
-																				no: "Nytt markedsnavn",
-																				en: "New market name"
-																		  })
-																}
-																className="w-full sm:w-56 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-															/>
-															<button
-																type="button"
-																onClick={() => {
-																	const el = document.getElementById(
-																		inputId
-																	) as HTMLInputElement | null;
-																	const val = (el?.value ?? "").trim();
-																	if (!val) return;
-																	renameIssue(it.kind, it.key, val);
-																}}
-																className="rounded-md bg-indigo-600 text-white px-2 py-1 text-sm disabled:opacity-60 dark:bg-indigo-500"
-															>
-																{tr({ no: "Lagre", en: "Save" })}
-															</button>
-															<button
-																type="button"
-																onClick={() => ignoreIssue(it.kind, it.key)}
-																className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-																title={
-																	it.status === "ignored"
-																		? tr({
-																				no: "Angre ignorering",
-																				en: "Undo ignore"
-																		  })
-																		: tr({ no: "Ignorer", en: "Ignore" })
-																}
-															>
-																{it.status === "ignored"
-																	? tr({ no: "Angre", en: "Undo" })
-																	: tr({ no: "Ignorer", en: "Ignore" })}
-															</button>
-															<button
-																type="button"
-																onClick={() =>
-																	setOpenIssues((prev) => {
-																		const next = new Set(prev);
-																		if (next.has(inputId)) next.delete(inputId);
-																		else next.add(inputId);
-																		return next;
-																	})
-																}
-																className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-															>
-																{isOpen
-																	? tr({
-																			no: "Skjul forekomster",
-																			en: "Hide occurrences"
-																	  })
-																	: tr({
-																			no: `Vis forekomster (${occurrenceRows.length})`,
-																			en: `Show occurrences (${occurrenceRows.length})`
-																	  })}
-															</button>
-														</div>
-													</div>
-
-													{isOpen && (
-														<div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-2 dark:border-white/10 dark:bg-white/5">
-															{occurrenceRows.length === 0 ? (
-																<div className="text-xs text-slate-600 dark:text-slate-400">
-																	{tr({
-																		no: "Ingen forekomster funnet.",
-																		en: "No occurrences found."
-																	})}
-																</div>
-															) : (
-																<ul className="grid gap-2 sm:grid-cols-1 md:grid-cols-2">
-																	{occurrenceRows.map((r, idx) => {
-																		const sig = extractSig(r);
-																		const tokenInfo =
-																			[r["Inn-Valuta"], r["Ut-Valuta"]]
-																				.filter(Boolean)
-																				.join(" / ") || "—";
-																		const solscan = sig
-																			? `https://solscan.io/tx/${sig}`
-																			: undefined;
-
-																		return (
-																			<li key={`${sig ?? "x"}-${idx}`}>
-																				<div
-																					className="w-full rounded-md bg-white px-2 py-1.5 text-xs shadow-sm dark:shadow-black/25 ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
-																					title={
-																						sig
-																							? tr({
-																									no: "Gå til rad i forhåndsvisning eller åpne i Solscan",
-																									en: "Jump to row in preview or open in Solscan"
-																							  })
-																							: tr({
-																									no: "Ingen signatur funnet",
-																									en: "No signature found"
-																							  })
-																					}
-																				>
-																					<div className="flex items-center justify-between gap-2">
-																						<span className="font-mono text-[11px] text-slate-600 dark:text-slate-400">
-																							{r.Tidspunkt}
-																						</span>
-																						<div className="flex items-center gap-2">
-																							<button
-																								type="button"
-																								onClick={() =>
-																									sig && jumpToSig(sig)
-																								}
-																								disabled={!sig}
-																								className="text-[10px] text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400"
-																								title={tr({
-																									no: "Gå til rad",
-																									en: "Go to row"
-																								})}
-																							>
-																								{tr({
-																									no: "Gå til rad",
-																									en: "Go to row"
-																								})}
-																							</button>
-																							{sig && solscan && (
-																								<Link
-																									href={solscan}
-																									target="_blank"
-																									rel="noopener noreferrer"
-																									className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:underline dark:text-indigo-400"
-																									title={tr({
-																										no: "Åpne i Solscan",
-																										en: "Open in Solscan"
-																									})}
-																								>
-																									<FiExternalLink className="h-3.5 w-3.5" />
-																									Solscan
-																								</Link>
-																							)}
-																						</div>
-																					</div>
-																					<div className="mt-0.5">
-																						<span className="font-medium text-slate-800 dark:text-slate-100">
-																							{r.Type}
-																						</span>{" "}
-																						<span className="text-slate-600 dark:text-slate-400">
-																							• {tokenInfo}
-																						</span>
-																					</div>
-																				</div>
-																			</li>
-																		);
-																	})}
-																</ul>
-															)}
-														</div>
-													)}
-												</li>
-											);
-										})}
-									</ul>
-								</>
-							)}
-						</div>
-					) : activeTab === "summary" ? (
-						<div className="mt-4 max-h-[80vh] sm:max-h-none overflow-y-auto overscroll-contain">
-							{(walletName?.trim() || address?.trim() || timeframeLabel?.trim()) && (
-								<div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
-									{(walletName?.trim() || address?.trim()) && (
-										<span className="inline-flex items-center gap-1">
-											<span className="font-medium text-slate-700 dark:text-slate-200">
-												{tr({ no: "Wallet", en: "Wallet" })}:
-											</span>
-											<span className="truncate max-w-[60vw] sm:max-w-none">
-												{walletName?.trim() || address?.trim()}
-											</span>
-										</span>
-									)}
-									{timeframeLabel?.trim() && (
-										<span className="inline-flex items-center gap-1">
-											<span className="font-medium text-slate-700 dark:text-slate-200">
-												{tr({ no: "Tidsrom", en: "Timeframe" })}:
-											</span>
-											<span>{timeframeLabel}</span>
-										</span>
-									)}
-								</div>
-							)}
-
-							{summaryByCurrency.length === 0 ? (
-								<div className="text-sm text-slate-600 dark:text-slate-300">
-									{tr({
-										no: "Ingen summer å vise (ingen rader i gjeldende utvalg).",
-										en: "Nothing to summarize (no rows in the current selection)."
-									})}
-								</div>
-							) : (
-								<div className="rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/60">
-									<table className="w-full text-sm">
-										<thead className="sr-only">
-											<tr>
-												<th scope="col">{tr({ no: "Valuta", en: "Token" })}</th>
-												<th scope="col">{tr({ no: "Summer", en: "Totals" })}</th>
-											</tr>
-										</thead>
-										<tbody>
-											{summaryByCurrency.map(
-												({ currency, markets, allTypeTotals, byMarket }, idx) => {
-													const key = String(currency).toUpperCase();
-													const selMarket = summaryMarketByCurrency[key] ?? "";
-													const typeTotals = selMarket
-														? byMarket[selMarket] ?? []
-														: allTypeTotals;
-													const marketOptions = [
-														{ value: "", label: tr({ no: "Alle markeder", en: "All markets" }) },
-														...markets.map((m) => ({ value: m, label: m }))
-													];
-													// keep dropdown button size stable; do not auto-widen
-
-													return (
-														<tr
-															key={currency}
-															className={[
-																idx === 0
-																	? ""
-																	: "border-t border-slate-200 dark:border-slate-800",
-																"block sm:table-row"
-														].join(" ")}
-													>
-														<td className="py-2 pl-3 pr-3 sm:pr-4 align-top block sm:table-cell w-full">
-															<div className="flex items-start justify-between gap-2 sm:block">
-																<div className="flex items-center gap-2 min-w-0">
-																	<SummaryAvatar
-																		symbol={currency}
-																		logoURI={
-																			summaryLogos[String(currency).toUpperCase()] ?? null
-																		}
-																	/>
-																	<span className="font-medium text-slate-800 dark:text-slate-100 truncate">
-																		{currency}
-																	</span>
-																</div>
-
-																{markets.length > 0 && (
-																	<div className="w-[160px] flex-shrink-0 sm:w-auto sm:mt-1">
-																		<StyledSelect
-																			value={selMarket as string}
-																			onChange={(v) =>
-																				setSummaryMarketByCurrency((prev) => ({
-																					...prev,
-																					[key]: v as string
-																				}))
-																			}
-																			options={marketOptions as any}
-																			buttonClassName={
-																				"w-full sm:w-auto inline-flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 shadow-sm dark:shadow-black/25 " +
-																				"focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
-																			}
-																			ariaLabel={tr({
-																				no: `Velg marked for ${currency}`,
-																				en: `Select market for ${currency}`
-																			})}
-																			usePortal
-																			portalZIndex={110000}
-																		/>
-																	</div>
-																)}
-															</div>
-														</td>
-														<td className="py-0 pb-3 sm:py-2 px-3 sm:pr-3 align-top block sm:table-cell w-full sm:w-[420px]">
-															<div className="w-full space-y-0.5">
-																{typeTotals.map(([type, sum]) => (
-																	<div
-																		key={`${currency}:${type}`}
-																		className="grid grid-cols-[1fr_auto] sm:grid-cols-[11rem_1fr] items-baseline gap-x-3"
-																	>
-																		<span className="text-xs text-slate-600 dark:text-slate-300">
-																			{type}
-																		</span>
-																		<span className="text-xs font-mono tabular-nums text-slate-800 dark:text-slate-100 text-right whitespace-nowrap">
-																			{summaryNumberFormat.format(sum)}
-																		</span>
-																	</div>
-																))}
-															</div>
-														</td>
-													</tr>
-													);
-											}
-										)}
-										</tbody>
-									</table>
-								</div>
-							)}
-						</div>
-					) : (
-						<div className="mt-6">
-							{/* Top bar */}
-							<div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-								<div className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-2">
-									<span>
-										{tr({
-											no: `Viser ${displayed.length} av ${
-												effectiveRows.length
-											} rader${filterHasAny ? " (filtrert)" : ""}.`,
-											en: `Showing ${displayed.length} of ${
-												effectiveRows.length
-											} rows${filterHasAny ? " (filtered)" : ""}.`
-										})}
-									</span>
-
-									{filterHasAny && (
-										<button
-											type="button"
-											onClick={clearAllFilters}
-											className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-											title={tr({
-												no: "Nullstill alle filtre",
-												en: "Reset all filters"
-											})}
-										>
-											{tr({ no: "Nullstill filtre", en: "Reset filters" })}
-										</button>
-									)}
-								</div>
-								<div className="flex flex-wrap items-center gap-2 text-xs">
-									<span className="text-slate-600 dark:text-slate-300">
-										{tr({ no: "Sorter:", en: "Sort:" })}
-									</span>
-									<StyledSelect
-										value={sortOrder}
-										onChange={(v) => setSortOrder(v as SortOrder)}
-										buttonClassName={
-											"w-full sm:w-auto inline-flex items-center justify-between gap-2 " +
-											SELECT_STYLE
-										}
-										options={[
-											{
-												value: "desc",
-												label: tr({ no: "Nyeste først", en: "Newest first" })
-											},
-											{
-												value: "asc",
-												label: tr({ no: "Eldste først", en: "Oldest first" })
-											}
-										]}
-										ariaLabel={tr({ no: "Sorter", en: "Sort" })}
-									/>
-
-									<button
-										type="button"
-										onClick={undo}
-										disabled={!canUndo}
-										className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-										title={tr({
-											no: "Angre (Ctrl/⌘+Z)",
-											en: "Undo (Ctrl/⌘+Z)"
-										})}
-									>
-										<FiRotateCcw className="h-4 w-4" />
-									</button>
-									<button
-										type="button"
-										onClick={redo}
-										disabled={!canRedo}
-										className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-										title={tr({
-											no: "Gjør om (Ctrl/⌘+Shift+Z eller Ctrl/⌘+Y)",
-											en: "Redo (Ctrl/⌘+Shift+Z or Ctrl/⌘+Y)"
-										})}
-									>
-										<FiRotateCw className="h-4 w-4" />
-									</button>
-
-									<button
-										type="button"
-										onClick={toggleMaximize}
-										className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-										title={
-											isMaximized
-												? tr({ no: "Lukk maksimering", en: "Exit maximize" })
-												: tr({ no: "Maksimer", en: "Maximize" })
-										}
-										aria-pressed={isMaximized}
-									>
-										{isMaximized ? (
-											<FiMinimize className="h-4 w-4" />
-										) : (
-											<FiMaximize className="h-4 w-4" />
-										)}
-									</button>
-								</div>
+	const debugModal = debugRow
+		? createPortal(
+				<div
+					className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/50 p-4"
+					role="dialog"
+					aria-modal="true"
+				>
+					<div className="w-full max-w-3xl rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-slate-200 dark:bg-[#0f172a] dark:ring-white/10">
+						<div className="mb-3 flex items-center justify-between gap-3">
+							<div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+								Debug JSON
 							</div>
-
-							{/* Embedded preview */}
-							{!isMaximized && (
-								<>
-									<div
-										ref={previewContainerRef}
-										className={[
-											"relative overflow-auto overscroll-contain rounded-t-xl ring-1 ring-slate-200 contain-content dark:ring-white/10",
-											isResizingCol ? "select-none cursor-col-resize" : ""
-										].join(" ")}
-										style={{ height: previewHeight }}
-										onClick={() => setOpenFilter(null)}
-									>
-										<PreviewTable onMeasureRow={handleMeasureRow} />
-									</div>
-
-									<div
-										onMouseDown={onResizeStart}
-										className="flex items-center justify-center h-4 cursor-ns-resize bg-slate-50 border-x border-b border-slate-200 rounded-b-xl select-none dark:bg-white/5 dark:border-white/10"
-										title={tr({
-											no: "Dra for å endre høyde",
-											en: "Drag to resize height"
-										})}
-									>
-										<div className="h-1 w-12 rounded-full bg-slate-300 dark:bg-slate-600" />
-									</div>
-								</>
-							)}
-
-							{/* Maximized overlay */}
-							{isMaximized && (
-								<div
-									className="fixed inset-0 z-40 bg-white dark:bg-[#0b1220]"
-									onClick={() => setOpenFilter(null)}
-								>
-									<div className="h-full flex flex-col p-4 sm:p-6">
-										<div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-											<div className="text-xs text-slate-600 dark:text-slate-400">
-												{tr({
-													no: `Viser ${displayed.length} av ${
-														effectiveRows.length
-													} rader${filterHasAny ? " (filtrert)" : ""}.`,
-													en: `Showing ${displayed.length} of ${
-														effectiveRows.length
-													} rows${filterHasAny ? " (filtered)" : ""}.`
-												})}
-											</div>
-											<div className="flex flex-wrap items-center gap-2 text-xs">
-												{filterHasAny && (
-													<button
-														type="button"
-														onClick={clearAllFilters}
-														className="rounded-md border border-slate-200 bg-white px-2 py-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-														title={tr({
-															no: "Nullstill alle filtre",
-															en: "Reset all filters"
-														})}
-													>
-														{tr({
-															no: "Nullstill filtre",
-															en: "Reset filters"
-														})}
-													</button>
-												)}
-												<span className="text-slate-600 dark:text-slate-300">
-													{tr({ no: "Sorter:", en: "Sort:" })}
-												</span>
-												<StyledSelect
-													value={sortOrder}
-													onChange={(v) => setSortOrder(v as SortOrder)}
-													buttonClassName={
-														"w-full sm:w-auto inline-flex items-center justify-between gap-2 " +
-														SELECT_STYLE
-													}
-													options={[
-														{
-															value: "desc",
-															label: tr({
-																no: "Nyeste først",
-																en: "Newest first"
-															})
-														},
-														{
-															value: "asc",
-															label: tr({
-																no: "Eldste først",
-																en: "Oldest first"
-															})
-														}
-													]}
-													ariaLabel={tr({ no: "Sorter", en: "Sort" })}
-												/>
-
-												<button
-													type="button"
-													onClick={undo}
-													disabled={!canUndo}
-													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-													title={tr({
-														no: "Angre (Ctrl/⌘+Z)",
-														en: "Undo (Ctrl/⌘+Z)"
-													})}
-												>
-													<FiRotateCcw className="h-4 w-4" />
-												</button>
-												<button
-													type="button"
-													onClick={redo}
-													disabled={!canRedo}
-													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-													title={tr({
-														no: "Gjør om (Ctrl/⌘+Shift+Z eller Ctrl/⌘+Y)",
-														en: "Redo (Ctrl/⌘+Shift+Z or Ctrl/⌘+Y)"
-													})}
-												>
-													<FiRotateCw className="h-4 w-4" />
-												</button>
-
-												<button
-													type="button"
-													onClick={toggleMaximize}
-													className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
-													title={tr({
-														no: "Lukk maksimering",
-														en: "Exit maximize"
-													})}
-												>
-													<FiMinimize className="h-4 w-4" />
-												</button>
-											</div>
-										</div>
-
-										<div className="flex-1 min-h-0">
-											<div
-												ref={previewContainerRef}
-												className={[
-													"h-full overflow-auto overscroll-contain rounded-xl ring-1 ring-slate-200 contain-content dark:ring-white/10",
-													isResizingCol ? "select-none cursor-col-resize" : ""
-												].join(" ")}
-											>
-												<PreviewTable onMeasureRow={handleMeasureRow} />
-											</div>
-										</div>
-									</div>
-								</div>
-							)}
-						</div>
-					)}
-
-					{/* Actions & help */}
-					{previewsReady && (
-						<div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-							<div className="text-sm">
-								{pendingIssuesCount > 0 ? (
-									<button
-										type="button"
-										onClick={() => setActiveTab("attention")}
-										className="text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 hover:bg-amber-100 dark:text-amber-300 dark:bg-amber-500/10 dark:border-amber-900/40 dark:hover:bg-amber-500/20"
-									>
-										{tr({
-											no: `Løs ‘Trenger oppmerksomhet’ først (${pendingIssuesCount})`,
-											en: `Resolve ‘Needs attention’ first (${pendingIssuesCount})`
-										})}
-									</button>
-								) : (
-									<span className="text-emerald-700 dark:text-emerald-400">
-										{tr({ no: "Alt OK ✅", en: "All good ✅" })}
-									</span>
-								)}
-							</div>
-
-							<div className="w-full sm:w-auto">
+							<div className="flex items-center gap-2">
 								<button
 									type="button"
-									onClick={() => onDownloadCSV(overrides)}
-									disabled={!rows || pendingIssuesCount > 0}
-									className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:shadow-lg hover:from-indigo-700 hover:to-emerald-700 focus:outline-none focus:ring-4 focus:ring-indigo-200/60 dark:from-indigo-500 dark:to-emerald-500 dark:hover:from-indigo-500 dark:hover:to-emerald-500 dark:focus:ring-indigo-900/40 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
-									title={
-										pendingIssuesCount > 0
-											? tr({
-													no: "Løs ‘Trenger oppmerksomhet’ først",
-													en: "Resolve ‘Needs attention’ first"
-											  })
-											: tr({ no: "Last ned CSV", en: "Download CSV" })
-									}
+									onClick={() => {
+										navigator.clipboard
+											.writeText(JSON.stringify(debugRow, null, 2))
+											.catch(() => {});
+									}}
+									className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+									title="Kopier JSON"
 								>
-									<FiDownload className="h-4 w-4" />
-									{tr({ no: "Last ned CSV", en: "Download CSV" })}
+									<FiCopy className="h-4 w-4" />
+									<span>Copy</span>
+								</button>
+								<button
+									type="button"
+									onClick={() => setDebugRow(null)}
+									className="inline-flex items-center justify-center rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/10"
+									aria-label="Lukk"
+								>
+									<FiX className="h-4 w-4" />
 								</button>
 							</div>
 						</div>
-					)}
+						<div className="max-h-[65vh] overflow-auto rounded-xl bg-slate-50 p-3 font-mono text-[11px] text-slate-800 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-100 dark:ring-white/10">
+							<pre className="whitespace-pre-wrap break-all">
+								{JSON.stringify(debugRow, null, 2)}
+							</pre>
+						</div>
+					</div>
+				</div>,
+				document.body
+		  )
+		: null;
 
-					{/* Separated modal editor */}
-					<ModalEditor
-						open={editOpen}
-						onClose={() => setEditOpen(false)}
-						rows={rows}
-						typeOptions={TYPE_OPTIONS}
-						editTarget={editTarget}
-						editDraft={editDraft}
-						setEditDraft={setEditDraft}
-						editScope={editScope}
-						setEditScope={setEditScope}
-						applyEdit={applyEdit}
-					/>
+	return (
+		<>
+			<section className="mt-6">
+				<div
+					className={[
+						"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 ring-1 ring-slate-300/80 dark:ring-white/10",
+						isResizingCol ? "select-none cursor-col-resize" : ""
+					].join(" ")}
+				>
+					<div className="p-4 sm:p-10">
+						{/* Tabs header */}
+						<div className="border-b border-slate-200 dark:border-white/10">
+							<div
+								className="flex flex-nowrap items-end -mb-px"
+								role="tablist"
+								aria-label={tr({
+									no: "Forhåndsvisning faner",
+									en: "Preview tabs"
+								})}
+							>
+								<button
+									type="button"
+									role="tab"
+									aria-selected={activeTab === "preview"}
+									onClick={() => {
+										setActiveTab("preview");
+										setOpenFilter(null);
+									}}
+									className={[
+										"relative flex-1 min-w-0 text-center rounded-t-md",
+										"px-2 pr-6 py-1.5 text-[11px] leading-5 sm:px-3 sm:py-2 sm:text-sm",
+										"-mb-px border-b-2 transition-colors",
+										activeTab === "preview"
+											? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
+											: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
+									].join(" ")}
+								>
+									{tr({ no: "Forhåndsvisning", en: "Preview" })}
+								</button>
 
-					{/* <div className="mt-6 rounded-xl bg-gradient-to-r from-emerald-50 to-indigo-50 p-4 text-xs text-slate-600 ring-1 ring-slate-200/70 dark:from-[#0b1220] dark:to-[#0b1220] dark:text-slate-300 dark:ring-white/10">
+								<button
+									type="button"
+									role="tab"
+									aria-selected={activeTab === "attention"}
+									onClick={() => {
+										persistPreviewScroll();
+										setActiveTab("attention");
+										setOpenFilter(null);
+									}}
+									title={tr({
+										no: "Uavklarte elementer som bør navngis",
+										en: "Unresolved items that should be named"
+									})}
+									className={[
+										"relative flex-1 min-w-0 text-center rounded-t-md",
+										"px-2 pr-8 py-1.5 text-[11px] leading-5 sm:px-3 sm:py-2 sm:text-sm",
+										"-mb-px border-b-2 transition-colors",
+										activeTab === "attention"
+											? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
+											: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
+									].join(" ")}
+								>
+									<span className="pointer-events-none">
+										<span className="sm:hidden">
+											{tr({ no: "Obs", en: "Attention" })}
+										</span>
+										<span className="hidden sm:inline">
+											{tr({
+												no: "Trenger oppmerksomhet",
+												en: "Needs attention"
+											})}
+										</span>
+									</span>
+									{pendingIssuesCount > 0 && (
+										<span
+											className={[
+												"absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded-full",
+												"bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 dark:bg-amber-500/20 dark:text-amber-300",
+												pendingIssuesCount > 0 && activeTab !== "attention"
+													? "animate-pulse motion-reduce:animate-none"
+													: ""
+											].join(" ")}
+										>
+											{pendingIssuesCount}
+										</span>
+									)}
+								</button>
+
+								<button
+									type="button"
+									role="tab"
+									aria-selected={activeTab === "summary"}
+									onClick={() => {
+										persistPreviewScroll();
+										setActiveTab("summary");
+										setOpenFilter(null);
+									}}
+									className={[
+										"relative flex-1 min-w-0 text-center rounded-t-md",
+										"px-2 pr-6 py-1.5 text-[11px] leading-5 sm:px-3 sm:py-2 sm:text-sm",
+										"-mb-px border-b-2 transition-colors",
+										activeTab === "summary"
+											? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
+											: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
+									].join(" ")}
+								>
+									{tr({ no: "Oppsummering", en: "Summary" })}
+								</button>
+							</div>
+						</div>
+
+						{/* Tabs content */}
+						{activeTab === "attention" ? (
+							<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 max-h-[80vh] sm:max-h-none overflow-y-auto overscroll-contain dark:border-amber-900/40 dark:bg-amber-500/10">
+								{issues.length === 0 ? (
+									<div className="text-sm text-emerald-700 dark:text-emerald-400">
+										{tr({
+											no: "Ingen uavklarte elementer 🎉",
+											en: "No unresolved items 🎉"
+										})}
+									</div>
+								) : (
+									<>
+										{/* Mass action bar */}
+										<div className="mb-2 flex items-center justify-end">
+											<button
+												type="button"
+												onClick={ignoreAllPending}
+												disabled={!issues.some((i) => i.status === "pending")}
+												className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm dark:shadow-black/25 hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+												title={tr({
+													no: "Ignorer alle uavklarte elementer",
+													en: "Ignore all unresolved items"
+												})}
+											>
+												{tr({ no: "Ignorer alle", en: "Ignore all" })}
+											</button>
+										</div>
+
+										<ul className="space-y-3">
+											{issues.map((it) => {
+												const inputId = `issue-${it.kind}-${it.key.replace(
+													/[^a-z0-9\-]/gi,
+													"_"
+												)}`;
+												const isOpen = openIssues.has(inputId);
+
+												const statusBadge =
+													it.status === "pending" ? (
+														<span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">
+															{tr({ no: "Avventer", en: "Pending" })}
+														</span>
+													) : it.status === "renamed" ? (
+														<span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text:[11px] text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
+															{tr({ no: "Endret", en: "Renamed" })}
+															{it.newName ? ` → ${it.newName}` : ""}
+														</span>
+													) : (
+														<span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] text-slate-700 dark:bg-white/10 dark:text-slate-300">
+															{tr({ no: "Ignorert", en: "Ignored" })}
+														</span>
+													);
+
+												const occurrenceRows =
+													rows?.filter((r) => {
+														if (it.kind === "unknown-token") {
+															return (
+																r["Inn-Valuta"] === it.key ||
+																r["Ut-Valuta"] === it.key
+															);
+														}
+														return r.Marked === it.key;
+													}) ?? [];
+
+												return (
+													<li
+														key={`${it.kind}:${it.key}`}
+														className="rounded-lg bg-white p-3 ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
+													>
+														<div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+															<div className="space-y-1">
+																<div className="text-sm font-medium text-slate-800 dark:text-slate-100">
+																	{it.kind === "unknown-token"
+																		? tr({
+																				no: "Ukjent token",
+																				en: "Unknown token"
+																		  })
+																		: tr({
+																				no: "Ukjent marked",
+																				en: "Unknown market"
+																		  })}
+																	: <code className="font-mono">{it.key}</code>
+																	{statusBadge}
+																</div>
+																<div className="text-xs text-slate-600 dark:text-slate-400">
+																	{tr({
+																		no: `${it.count} forekomster`,
+																		en: `${it.count} occurrences`
+																	})}
+																</div>
+															</div>
+
+															<div className="flex flex-wrap items-center gap-2 sm:justify-end">
+																<input
+																	id={inputId}
+																	defaultValue={it.newName ?? ""}
+																	placeholder={
+																		it.kind === "unknown-token"
+																			? tr({
+																					no: "Ny tokensymbol (BTC, ETH, SOL...)",
+																					en: "New token symbol (BTC, ETH, SOL...)"
+																			  })
+																			: tr({
+																					no: "Nytt markedsnavn",
+																					en: "New market name"
+																			  })
+																	}
+																	className="w-full sm:w-56 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+																/>
+																<button
+																	type="button"
+																	onClick={() => {
+																		const el = document.getElementById(
+																			inputId
+																		) as HTMLInputElement | null;
+																		const val = (el?.value ?? "").trim();
+																		if (!val) return;
+																		renameIssue(it.kind, it.key, val);
+																	}}
+																	className="rounded-md bg-indigo-600 text-white px-2 py-1 text-sm disabled:opacity-60 dark:bg-indigo-500"
+																>
+																	{tr({ no: "Lagre", en: "Save" })}
+																</button>
+																<button
+																	type="button"
+																	onClick={() => ignoreIssue(it.kind, it.key)}
+																	className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+																	title={
+																		it.status === "ignored"
+																			? tr({
+																					no: "Angre ignorering",
+																					en: "Undo ignore"
+																			  })
+																			: tr({ no: "Ignorer", en: "Ignore" })
+																	}
+																>
+																	{it.status === "ignored"
+																		? tr({ no: "Angre", en: "Undo" })
+																		: tr({ no: "Ignorer", en: "Ignore" })}
+																</button>
+																<button
+																	type="button"
+																	onClick={() =>
+																		setOpenIssues((prev) => {
+																			const next = new Set(prev);
+																			if (next.has(inputId))
+																				next.delete(inputId);
+																			else next.add(inputId);
+																			return next;
+																		})
+																	}
+																	className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+																>
+																	{isOpen
+																		? tr({
+																				no: "Skjul forekomster",
+																				en: "Hide occurrences"
+																		  })
+																		: tr({
+																				no: `Vis forekomster (${occurrenceRows.length})`,
+																				en: `Show occurrences (${occurrenceRows.length})`
+																		  })}
+																</button>
+															</div>
+														</div>
+
+														{isOpen && (
+															<div className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-2 dark:border-white/10 dark:bg-white/5">
+																{occurrenceRows.length === 0 ? (
+																	<div className="text-xs text-slate-600 dark:text-slate-400">
+																		{tr({
+																			no: "Ingen forekomster funnet.",
+																			en: "No occurrences found."
+																		})}
+																	</div>
+																) : (
+																	<ul className="grid gap-2 sm:grid-cols-1 md:grid-cols-2">
+																		{occurrenceRows.map((r, idx) => {
+																			const sig = extractSig(r);
+																			const tokenInfo =
+																				[r["Inn-Valuta"], r["Ut-Valuta"]]
+																					.filter(Boolean)
+																					.join(" / ") || "—";
+																			const solscan = sig
+																				? `https://solscan.io/tx/${sig}`
+																				: undefined;
+
+																			return (
+																				<li key={`${sig ?? "x"}-${idx}`}>
+																					<div
+																						className="w-full rounded-md bg-white px-2 py-1.5 text-xs shadow-sm dark:shadow-black/25 ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
+																						title={
+																							sig
+																								? tr({
+																										no: "Gå til rad i forhåndsvisning eller åpne i Solscan",
+																										en: "Jump to row in preview or open in Solscan"
+																								  })
+																								: tr({
+																										no: "Ingen signatur funnet",
+																										en: "No signature found"
+																								  })
+																						}
+																					>
+																						<div className="flex items-center justify-between gap-2">
+																							<span className="font-mono text-[11px] text-slate-600 dark:text-slate-400">
+																								{r.Tidspunkt}
+																							</span>
+																							<div className="flex items-center gap-2">
+																								<button
+																									type="button"
+																									onClick={() =>
+																										sig && jumpToSig(sig)
+																									}
+																									disabled={!sig}
+																									className="text-[10px] text-indigo-600 hover:underline disabled:opacity-60 dark:text-indigo-400"
+																									title={tr({
+																										no: "Gå til rad",
+																										en: "Go to row"
+																									})}
+																								>
+																									{tr({
+																										no: "Gå til rad",
+																										en: "Go to row"
+																									})}
+																								</button>
+																								{sig && solscan && (
+																									<Link
+																										href={solscan}
+																										target="_blank"
+																										rel="noopener noreferrer"
+																										className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:underline dark:text-indigo-400"
+																										title={tr({
+																											no: "Åpne i Solscan",
+																											en: "Open in Solscan"
+																										})}
+																									>
+																										<FiExternalLink className="h-3.5 w-3.5" />
+																										Solscan
+																									</Link>
+																								)}
+																							</div>
+																						</div>
+																						<div className="mt-0.5">
+																							<span className="font-medium text-slate-800 dark:text-slate-100">
+																								{r.Type}
+																							</span>{" "}
+																							<span className="text-slate-600 dark:text-slate-400">
+																								• {tokenInfo}
+																							</span>
+																						</div>
+																					</div>
+																				</li>
+																			);
+																		})}
+																	</ul>
+																)}
+															</div>
+														)}
+													</li>
+												);
+											})}
+										</ul>
+									</>
+								)}
+							</div>
+						) : activeTab === "summary" ? (
+							<div className="mt-4 max-h-[80vh] sm:max-h-none overflow-y-auto overscroll-contain">
+								{(walletName?.trim() ||
+									address?.trim() ||
+									timeframeLabel?.trim()) && (
+									<div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
+										{(walletName?.trim() || address?.trim()) && (
+											<span className="inline-flex items-center gap-1">
+												<span className="font-medium text-slate-700 dark:text-slate-200">
+													{tr({ no: "Wallet", en: "Wallet" })}:
+												</span>
+												<span className="truncate max-w-[60vw] sm:max-w-none">
+													{walletName?.trim() || address?.trim()}
+												</span>
+											</span>
+										)}
+										{timeframeLabel?.trim() && (
+											<span className="inline-flex items-center gap-1">
+												<span className="font-medium text-slate-700 dark:text-slate-200">
+													{tr({ no: "Tidsrom", en: "Timeframe" })}:
+												</span>
+												<span>{timeframeLabel}</span>
+											</span>
+										)}
+									</div>
+								)}
+
+								{summaryByCurrency.length === 0 ? (
+									<div className="text-sm text-slate-600 dark:text-slate-300">
+										{tr({
+											no: "Ingen summer å vise (ingen rader i gjeldende utvalg).",
+											en: "Nothing to summarize (no rows in the current selection)."
+										})}
+									</div>
+								) : (
+									<div className="rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/60">
+										<table className="w-full text-sm">
+											<thead className="sr-only">
+												<tr>
+													<th scope="col">
+														{tr({ no: "Valuta", en: "Token" })}
+													</th>
+													<th scope="col">
+														{tr({ no: "Summer", en: "Totals" })}
+													</th>
+												</tr>
+											</thead>
+											<tbody>
+												{summaryByCurrency.map(
+													(
+														{ currency, markets, allTypeTotals, byMarket },
+														idx
+													) => {
+														const key = String(currency).toUpperCase();
+														const selMarket =
+															summaryMarketByCurrency[key] ?? "";
+														const typeTotals = selMarket
+															? byMarket[selMarket] ?? []
+															: allTypeTotals;
+														const marketOptions = [
+															{
+																value: "",
+																label: tr({
+																	no: "Alle markeder",
+																	en: "All markets"
+																})
+															},
+															...markets.map((m) => ({ value: m, label: m }))
+														];
+														// keep dropdown button size stable; do not auto-widen
+
+														return (
+															<tr
+																key={currency}
+																className={[
+																	idx === 0
+																		? ""
+																		: "border-t border-slate-200 dark:border-slate-800",
+																	"block sm:table-row"
+																].join(" ")}
+															>
+																<td className="py-2 pl-3 pr-3 sm:pr-4 align-top block sm:table-cell w-full">
+																	<div className="flex items-start justify-between gap-2 sm:block">
+																		<div className="flex items-center gap-2 min-w-0">
+																			<SummaryAvatar
+																				symbol={currency}
+																				logoURI={
+																					summaryLogos[
+																						String(currency).toUpperCase()
+																					] ?? null
+																				}
+																			/>
+																			<span className="font-medium text-slate-800 dark:text-slate-100 truncate">
+																				{currency}
+																			</span>
+																		</div>
+
+																		{markets.length > 0 && (
+																			<div className="w-[160px] flex-shrink-0 sm:w-auto sm:mt-1">
+																				<StyledSelect
+																					value={selMarket as string}
+																					onChange={(v) =>
+																						setSummaryMarketByCurrency(
+																							(prev) => ({
+																								...prev,
+																								[key]: v as string
+																							})
+																						)
+																					}
+																					options={marketOptions as any}
+																					buttonClassName={
+																						"w-full sm:w-auto inline-flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 shadow-sm dark:shadow-black/25 " +
+																						"focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+																					}
+																					ariaLabel={tr({
+																						no: `Velg marked for ${currency}`,
+																						en: `Select market for ${currency}`
+																					})}
+																					usePortal
+																					portalZIndex={110000}
+																				/>
+																			</div>
+																		)}
+																	</div>
+																</td>
+																<td className="py-0 pb-3 sm:py-2 px-3 sm:pr-3 align-top block sm:table-cell w-full sm:w-[420px]">
+																	<div className="w-full space-y-0.5">
+																		{typeTotals.map(([type, sum]) => (
+																			<div
+																				key={`${currency}:${type}`}
+																				className="grid grid-cols-[1fr_auto] sm:grid-cols-[11rem_1fr] items-baseline gap-x-3"
+																			>
+																				<span className="text-xs text-slate-600 dark:text-slate-300">
+																					{type}
+																				</span>
+																				<span className="text-xs font-mono tabular-nums text-slate-800 dark:text-slate-100 text-right whitespace-nowrap">
+																					{summaryNumberFormat.format(sum)}
+																				</span>
+																			</div>
+																		))}
+																	</div>
+																</td>
+															</tr>
+														);
+													}
+												)}
+											</tbody>
+										</table>
+									</div>
+								)}
+							</div>
+						) : (
+							<div className="mt-6">
+								{/* Top bar */}
+								<div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+									<div className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-2">
+										<span>
+											{tr({
+												no: `Viser ${displayed.length} av ${
+													effectiveRows.length
+												} rader${filterHasAny ? " (filtrert)" : ""}.`,
+												en: `Showing ${displayed.length} of ${
+													effectiveRows.length
+												} rows${filterHasAny ? " (filtered)" : ""}.`
+											})}
+										</span>
+
+										{filterHasAny && (
+											<button
+												type="button"
+												onClick={clearAllFilters}
+												className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+												title={tr({
+													no: "Nullstill alle filtre",
+													en: "Reset all filters"
+												})}
+											>
+												{tr({ no: "Nullstill filtre", en: "Reset filters" })}
+											</button>
+										)}
+									</div>
+									<div className="flex flex-wrap items-center gap-2 text-xs">
+										<span className="text-slate-600 dark:text-slate-300">
+											{tr({ no: "Sorter:", en: "Sort:" })}
+										</span>
+										<StyledSelect
+											value={sortOrder}
+											onChange={(v) => setSortOrder(v as SortOrder)}
+											buttonClassName={
+												"w-full sm:w-auto inline-flex items-center justify-between gap-2 " +
+												SELECT_STYLE
+											}
+											options={[
+												{
+													value: "desc",
+													label: tr({ no: "Nyeste først", en: "Newest first" })
+												},
+												{
+													value: "asc",
+													label: tr({ no: "Eldste først", en: "Oldest first" })
+												}
+											]}
+											ariaLabel={tr({ no: "Sorter", en: "Sort" })}
+										/>
+
+										<button
+											type="button"
+											onClick={undo}
+											disabled={!canUndo}
+											className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+											title={tr({
+												no: "Angre (Ctrl/⌘+Z)",
+												en: "Undo (Ctrl/⌘+Z)"
+											})}
+										>
+											<FiRotateCcw className="h-4 w-4" />
+										</button>
+										<button
+											type="button"
+											onClick={redo}
+											disabled={!canRedo}
+											className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+											title={tr({
+												no: "Gjør om (Ctrl/⌘+Shift+Z eller Ctrl/⌘+Y)",
+												en: "Redo (Ctrl/⌘+Shift+Z or Ctrl/⌘+Y)"
+											})}
+										>
+											<FiRotateCw className="h-4 w-4" />
+										</button>
+
+										<button
+											type="button"
+											onClick={toggleMaximize}
+											className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+											title={
+												isMaximized
+													? tr({ no: "Lukk maksimering", en: "Exit maximize" })
+													: tr({ no: "Maksimer", en: "Maximize" })
+											}
+											aria-pressed={isMaximized}
+										>
+											{isMaximized ? (
+												<FiMinimize className="h-4 w-4" />
+											) : (
+												<FiMaximize className="h-4 w-4" />
+											)}
+										</button>
+									</div>
+								</div>
+
+								{/* Embedded preview */}
+								{!isMaximized && (
+									<>
+										<div
+											ref={previewContainerRef}
+											className={[
+												"relative overflow-auto overscroll-contain rounded-t-xl ring-1 ring-slate-200 contain-content dark:ring-white/10",
+												isResizingCol ? "select-none cursor-col-resize" : ""
+											].join(" ")}
+											style={{ height: previewHeight }}
+											onClick={() => setOpenFilter(null)}
+										>
+											<PreviewTable onMeasureRow={handleMeasureRow} />
+										</div>
+
+										<div
+											onMouseDown={onResizeStart}
+											className="flex items-center justify-center h-4 cursor-ns-resize bg-slate-50 border-x border-b border-slate-200 rounded-b-xl select-none dark:bg-white/5 dark:border-white/10"
+											title={tr({
+												no: "Dra for å endre høyde",
+												en: "Drag to resize height"
+											})}
+										>
+											<div className="h-1 w-12 rounded-full bg-slate-300 dark:bg-slate-600" />
+										</div>
+									</>
+								)}
+
+								{/* Maximized overlay */}
+								{isMaximized && (
+									<div
+										className="fixed inset-0 z-40 bg-white dark:bg-[#0b1220]"
+										onClick={() => setOpenFilter(null)}
+									>
+										<div className="h-full flex flex-col p-4 sm:p-6">
+											<div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+												<div className="text-xs text-slate-600 dark:text-slate-400">
+													{tr({
+														no: `Viser ${displayed.length} av ${
+															effectiveRows.length
+														} rader${filterHasAny ? " (filtrert)" : ""}.`,
+														en: `Showing ${displayed.length} of ${
+															effectiveRows.length
+														} rows${filterHasAny ? " (filtered)" : ""}.`
+													})}
+												</div>
+												<div className="flex flex-wrap items-center gap-2 text-xs">
+													{filterHasAny && (
+														<button
+															type="button"
+															onClick={clearAllFilters}
+															className="rounded-md border border-slate-200 bg-white px-2 py-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+															title={tr({
+																no: "Nullstill alle filtre",
+																en: "Reset all filters"
+															})}
+														>
+															{tr({
+																no: "Nullstill filtre",
+																en: "Reset filters"
+															})}
+														</button>
+													)}
+													<span className="text-slate-600 dark:text-slate-300">
+														{tr({ no: "Sorter:", en: "Sort:" })}
+													</span>
+													<StyledSelect
+														value={sortOrder}
+														onChange={(v) => setSortOrder(v as SortOrder)}
+														buttonClassName={
+															"w-full sm:w-auto inline-flex items-center justify-between gap-2 " +
+															SELECT_STYLE
+														}
+														options={[
+															{
+																value: "desc",
+																label: tr({
+																	no: "Nyeste først",
+																	en: "Newest first"
+																})
+															},
+															{
+																value: "asc",
+																label: tr({
+																	no: "Eldste først",
+																	en: "Oldest first"
+																})
+															}
+														]}
+														ariaLabel={tr({ no: "Sorter", en: "Sort" })}
+													/>
+
+													<button
+														type="button"
+														onClick={undo}
+														disabled={!canUndo}
+														className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+														title={tr({
+															no: "Angre (Ctrl/⌘+Z)",
+															en: "Undo (Ctrl/⌘+Z)"
+														})}
+													>
+														<FiRotateCcw className="h-4 w-4" />
+													</button>
+													<button
+														type="button"
+														onClick={redo}
+														disabled={!canRedo}
+														className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+														title={tr({
+															no: "Gjør om (Ctrl/⌘+Shift+Z eller Ctrl/⌘+Y)",
+															en: "Redo (Ctrl/⌘+Shift+Z or Ctrl/⌘+Y)"
+														})}
+													>
+														<FiRotateCw className="h-4 w-4" />
+													</button>
+
+													<button
+														type="button"
+														onClick={toggleMaximize}
+														className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+														title={tr({
+															no: "Lukk maksimering",
+															en: "Exit maximize"
+														})}
+													>
+														<FiMinimize className="h-4 w-4" />
+													</button>
+												</div>
+											</div>
+
+											<div className="flex-1 min-h-0">
+												<div
+													ref={previewContainerRef}
+													className={[
+														"h-full overflow-auto overscroll-contain rounded-xl ring-1 ring-slate-200 contain-content dark:ring-white/10",
+														isResizingCol ? "select-none cursor-col-resize" : ""
+													].join(" ")}
+												>
+													<PreviewTable onMeasureRow={handleMeasureRow} />
+												</div>
+											</div>
+										</div>
+									</div>
+								)}
+							</div>
+						)}
+
+						{/* Actions & help */}
+						{previewsReady && (
+							<div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+								<div className="text-sm">
+									{pendingIssuesCount > 0 ? (
+										<button
+											type="button"
+											onClick={() => setActiveTab("attention")}
+											className="text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 hover:bg-amber-100 dark:text-amber-300 dark:bg-amber-500/10 dark:border-amber-900/40 dark:hover:bg-amber-500/20"
+										>
+											{tr({
+												no: `Løs ‘Trenger oppmerksomhet’ først (${pendingIssuesCount})`,
+												en: `Resolve ‘Needs attention’ first (${pendingIssuesCount})`
+											})}
+										</button>
+									) : (
+										<span className="text-emerald-700 dark:text-emerald-400">
+											{tr({ no: "Alt OK ✅", en: "All good ✅" })}
+										</span>
+									)}
+								</div>
+
+								<div className="w-full sm:w-auto">
+									<button
+										type="button"
+										onClick={() => onDownloadCSV(overrides)}
+										disabled={!rows || pendingIssuesCount > 0}
+										className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:shadow-lg hover:from-indigo-700 hover:to-emerald-700 focus:outline-none focus:ring-4 focus:ring-indigo-200/60 dark:from-indigo-500 dark:to-emerald-500 dark:hover:from-indigo-500 dark:hover:to-emerald-500 dark:focus:ring-indigo-900/40 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
+										title={
+											pendingIssuesCount > 0
+												? tr({
+														no: "Løs ‘Trenger oppmerksomhet’ først",
+														en: "Resolve ‘Needs attention’ first"
+												  })
+												: tr({ no: "Last ned CSV", en: "Download CSV" })
+										}
+									>
+										<FiDownload className="h-4 w-4" />
+										{tr({ no: "Last ned CSV", en: "Download CSV" })}
+									</button>
+								</div>
+							</div>
+						)}
+
+						{/* Separated modal editor */}
+						<ModalEditor
+							open={editOpen}
+							onClose={() => setEditOpen(false)}
+							rows={rows}
+							typeOptions={TYPE_OPTIONS}
+							editTarget={editTarget}
+							editDraft={editDraft}
+							setEditDraft={setEditDraft}
+							editScope={editScope}
+							setEditScope={setEditScope}
+							applyEdit={applyEdit}
+						/>
+
+						{/* <div className="mt-6 rounded-xl bg-gradient-to-r from-emerald-50 to-indigo-50 p-4 text-xs text-slate-600 ring-1 ring-slate-200/70 dark:from-[#0b1220] dark:to-[#0b1220] dark:text-slate-300 dark:ring-white/10">
 						Mapper: <b>Swaps</b> → <code>Handel</code>, <b>SOL/SPL</b> →{" "}
 						<code>Overføring-Inn/Ut</code>, <b>Airdrops</b> →{" "}
 						<code>Erverv</code>, <b>staking</b> → <code>Inntekt</code>. Ukjente
 						tokens får koden <code>TOKEN-XXXXXX</code>.
 					</div> */}
+					</div>
 				</div>
-			</div>
-		</section>
+			</section>
+
+			{debugModal}
+		</>
 	);
 }
