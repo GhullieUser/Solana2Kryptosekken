@@ -1,5 +1,6 @@
 // src/lib/helius.ts
 import bs58 from "bs58";
+import { PublicKey } from "@solana/web3.js";
 
 export const SPL_TOKEN_PROGRAM_ID =
 	"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -188,6 +189,77 @@ async function rpcCallWithFallback(
 	throw new Error(
 		`All RPC endpoints failed for ${method}. Details: ${errors.join(" | ")}`
 	);
+}
+
+/* ================= Anchor IDL lookup ================= */
+
+const PROGRAM_IDL_NAME_CACHE = new Map<string, string | null>();
+
+function readU32LE(buf: Buffer, offset: number): number {
+	return (
+		buf[offset] |
+		(buf[offset + 1] << 8) |
+		(buf[offset + 2] << 16) |
+		(buf[offset + 3] << 24)
+	) >>> 0;
+}
+
+/**
+ * Best-effort Anchor IDL name lookup for a program.
+ * Returns null if no IDL account exists or parsing fails.
+ */
+export async function fetchAnchorIdlName(
+	programId: string,
+	apiKey?: string
+): Promise<string | null> {
+	if (!programId) return null;
+	if (PROGRAM_IDL_NAME_CACHE.has(programId)) {
+		return PROGRAM_IDL_NAME_CACHE.get(programId) ?? null;
+	}
+
+	let label: string | null = null;
+	try {
+		const programKey = new PublicKey(programId);
+		const [idlAddress] = PublicKey.findProgramAddressSync(
+			[Buffer.from("anchor:idl"), programKey.toBuffer()],
+			programKey
+		);
+
+		const info = await rpcCallWithFallback(
+			"getAccountInfo",
+			[idlAddress.toBase58(), { encoding: "base64" }],
+			apiKey
+		);
+		const data = info?.value?.data;
+		const b64 = Array.isArray(data) ? data[0] : null;
+		if (typeof b64 !== "string" || !b64) {
+			PROGRAM_IDL_NAME_CACHE.set(programId, null);
+			return null;
+		}
+
+		const raw = Buffer.from(b64, "base64");
+		// Anchor IDL account layout: [8 disc][32 authority][4 len][len bytes]
+		if (raw.length < 8 + 32 + 4) {
+			PROGRAM_IDL_NAME_CACHE.set(programId, null);
+			return null;
+		}
+		const len = readU32LE(raw, 8 + 32);
+		const start = 8 + 32 + 4;
+		const end = start + len;
+		if (end > raw.length) {
+			PROGRAM_IDL_NAME_CACHE.set(programId, null);
+			return null;
+		}
+		const jsonText = raw.slice(start, end).toString("utf8");
+		const idl = JSON.parse(jsonText);
+		const name = typeof idl?.name === "string" ? idl.name.trim() : "";
+		label = name || null;
+	} catch {
+		label = null;
+	}
+
+	PROGRAM_IDL_NAME_CACHE.set(programId, label);
+	return label;
 }
 
 async function throwHelius(res: Response, url: URL): Promise<never> {

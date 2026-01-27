@@ -33,6 +33,7 @@ import WalletHoldings from "@/app/components/WalletHoldings";
 import KryptosekkenImportCard from "@/app/components/KryptosekkenImportCard";
 import StyledSelect from "@/app/components/styled-select";
 import { useLocale } from "@/app/components/locale-provider";
+import { currencyCode, rowsToCSV } from "@/lib/kryptosekken";
 
 /* ================= Client-only guard ================= */
 function ClientOnly({ children }: { children: React.ReactNode }) {
@@ -722,6 +723,61 @@ export default function Home() {
 		if (!lastPayloadRef.current) return;
 		setError(null);
 		try {
+			// Fast path: generate CSV locally from the current preview rows (incl. edits/overrides)
+			if (rows && rows.length > 0) {
+				const tokenMapRaw = currentOverrides?.symbols ?? {};
+				const marketMap = currentOverrides?.markets ?? {};
+				const normTokenMap: Record<string, string> = {};
+				for (const [from, to] of Object.entries(tokenMapRaw)) {
+					const fromKey = currencyCode(from);
+					const toVal = currencyCode(to);
+					if (fromKey && toVal) normTokenMap[fromKey] = toVal;
+				}
+
+				const rowsForCsv: KSRow[] = rows.map((r) => {
+					const inn = r["Inn-Valuta"];
+					const ut = r["Ut-Valuta"];
+					const mkt = r.Marked;
+					const innNew = inn && normTokenMap[inn] ? normTokenMap[inn] : inn;
+					const utNew = ut && normTokenMap[ut] ? normTokenMap[ut] : ut;
+					const mktNew =
+						mkt && marketMap[mkt] !== undefined ? marketMap[mkt]! : mkt;
+
+					return {
+						Tidspunkt: r.Tidspunkt,
+						Type: r.Type,
+						Inn: r.Inn,
+						"Inn-Valuta": innNew,
+						Ut: r.Ut,
+						"Ut-Valuta": utNew,
+						Gebyr: r.Gebyr,
+						"Gebyr-Valuta": r["Gebyr-Valuta"],
+						Marked: mktNew,
+						Notat: r.Notat
+					};
+				});
+
+				const csvLocal = rowsToCSV(rowsForCsv);
+				const blobLocal = new Blob([csvLocal], {
+					type: "text/csv;charset=utf-8"
+				});
+				const aLocal = document.createElement("a");
+				const dlUrlLocal = URL.createObjectURL(blobLocal);
+				aLocal.href = dlUrlLocal;
+				aLocal.download = `sol2ks_${lastPayloadRef.current.address}.csv`;
+				document.body.appendChild(aLocal);
+				aLocal.click();
+				aLocal.remove();
+				URL.revokeObjectURL(dlUrlLocal);
+				pushLog(
+					tr({
+						no: "✅ CSV klar (med redigeringer).",
+						en: "✅ CSV ready (with edits)."
+					})
+				);
+				return;
+			}
+
 			// Build a map of rowId -> full row fields (server will selectively merge)
 			const clientEdits: Record<string, Partial<KSRow>> = {};
 			for (const r of rows ?? []) {

@@ -10,7 +10,8 @@ import {
 	NativeTransfer,
 	TokenTransfer,
 	fetchFeePayer,
-	getOwnersOfTokenAccounts
+	getOwnersOfTokenAccounts,
+	fetchAnchorIdlName
 } from "@/lib/helius";
 import {
 	KSRow,
@@ -20,6 +21,7 @@ import {
 	currencyCode
 } from "@/lib/kryptosekken";
 import { hintFor } from "@/lib/tokenMap";
+import { programLabelFor } from "@/lib/programMap";
 
 /** Ensure env vars are readable at runtime (no static optimization). */
 export const runtime = "nodejs";
@@ -267,7 +269,7 @@ function makeSymDecResolver(
 		const h = heliusMeta.get(mint);
 		const hint = hintFor(mint);
 
-		const sym =
+		let sym =
 			symbol ||
 			j?.symbol ||
 			h?.symbol ||
@@ -282,6 +284,14 @@ function makeSymDecResolver(
 				: typeof h?.decimals === "number"
 				? h.decimals
 				: hint?.decimals ?? 6;
+
+		// Guard: only the native SOL mint should resolve to SOL.
+		if (
+			mint !== "So11111111111111111111111111111111111111112" &&
+			String(sym || "").trim().toUpperCase() === "SOL"
+		) {
+			sym = `TOKEN-${mint.slice(0, 6)}`;
+		}
 
 		return { symbol: currencyCode(sym), decimals: dec };
 	};
@@ -621,6 +631,8 @@ function collapseHybridTokenNativeSwap(
 		const [inSym, inAmt] = positives[0];
 		const outSym = "SOL";
 		const outAmt = maxOut; // treat the biggest native out as the swap payment
+		// Guard: never emit Handel with identical currencies (e.g. SOL in/out)
+		if (inSym === outSym) return null;
 		let extraTipSOL = nativeOutSOL - outAmt - nativeInSOL; // leftover -> fees (tips/rent)
 		if (!Number.isFinite(extraTipSOL) || extraTipSOL < 0) extraTipSOL = 0;
 		// sanity cap for weird cases (we don't expect > ~0.5 SOL in tips)
@@ -631,6 +643,8 @@ function collapseHybridTokenNativeSwap(
 
 	// --- SELL heuristic: 1 token out, 0 token in, with native SOL in
 	if (negatives.length === 1 && positives.length === 0 && nativeInSOL > 0) {
+		// Require net SOL inflow; otherwise it's likely a stake/lock transfer, not a sale.
+		if (nativeInSOL <= nativeOutSOL + 1e-9) return null;
 		const dominates =
 			maxIn >= 0.01 ||
 			maxIn >= 0.5 * nativeInSOL ||
@@ -641,6 +655,8 @@ function collapseHybridTokenNativeSwap(
 		const [outSym, outAmt] = negatives[0];
 		const inSym = "SOL";
 		const inAmt = maxIn; // treat the biggest native in as proceeds
+		// Guard: never emit Handel with identical currencies (e.g. SOL in/out)
+		if (inSym === outSym) return null;
 		// fees likely appear as small native outs (priority/aggregator/rent)
 		let extraTipSOL = sum(outs, (x) => x);
 		if (!Number.isFinite(extraTipSOL) || extraTipSOL < 0) extraTipSOL = 0;
@@ -655,6 +671,7 @@ function collapseHybridTokenNativeSwap(
 		nativeInSOL > 0 &&
 		(srcU.includes("PUMP") || srcU.includes("GMGN"))
 	) {
+		if (nativeInSOL <= nativeOutSOL + 1e-9) return null;
 		const sortedNeg = [...negatives].sort((a, b) => b[1] - a[1]);
 		const [outSym, outAmt] = sortedNeg[0];
 		const otherNeg = totalNeg - outAmt;
@@ -1264,6 +1281,11 @@ function consolidateRowsBySignature(
 		// If it looks like a plain transfer (no DEX/AMM-like market), use real native delta.
 		const treatAsTransfer = !Array.from(new Set(markets)).some(isDexy);
 
+		const tx = txBySig ? txBySig.get(sig) : undefined;
+		const nativeDelta = tx ? getUserLamportsDeltaSOL(tx, address) : null;
+		const posHasNonSOL = [...pos.keys()].some((s) => s !== "SOL");
+		const negNonSolEntries = [...neg.entries()].filter(([s]) => s !== "SOL");
+
 		let type: KSRow["Type"];
 		let innAmt = 0,
 			innSym = "";
@@ -1271,9 +1293,21 @@ function consolidateRowsBySignature(
 			utSym = "";
 
 		if (hasPos && hasNeg) {
-			if (treatAsTransfer && txBySig) {
-				const tx = txBySig.get(sig);
-				const nativeDelta = tx ? getUserLamportsDeltaSOL(tx, address) : null;
+			const forcedTransfer =
+				nativeDelta != null &&
+				nativeDelta <= 0 &&
+				!posHasNonSOL &&
+				negNonSolEntries.length > 0;
+
+			if (forcedTransfer) {
+				const [sym, amt] = negNonSolEntries.reduce(
+					(best, curr) => (!best || curr[1] > best[1] ? curr : best),
+					null as [string, number] | null
+				)!;
+				type = "Overføring-Ut";
+				utSym = sym;
+				utAmt = amt;
+			} else if (treatAsTransfer && txBySig) {
 				if (nativeDelta != null && nativeDelta !== 0) {
 					// 🔁 Changed: classify as Overføring-Inn / Overføring-Ut (not Erverv/Tap) for non-liquidity signatures
 					if (nativeDelta > 0) {
@@ -1289,21 +1323,56 @@ function consolidateRowsBySignature(
 					// fallback to swap-like
 					const p = pickLargest(pos)!;
 					const n = pickLargest(neg)!;
+					// Guard: never emit Handel with identical currencies (e.g. SOL vs WSOL collapse)
+					if (p[0] === n[0]) {
+						const net = p[1] - n[1];
+						if (Math.abs(net) < 1e-9) {
+							// No meaningful movement; keep original rows
+							for (const r of arr) out.push(r);
+							continue;
+						}
+						type = net > 0 ? "Overføring-Inn" : "Overføring-Ut";
+						if (net > 0) {
+							innSym = p[0];
+							innAmt = net;
+						} else {
+							utSym = n[0];
+							utAmt = -net;
+						}
+					} else {
+						type = "Handel";
+						innSym = p[0];
+						innAmt = p[1];
+						utSym = n[0];
+						utAmt = n[1];
+					}
+				}
+			} else {
+				// swap-like
+				const p = pickLargest(pos)!;
+				const n = pickLargest(neg)!;
+				// Guard: never emit Handel with identical currencies (e.g. SOL vs WSOL collapse)
+				if (p[0] === n[0]) {
+					const net = p[1] - n[1];
+					if (Math.abs(net) < 1e-9) {
+						for (const r of arr) out.push(r);
+						continue;
+					}
+					type = net > 0 ? "Overføring-Inn" : "Overføring-Ut";
+					if (net > 0) {
+						innSym = p[0];
+						innAmt = net;
+					} else {
+						utSym = n[0];
+						utAmt = -net;
+					}
+				} else {
 					type = "Handel";
 					innSym = p[0];
 					innAmt = p[1];
 					utSym = n[0];
 					utAmt = n[1];
 				}
-			} else {
-				// swap-like
-				const p = pickLargest(pos)!;
-				const n = pickLargest(neg)!;
-				type = "Handel";
-				innSym = p[0];
-				innAmt = p[1];
-				utSym = n[0];
-				utAmt = n[1];
 			}
 		} else if (hasPos) {
 			const p = pickLargest(pos)!;
@@ -2069,9 +2138,81 @@ function classifyTxToRows(opts: {
 	// === 2b) NEW collapse: token ↔ native SOL (Pump.fun buys/sells)
 	{
 		const lamDelta = getUserLamportsDeltaSOL(tx, address);
+		const ownsFromTok = (t: TokenTransferPlus) =>
+			t.fromUserAccount === address ||
+			(t.fromTokenAccount ? txATAs.has(t.fromTokenAccount) : false);
+		const ownsToTok = (t: TokenTransferPlus) =>
+			t.toUserAccount === address ||
+			(t.toTokenAccount ? txATAs.has(t.toTokenAccount) : false);
+		const anyTokenOut = tokenTransfers.some(
+			(t) => ownsFromTok(t) && !ownsToTok(t)
+		);
+		const anyTokenIn = tokenTransfers.some((t) => ownsToTok(t));
+		const feeTol = userPaidFee && tx.fee ? lamportsToSol(tx.fee) + 1e-9 : 1e-9;
+		// Stake/lock: only token OUT, no token IN, native net ~= fee → treat as Overføring-Ut
+		if (
+			anyTokenOut &&
+			!anyTokenIn &&
+			lamDelta != null &&
+			Math.abs(lamDelta) <= feeTol
+		) {
+			for (const t of tokenTransfers) {
+				if (!ownsFromTok(t) || ownsToTok(t)) continue;
+				const { amountText, symbol } = amountFromTransfer(t, resolveSymDec);
+				if (amountText === "0") continue;
+				pushRow({
+					Type: "Overføring-Ut",
+					Inn: 0,
+					"Inn-Valuta": "",
+					Ut: amountText,
+					"Ut-Valuta": symbol,
+					Marked: srcU.includes("PUMP")
+						? "Pump.fun"
+						: String(source).toUpperCase() || "SPL"
+				});
+			}
+			return rows;
+		}
+
+		// Unstake/claim pattern: only token coming IN, no token going out, native delta is just the fee → treat as Overføring-Inn.
+		const feeOnlyNative =
+			!nativeTransfers.length &&
+			lamDelta &&
+			Math.abs(lamDelta) <=
+				(userPaidFee && tx.fee ? lamportsToSol(tx.fee) + 1e-9 : 1e-9);
+		if (feeOnlyNative && anyTokenIn && !anyTokenOut) {
+			for (const t of tokenTransfers) {
+				if (!ownsToTok(t)) continue;
+				const { amountText, symbol } = amountFromTransfer(t, resolveSymDec);
+				if (amountText === "0") continue;
+				pushRow({
+					Type: "Overføring-Inn",
+					Inn: amountText,
+					"Inn-Valuta": symbol,
+					Ut: 0,
+					"Ut-Valuta": "",
+					Marked: srcU.includes("PUMP")
+						? "Pump.fun"
+						: String(source).toUpperCase() || "SPL"
+				});
+			}
+			return rows;
+		}
 		// Some PUMP/GMGN swaps lack nativeTransfers; fall back to lamport delta so we still classify as Handel.
 		let hybridNative = nativeTransfers;
-		if (!hybridNative.length && lamDelta && Math.abs(lamDelta) > 1e-9) {
+		// If the user only sends out a token and the native delta is just the fee, treat it as a transfer (staking/lockup), not a swap.
+		if (feeOnlyNative && anyTokenOut && !anyTokenIn) {
+			// Skip hybrid collapse so fallback SPL transfer emits Overføring-Ut.
+			// (hybridNative remains as-is, which will skip collapseHybridTokenNativeSwap when empty)
+			hybridNative = [];
+		}
+
+		if (
+			!hybridNative.length &&
+			lamDelta &&
+			Math.abs(lamDelta) > 1e-9 &&
+			!(feeOnlyNative && !anyTokenOut)
+		) {
 			const lamports = Math.round(lamDelta * LAMPORTS_PER_SOL);
 			hybridNative = [
 				lamDelta > 0
@@ -2455,6 +2596,25 @@ const attachSigAndSigner = (
 		const programName = sig ? programNameMap.get(sig!) : undefined;
 		const debugTx = sig ? sigMap?.get(sig) : undefined;
 
+		// If this is a transfer and market is generic, prefer a known program name.
+		const genericMarket = new Set(["SOLANA", "SPL", "UNKNOWN", "SOLANA DEX"]);
+		const markedUpper = String(withTag.Marked || "")
+			.trim()
+			.toUpperCase();
+		const isTransfer =
+			r.Type === "Overføring-Inn" || r.Type === "Overføring-Ut";
+		const isStakingProgram =
+			typeof programName === "string" &&
+			programName.toUpperCase().includes("STAKING");
+		if (programName && isTransfer) {
+			if (genericMarket.has(markedUpper) || markedUpper === "") {
+				withTag.Marked = programName;
+			} else if (isStakingProgram) {
+				// Prefer staking program label even if source reports a DEX
+				withTag.Marked = programName;
+			}
+		}
+
 		// Recipient shown per *row*:
 		// - Overføring-Ut  -> actual counterparty (resolved)
 		// - everything else (Overføring-Inn, Handel, Erverv, Inntekt, Tap, …) -> self
@@ -2473,6 +2633,24 @@ const attachSigAndSigner = (
 		}
 
 		const rowId = rowIdOfTagged(withTag);
+
+		// For transfers, append counterparty last 5 chars to Notat
+		const last5 = (addr?: string) =>
+			typeof addr === "string" && addr.length >= 5 ? addr.slice(-5) : "";
+		if (r.Type === "Overføring-Ut") {
+			const tail = last5(recipient);
+			if (tail) {
+				const sig = extractSigFromNotat(withTag.Notat || "") || "";
+				withTag.Notat = `${tag} - Sent to: ${tail} - sig:${sig}`.trim();
+			}
+		} else if (r.Type === "Overføring-Inn") {
+			const tail = last5(sender);
+			if (tail) {
+				const sig = extractSigFromNotat(withTag.Notat || "") || "";
+				withTag.Notat = `${tag} - Sender: ${tail} - sig:${sig}`.trim();
+			}
+		}
+
 		return {
 			...withTag,
 			signature: sig,
@@ -2673,6 +2851,13 @@ async function scanAddresses(
 	const sigToProgramName = new Map<string, string>();
 	const missing = new Set<string>();
 
+	const humanizeIdlName = (name: string): string =>
+		name
+			.replace(/[_-]+/g, " ")
+			.replace(/\s+/g, " ")
+			.trim()
+			.replace(/\b\w/g, (c) => c.toUpperCase());
+
 	for (let ai = 0; ai < addressesToQuery.length; ai++) {
 		const who = addressesToQuery[ai];
 		const isMain = ai === 0;
@@ -2747,6 +2932,10 @@ async function scanAddresses(
 					}
 				}
 
+				// Override with local program registry label when available
+				const label = programLabelFor(extractedProgramAddress);
+				if (label) extractedProgramName = label;
+
 				if (extractedProgramAddress) {
 					sigToProgramId.set(tx.signature, extractedProgramAddress);
 				}
@@ -2788,6 +2977,29 @@ async function scanAddresses(
 			} catch {}
 		});
 		await Promise.allSettled(jobs);
+	}
+
+	// Resolve program names from on-chain Anchor IDL when missing
+	const unresolvedProgramIds = new Set<string>();
+	for (const [sig, pid] of sigToProgramId.entries()) {
+		if (!sigToProgramName.has(sig)) unresolvedProgramIds.add(pid);
+	}
+	if (unresolvedProgramIds.size > 0) {
+		for (const pid of unresolvedProgramIds) {
+			try {
+				const idlName = await fetchAnchorIdlName(
+					pid,
+					process.env.HELIUS_API_KEY
+				);
+				if (!idlName) continue;
+				const pretty = humanizeIdlName(idlName);
+				for (const [sig, p] of sigToProgramId.entries()) {
+					if (p === pid && !sigToProgramName.has(sig)) {
+						sigToProgramName.set(sig, pretty);
+					}
+				}
+			} catch {}
+		}
 	}
 
 	return { myATAs, sigMap, sigToSigner, sigToProgramId, sigToProgramName };

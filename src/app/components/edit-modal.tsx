@@ -512,7 +512,7 @@ export default function ModalEditor({
 	const programName = currentRow
 		? getProgramNameFromRow(currentRow)
 		: undefined;
-	const programDisplay = programName || programAddress || undefined;
+	const programDisplay = programAddress || undefined;
 
 	return createPortal(
 		<div
