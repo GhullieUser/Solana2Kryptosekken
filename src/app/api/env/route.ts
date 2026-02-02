@@ -8,8 +8,6 @@ export async function GET() {
 	const has = Boolean(key && key.trim());
 	return NextResponse.json({
 		hasKey: has,
-		// never return the key itself; show only a tiny preview
-		preview: has ? key!.slice(0, 6) + "…" : null,
 		runtime: "nodejs"
 	});
 }

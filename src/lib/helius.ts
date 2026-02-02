@@ -72,9 +72,7 @@ export type FetchOptions = {
 
 function resolveHeliusKey(apiKey?: string): string {
 	const key =
-		(apiKey || "").trim() ||
-		(process.env.HELIUS_API_KEY || "").trim() ||
-		(process.env.NEXT_PUBLIC_HELIUS_API_KEY || "").trim();
+		(apiKey || "").trim() || (process.env.HELIUS_API_KEY || "").trim();
 	if (!key) {
 		throw new Error(
 			"Missing Helius API key. Set HELIUS_API_KEY in .env.local or pass heliusKey."
