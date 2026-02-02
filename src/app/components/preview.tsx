@@ -22,7 +22,11 @@ import {
 	FiCopy
 } from "react-icons/fi";
 
-import type { KSRow, KSPreviewRow, OverrideMaps } from "../page";
+import type {
+	KSRow,
+	KSPreviewRow,
+	OverrideMaps
+} from "@/app/csvgenerator/page";
 import ModalEditor, {
 	type EditScope,
 	type TextEditMode
@@ -30,7 +34,7 @@ import ModalEditor, {
 import StyledSelect from "@components/styled-select";
 
 /* ---------- local helpers & constants (duplicated here for isolation) ---------- */
-type IssueKind = "unknown-token" | "unknown-market" | "same-symbol-trade";
+type IssueKind = "unknown-token" | "unknown-market";
 type IssueStatus = "pending" | "renamed" | "ignored";
 type Issue = {
 	kind: IssueKind;
@@ -202,8 +206,8 @@ const DEFAULT_COL_WIDTHS: Record<ColKey, number> = {
 	gebyr: 140,
 	gebyrValuta: 120,
 	marked: 140,
-	notat: 420,
-	explorer: 80,
+	notat: 300,
+	explorer: 120,
 	debug: 70
 };
 
@@ -283,21 +287,9 @@ function SummaryAvatar({
 }
 
 /* ---------- Shared padded wrapper for cells (padding here, td/th are padding:0) ---------- */
-function CellPad({
-	children,
-	className
-}: {
-	children: React.ReactNode;
-	className?: string;
-}) {
+function CellPad({ children }: { children: React.ReactNode }) {
 	return (
-		<div
-			className={`relative px-2 sm:px-3 py-2 overflow-hidden ${
-				className ?? ""
-			}`}
-		>
-			{children}
-		</div>
+		<div className="relative px-2 sm:px-3 py-2 overflow-hidden">{children}</div>
 	);
 }
 
@@ -428,7 +420,6 @@ function EditableCell({
 }) {
 	const isValutaField =
 		field === "Inn-Valuta" || field === "Ut-Valuta" || field === "Gebyr-Valuta";
-	const isNoteField = field === "Notat";
 	const isEmpty = !String(value ?? "").trim();
 
 	if (isValutaField && isEmpty) {
@@ -459,21 +450,7 @@ function EditableCell({
 				title={title || value}
 				canEdit={canEdit}
 			>
-				{isNoteField ? (
-					<div
-						className="leading-snug break-words"
-						style={{
-							display: "-webkit-box",
-							WebkitLineClamp: 2,
-							WebkitBoxOrient: "vertical",
-							overflow: "hidden"
-						}}
-					>
-						{value || ""}
-					</div>
-				) : (
-					<div className="truncate">{value || ""}</div>
-				)}
+				<div className="truncate">{value || ""}</div>
 			</CellChrome>
 		</CellPad>
 	);
@@ -680,7 +657,6 @@ export default function Preview({
 
 	// highlight + scroll-to-signature
 	const [highlightSig, setHighlightSig] = useState<string | null>(null);
-	const [pendingJumpSig, setPendingJumpSig] = useState<string | null>(null);
 
 	// resizable height (only in normal mode)
 	const [previewHeight, setPreviewHeight] = useState<number>(384);
@@ -771,10 +747,6 @@ export default function Preview({
 
 		const sCount = new Map<string, { count: number; sigs: Set<string> }>();
 		const mCount = new Map<string, { count: number; sigs: Set<string> }>();
-		const sameTradeCount = new Map<
-			string,
-			{ count: number; sigs: Set<string> }
-		>();
 
 		for (const r of rows) {
 			const sig = extractSig(r);
@@ -797,23 +769,6 @@ export default function Preview({
 				o.count += 1;
 				if (sig) o.sigs.add(sig);
 				mCount.set(m, o);
-			}
-
-			// same-symbol trades (Handel with identical in/out symbol)
-			const innSym = (r["Inn-Valuta"] || "").trim();
-			const utSym = (r["Ut-Valuta"] || "").trim();
-			if (
-				r.Type === "Handel" &&
-				innSym &&
-				utSym &&
-				innSym.toUpperCase() === utSym.toUpperCase()
-			) {
-				const key = innSym.toUpperCase();
-				const o =
-					sameTradeCount.get(key) || { count: 0, sigs: new Set<string>() };
-				o.count += 1;
-				if (sig) o.sigs.add(sig);
-				sameTradeCount.set(key, o);
 			}
 		}
 
@@ -847,17 +802,6 @@ export default function Preview({
 				newName: hasRename ? overrides.markets[k] : undefined
 			});
 		}
-		for (const [k, v] of sameTradeCount.entries()) {
-			const id = `same-symbol:${k}`;
-			const isIgnored = ignoredKeys.has(id);
-			out.push({
-				kind: "same-symbol-trade",
-				key: k,
-				count: v.count,
-				sigs: [...v.sigs],
-				status: isIgnored ? "ignored" : "pending"
-			});
-		}
 
 		return out.sort((a, b) => {
 			if (a.status !== b.status) {
@@ -875,7 +819,7 @@ export default function Preview({
 
 	function renameIssue(kind: IssueKind, key: string, newVal: string) {
 		if (!newVal.trim()) return;
-		setOverrides((prev) => {
+		setOverrides((prev: OverrideMaps) => {
 			const next = {
 				...prev,
 				symbols: { ...prev.symbols },
@@ -888,12 +832,7 @@ export default function Preview({
 		});
 	}
 	function ignoreIssue(kind: IssueKind, key: string) {
-		const id =
-			kind === "unknown-token"
-				? `symbol:${key}`
-				: kind === "unknown-market"
-				? `market:${key}`
-				: `same-symbol:${key}`;
+		const id = `${kind === "unknown-token" ? "symbol" : "market"}:${key}`;
 		setIgnoredKeys((prev) => {
 			const next = new Set(prev);
 			if (next.has(id)) next.delete(id);
@@ -906,12 +845,9 @@ export default function Preview({
 			const next = new Set(prev);
 			for (const it of issues) {
 				if (it.status !== "pending") continue;
-				const id =
-					it.kind === "unknown-token"
-						? `symbol:${it.key}`
-						: it.kind === "unknown-market"
-						? `market:${it.key}`
-						: `same-symbol:${it.key}`;
+				const id = `${it.kind === "unknown-token" ? "symbol" : "market"}:${
+					it.key
+				}`;
 				next.add(id);
 			}
 			return next;
@@ -1002,10 +938,17 @@ export default function Preview({
 		return () => window.removeEventListener("keydown", onKey);
 	}, [canUndo, canRedo, undo, redo]);
 
-	/* ====== Virtualization (fixed row height) ====== */
-	const rowH = 44;
-	const overscan = 8;
+	/* ====== Virtualization state ====== */
+	const [rowH, setRowH] = useState(40);
+	const overscan = 10;
 
+	const handleMeasureRow = useCallback(
+		(h: number) => {
+			if (!h) return;
+			if (Math.abs(h - rowH) > 1) setRowH(h);
+		},
+		[rowH]
+	);
 
 	function openEditCell(
 		idxOriginal: number,
@@ -1014,7 +957,7 @@ export default function Preview({
 	) {
 		const sig = rows ? extractSig(rows[idxOriginal]) : undefined;
 		const signer = rows?.[idxOriginal]?.signer;
-		setEditTarget({ idxOriginal, field, sig, signer, label: field });
+		setEditTarget({ idxOriginal, field, sig, signer, label: String(field) });
 		setEditDraft(
 			field === "Type" && !TYPE_OPTIONS.includes(currentValue as KSType)
 				? TYPE_OPTIONS[0]
@@ -1179,7 +1122,7 @@ export default function Preview({
 			editTarget.field === "Marked" &&
 			originalMarket
 		) {
-			setOverrides((prev) => ({
+			setOverrides((prev: OverrideMaps) => ({
 				...prev,
 				markets: { ...(prev.markets ?? {}), [originalMarket]: newVal }
 			}));
@@ -1197,10 +1140,11 @@ export default function Preview({
 		if (!sig) return;
 		setActiveTab("preview");
 		setOpenFilter(null);
-		const existsInAll = effectiveRows.some((r) => extractSig(r) === sig);
 		const foundInCurrent = displayed.some(({ r }) => extractSig(r) === sig);
-		if (existsInAll && !foundInCurrent) setFilters({});
-		setPendingJumpSig(sig);
+		if (!foundInCurrent) {
+			setFilters({});
+		}
+		setHighlightSig(sig);
 		lastSnapSigRef.current = null;
 		if (lastHighlightTimerRef.current) {
 			window.clearTimeout(lastHighlightTimerRef.current);
@@ -1209,7 +1153,6 @@ export default function Preview({
 			setHighlightSig((curr) => (curr === sig ? null : curr));
 		}, 6000);
 	}
-
 
 	/* ===================== FILTERS ===================== */
 	const optionCounts = useMemo(() => {
@@ -1287,22 +1230,6 @@ export default function Preview({
 	const filtered = sorted.filter(({ r }) => matchesFilters(r));
 	const displayed = filtered;
 
-	// Execute pending jumps once preview is active and rows are available.
-	useEffect(() => {
-		if (activeTab !== "preview" || !pendingJumpSig) return;
-		const sig = pendingJumpSig;
-		const idx = displayed.findIndex(({ r }) => extractSig(r) === sig);
-		if (idx < 0) return;
-		const container = previewContainerRef.current;
-		if (!container) return;
-		const target = Math.max(0, idx * rowH - Math.floor(container.clientHeight / 2));
-		container.scrollTop = target;
-		setScrollTop(target);
-		setHighlightSig(sig);
-		setPendingJumpSig(null);
-	}, [activeTab, pendingJumpSig, displayed, rowH]);
-
-
 	/* ===================== SUMMARY (by currency + type) ===================== */
 	const [summaryMarketByCurrency, setSummaryMarketByCurrency] = useState<
 		Record<string, string>
@@ -1320,9 +1247,7 @@ export default function Preview({
 
 		const normalizeSummaryType = (
 			typeRaw: unknown,
-			side: "inn" | "ut",
-			marketRaw: unknown,
-			noteRaw: unknown
+			side: "inn" | "ut"
 		): string => {
 			const t = String(typeRaw ?? "").trim() || "(ukjent)";
 			if (t === "Handel") {
@@ -1350,13 +1275,12 @@ export default function Preview({
 			typeRaw: unknown,
 			amount: number,
 			side: "inn" | "ut",
-			marketRaw: unknown,
-			noteRaw: unknown
+			marketRaw: unknown
 		) => {
 			const currency = String(currencyRaw ?? "").trim();
 			if (!currency) return;
 			if (!amount) return;
-			const type = normalizeSummaryType(typeRaw, side, marketRaw, noteRaw);
+			const type = normalizeSummaryType(typeRaw, side);
 			addToMap(allMap, currency, type, amount);
 			const market = String(marketRaw ?? "").trim();
 			if (market) {
@@ -1377,15 +1301,8 @@ export default function Preview({
 		const allMap = new Map<string, Map<string, number>>();
 		const byMarketMap = new Map<string, Map<string, Map<string, number>>>();
 		for (const { r } of displayed) {
-			add(
-				r["Inn-Valuta"],
-				r.Type,
-				parseAmount(r.Inn),
-				"inn",
-				r.Marked,
-				r.Notat
-			);
-			add(r["Ut-Valuta"], r.Type, parseAmount(r.Ut), "ut", r.Marked, r.Notat);
+			add(r["Inn-Valuta"], r.Type, parseAmount(r.Inn), "inn", r.Marked);
+			add(r["Ut-Valuta"], r.Type, parseAmount(r.Ut), "ut", r.Marked);
 		}
 
 		const summaryTypeOrderList: string[] = [];
@@ -1589,13 +1506,23 @@ export default function Preview({
 			idx = allSorted.findIndex(({ r }) => extractSig(r) === highlightSig);
 		}
 
-		let tries = 0;
-		const tick = () => {
-			if (trySnapToRow()) return;
-			if (tries++ < 30) requestAnimationFrame(tick);
-		};
-		requestAnimationFrame(tick);
-	}, [highlightSig, activeTab, displayed, baseIndexed, sortOrder]);
+		if (idx >= 0) {
+			centerOn(idx * rowH);
+			let tries = 0;
+			const tick = () => {
+				if (trySnapToRow()) return;
+				if (tries++ < 30) requestAnimationFrame(tick);
+			};
+			requestAnimationFrame(tick);
+		} else {
+			let tries = 0;
+			const tick = () => {
+				if (trySnapToRow()) return;
+				if (tries++ < 30) requestAnimationFrame(tick);
+			};
+			requestAnimationFrame(tick);
+		}
+	}, [highlightSig, activeTab, displayed, baseIndexed, rowH, sortOrder]);
 
 	// Restore saved scroll when (re)entering preview
 	useEffect(() => {
@@ -1911,7 +1838,11 @@ export default function Preview({
 	}
 
 	/* ---------- table renderer ---------- */
-	function PreviewTable() {
+	function PreviewTable({
+		onMeasureRow
+	}: {
+		onMeasureRow: (h: number) => void;
+	}) {
 		const total = displayed.length;
 		const startIndex = Math.max(0, Math.floor(scrollTop / rowH) - overscan);
 		const endIndex = Math.min(
@@ -1919,6 +1850,15 @@ export default function Preview({
 			Math.ceil((scrollTop + viewportH) / rowH) + overscan
 		);
 		const visible = total > 0 ? displayed.slice(startIndex, endIndex + 1) : [];
+
+		const measureRowRef = useCallback(
+			(el: HTMLTableRowElement | null) => {
+				if (!el) return;
+				const h = el.getBoundingClientRect().height;
+				if (h) onMeasureRow(h);
+			},
+			[onMeasureRow]
+		);
 
 		return (
 			<table
@@ -2028,6 +1968,8 @@ export default function Preview({
 									? "[&>td]:bg-black/10 dark:[&>td]:bg-white/5"
 									: "");
 
+							const attachMeasure = idx === 0 ? { ref: measureRowRef } : {};
+
 							return (
 								<tr
 									key={rowKey}
@@ -2038,6 +1980,7 @@ export default function Preview({
 										zebraClass,
 										"data-[hl=true]:[&>td]:!bg-amber-50 dark:data-[hl=true]:[&>td]:!bg-amber-500/20"
 									].join(" ")}
+									{...attachMeasure}
 								>
 									<td style={{ padding: 0 }}>
 										<TidspunktCell
@@ -2411,18 +2354,7 @@ export default function Preview({
 																r["Ut-Valuta"] === it.key
 															);
 														}
-														if (it.kind === "unknown-market") {
-															return r.Marked === it.key;
-														}
-														const innSym = (r["Inn-Valuta"] || "").trim();
-														const utSym = (r["Ut-Valuta"] || "").trim();
-														return (
-															r.Type === "Handel" &&
-															innSym &&
-															utSym &&
-															innSym.toUpperCase() === it.key.toUpperCase() &&
-															utSym.toUpperCase() === it.key.toUpperCase()
-														);
+														return r.Marked === it.key;
 													}) ?? [];
 
 												return (
@@ -2438,14 +2370,9 @@ export default function Preview({
 																				no: "Ukjent token",
 																				en: "Unknown token"
 																		  })
-																		: it.kind === "unknown-market"
-																		? tr({
+																		: tr({
 																				no: "Ukjent marked",
 																				en: "Unknown market"
-																		  })
-																		: tr({
-																				no: "Lik inn/ut i handel",
-																				en: "Same in/out trade"
 																		  })}
 																	: <code className="font-mono">{it.key}</code>
 																	{statusBadge}
@@ -2459,40 +2386,36 @@ export default function Preview({
 															</div>
 
 															<div className="flex flex-wrap items-center gap-2 sm:justify-end">
-																{it.kind === "same-symbol-trade" ? null : (
-																	<>
-																		<input
-																			id={inputId}
-																			defaultValue={it.newName ?? ""}
-																			placeholder={
-																				it.kind === "unknown-token"
-																					? tr({
-																							no: "Ny tokensymbol (BTC, ETH, SOL...)",
-																							en: "New token symbol (BTC, ETH, SOL...)"
-																					  })
-																					: tr({
-																							no: "Nytt markedsnavn",
-																							en: "New market name"
-																					  })
-																			}
-																			className="w-full sm:w-56 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
-																		/>
-																		<button
-																			type="button"
-																			onClick={() => {
-																				const el = document.getElementById(
-																					inputId
-																				) as HTMLInputElement | null;
-																				const val = (el?.value ?? "").trim();
-																				if (!val) return;
-																				renameIssue(it.kind, it.key, val);
-																			}}
-																			className="rounded-md bg-indigo-600 text-white px-2 py-1 text-sm disabled:opacity-60 dark:bg-indigo-500"
-																		>
-																			{tr({ no: "Lagre", en: "Save" })}
-																		</button>
-																	</>
-																)}
+																<input
+																	id={inputId}
+																	defaultValue={it.newName ?? ""}
+																	placeholder={
+																		it.kind === "unknown-token"
+																			? tr({
+																					no: "Ny tokensymbol (BTC, ETH, SOL...)",
+																					en: "New token symbol (BTC, ETH, SOL...)"
+																			  })
+																			: tr({
+																					no: "Nytt markedsnavn",
+																					en: "New market name"
+																			  })
+																	}
+																	className="w-full sm:w-56 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+																/>
+																<button
+																	type="button"
+																	onClick={() => {
+																		const el = document.getElementById(
+																			inputId
+																		) as HTMLInputElement | null;
+																		const val = (el?.value ?? "").trim();
+																		if (!val) return;
+																		renameIssue(it.kind, it.key, val);
+																	}}
+																	className="rounded-md bg-indigo-600 text-white px-2 py-1 text-sm disabled:opacity-60 dark:bg-indigo-500"
+																>
+																	{tr({ no: "Lagre", en: "Save" })}
+																</button>
 																<button
 																	type="button"
 																	onClick={() => ignoreIssue(it.kind, it.key)}
@@ -2897,7 +2820,7 @@ export default function Preview({
 											style={{ height: previewHeight }}
 											onClick={() => setOpenFilter(null)}
 										>
-											<PreviewTable />
+											<PreviewTable onMeasureRow={handleMeasureRow} />
 										</div>
 
 										<div
@@ -3023,9 +2946,8 @@ export default function Preview({
 														"h-full overflow-auto overscroll-contain rounded-xl ring-1 ring-slate-200 contain-content dark:ring-white/10",
 														isResizingCol ? "select-none cursor-col-resize" : ""
 													].join(" ")}
-													style={{}}
 												>
-													<PreviewTable />
+													<PreviewTable onMeasureRow={handleMeasureRow} />
 												</div>
 											</div>
 										</div>

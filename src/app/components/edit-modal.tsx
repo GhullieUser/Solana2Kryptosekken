@@ -11,7 +11,7 @@ import {
 	IoOpenOutline
 } from "react-icons/io5";
 
-import type { KSRow, KSPreviewRow } from "../page";
+import type { KSRow, KSPreviewRow } from "@/app/csvgenerator/page";
 import StyledSelect from "./styled-select";
 import { useLocale } from "./locale-provider";
 
@@ -512,7 +512,7 @@ export default function ModalEditor({
 	const programName = currentRow
 		? getProgramNameFromRow(currentRow)
 		: undefined;
-	const programDisplay = programAddress || undefined;
+	const programDisplay = programName || programAddress || undefined;
 
 	return createPortal(
 		<div
