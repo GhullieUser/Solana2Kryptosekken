@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import type { ResponseCookie } from "next/dist/compiled/@edge-runtime/cookies";
 import { createServerClient } from "@supabase/ssr";
+
+type CookieToSet = {
+	name: string;
+	value: string;
+	options?: Partial<ResponseCookie>;
+};
 
 export async function middleware(request: NextRequest) {
 	const response = NextResponse.next();
@@ -16,7 +23,7 @@ export async function middleware(request: NextRequest) {
 			getAll() {
 				return request.cookies.getAll();
 			},
-			setAll(cookiesToSet) {
+			setAll(cookiesToSet: CookieToSet[]) {
 				cookiesToSet.forEach(({ name, value, options }) => {
 					response.cookies.set(name, value, options);
 				});

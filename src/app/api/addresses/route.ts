@@ -15,7 +15,7 @@ const deleteSchema = z.object({
 });
 
 export async function GET() {
-	const supabase = createSupabaseRouteClient();
+	const supabase = await createSupabaseRouteClient();
 	const { data: userData, error: userError } = await supabase.auth.getUser();
 	if (userError || !userData?.user) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -35,7 +35,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-	const supabase = createSupabaseRouteClient();
+	const supabase = await createSupabaseRouteClient();
 	const { data: userData, error: userError } = await supabase.auth.getUser();
 	if (userError || !userData?.user) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-	const supabase = createSupabaseRouteClient();
+	const supabase = await createSupabaseRouteClient();
 	const { data: userData, error: userError } = await supabase.auth.getUser();
 	if (userError || !userData?.user) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

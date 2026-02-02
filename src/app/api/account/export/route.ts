@@ -4,7 +4,7 @@ import { createSupabaseRouteClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-	const supabase = createSupabaseRouteClient();
+	const supabase = await createSupabaseRouteClient();
 	const { data: userData, error: userError } = await supabase.auth.getUser();
 	if (userError || !userData?.user) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
