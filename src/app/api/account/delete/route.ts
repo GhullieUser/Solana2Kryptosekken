@@ -14,6 +14,10 @@ export async function DELETE() {
 		.from("search_addresses")
 		.delete()
 		.eq("user_id", userData.user.id);
+	await supabase
+		.from("generated_csvs")
+		.delete()
+		.eq("user_id", userData.user.id);
 
 	if (error) {
 		return NextResponse.json({ error: error.message }, { status: 500 });

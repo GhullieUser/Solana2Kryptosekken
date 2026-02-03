@@ -76,16 +76,16 @@ function TypeBadge({ type }: { type?: string }) {
 		type === "Handel"
 			? "ring-indigo-200 bg-indigo-100 text-indigo-700 dark:ring-indigo-900/40 dark:bg-indigo-500/15 dark:text-indigo-300"
 			: type === "Overføring-Inn"
-			? "ring-emerald-200 bg-emerald-100 text-emerald-700 dark:ring-emerald-900/40 dark:bg-emerald-500/15 dark:text-emerald-300"
-			: type === "Overføring-Ut"
-			? "ring-rose-200 bg-rose-100 text-rose-700 dark:ring-rose-900/40 dark:bg-rose-500/15 dark:text-rose-300"
-			: type === "Erverv"
-			? "ring-sky-200 bg-sky-100 text-sky-700 dark:ring-sky-900/40 dark:bg-sky-500/15 dark:text-sky-300"
-			: type === "Tap"
-			? "ring-amber-200 bg-amber-100 text-amber-800 dark:ring-amber-900/40 dark:bg-amber-500/15 dark:text-amber-300"
-			: type === "Inntekt"
-			? "ring-green-200 bg-green-100 text-green-700 dark:ring-green-900/40 dark:bg-green-500/15 dark:text-green-300"
-			: "ring-slate-200 bg-slate-100 text-slate-700 dark:ring-white/10 dark:bg-white/10 dark:text-slate-200";
+				? "ring-emerald-200 bg-emerald-100 text-emerald-700 dark:ring-emerald-900/40 dark:bg-emerald-500/15 dark:text-emerald-300"
+				: type === "Overføring-Ut"
+					? "ring-rose-200 bg-rose-100 text-rose-700 dark:ring-rose-900/40 dark:bg-rose-500/15 dark:text-rose-300"
+					: type === "Erverv"
+						? "ring-sky-200 bg-sky-100 text-sky-700 dark:ring-sky-900/40 dark:bg-sky-500/15 dark:text-sky-300"
+						: type === "Tap"
+							? "ring-amber-200 bg-amber-100 text-amber-800 dark:ring-amber-900/40 dark:bg-amber-500/15 dark:text-amber-300"
+							: type === "Inntekt"
+								? "ring-green-200 bg-green-100 text-green-700 dark:ring-green-900/40 dark:bg-green-500/15 dark:text-green-300"
+								: "ring-slate-200 bg-slate-100 text-slate-700 dark:ring-white/10 dark:bg-white/10 dark:text-slate-200";
 	return <span className={`${base} ${cls}`}>{type || "—"}</span>;
 }
 
@@ -579,7 +579,7 @@ export default function ModalEditor({
 									getSenderFromRow(currentRow)
 										? `https://solscan.io/address/${getSenderFromRow(
 												currentRow
-										  )}`
+											)}`
 										: undefined
 								}
 							/>
@@ -957,7 +957,7 @@ function ModalActions({
 						</ul>
 					</div>,
 					document.body
-			  )
+				)
 			: null;
 
 	return (

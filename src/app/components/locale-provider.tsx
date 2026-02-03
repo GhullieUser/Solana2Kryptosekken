@@ -27,7 +27,22 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
 	useEffect(() => {
 		try {
 			const saved = localStorage.getItem("locale");
-			if (saved === "no" || saved === "en") setLocaleState(saved);
+			if (saved === "no" || saved === "en") {
+				setLocaleState(saved);
+				return;
+			}
+
+			const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+			const lang = (navigator.language || "").toLowerCase();
+			const isNorway =
+				lang.startsWith("no") ||
+				lang.startsWith("nb") ||
+				lang.startsWith("nn") ||
+				tz === "Europe/Oslo";
+
+			if (!isNorway) {
+				setLocaleState("en");
+			}
 		} catch {}
 	}, []);
 

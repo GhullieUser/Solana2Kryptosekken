@@ -45,11 +45,11 @@ function ThemePill() {
 		<button
 			type="button"
 			onClick={toggle}
-			className="inline-flex h-[24px] w-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+			className="inline-flex h-[28px] sm:h-[32px] w-[36px] sm:w-[40px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
 			title={tr({ no: "Bytt lys/mørk", en: "Toggle light/dark" })}
 			aria-label={tr({ no: "Bytt lys/mørk", en: "Toggle light/dark" })}
 		>
-			{isDark ? <FiMoon className="h-4 w-4" /> : <FiSun className="h-4 w-4" />}
+			{isDark ? <FiMoon className="h-4 w-4 sm:h-5 sm:w-5" /> : <FiSun className="h-4 w-4 sm:h-5 sm:w-5" />}
 		</button>
 	);
 }
@@ -57,14 +57,14 @@ function ThemePill() {
 function LocalePill() {
 	const { locale, setLocale, tr } = useLocale();
 	const baseBtn =
-		"inline-flex h-[20px] w-[24px] items-center justify-center rounded-full leading-none transition";
+		"inline-flex h-[22px] sm:h-[24px] w-[26px] sm:w-[28px] items-center justify-center rounded-full leading-none transition";
 	const selected = "opacity-100 saturate-150";
 	const unselected =
-		"opacity-60 saturate-0 hover:opacity-100 hover:saturate-100 hover:bg-black/5 dark:hover:bg-white/10";
+		"opacity-60 saturate-0 hover:opacity-100 hover:saturate-100";
 
 	return (
 		<div
-			className="inline-flex h-[24px] items-center gap-1 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-1.5 py-1 text-xs font-medium shadow-sm dark:shadow-black/25"
+			className="inline-flex h-[28px] sm:h-[32px] items-center gap-1 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-1.5 py-1 text-xs font-medium shadow-sm dark:shadow-black/25"
 			aria-label={tr({ no: "Språk", en: "Language" })}
 		>
 			<button
@@ -77,9 +77,9 @@ function LocalePill() {
 				<Image
 					src="/flag-no.svg"
 					alt={tr({ no: "Norsk", en: "Norwegian" })}
-					width={18}
-					height={13}
-					className="block"
+					width={20}
+					height={15}
+					className="block w-[18px] h-[13px] sm:w-[20px] sm:h-[15px]"
 					priority
 				/>
 			</button>
@@ -93,9 +93,9 @@ function LocalePill() {
 				<Image
 					src="/flag-gb.svg"
 					alt={tr({ no: "English", en: "English" })}
-					width={18}
-					height={13}
-					className="block"
+					width={20}
+					height={15}
+					className="block w-[18px] h-[13px] sm:w-[20px] sm:h-[15px]"
 					priority
 				/>
 			</button>
@@ -142,28 +142,28 @@ export default function AppHeader() {
 	}
 
 	return (
-		<header className="fixed top-0 inset-x-0 z-40 border-b border-slate-200/70 dark:border-white/10 bg-white/80 dark:bg-[#0b1220]/80 backdrop-blur">
-			<div className="relative mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-3">
-				<div className="flex items-center gap-2 text-xs font-medium text-slate-800 dark:text-slate-200">
+		<header className="fixed top-0 inset-x-0 z-40 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+			<div className="relative mx-auto max-w-6xl px-4 py-3 sm:py-4 flex items-center justify-between gap-3">
+				<div className="flex items-center gap-2 sm:gap-3 font-medium text-slate-800 dark:text-slate-200">
 					<Image
 						src="/Sol2KS_logo.svg"
 						alt="Sol2KS"
-						width={26}
-						height={26}
-						className="block"
+						width={32}
+						height={32}
+						className="block w-6 h-6 sm:w-8 sm:h-8"
 					/>
 					<Link
 						href="/"
-						className="inline-flex items-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 py-1 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+						className="inline-flex items-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 py-1 sm:py-1.5 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition text-xs sm:text-sm"
 					>
 						Solana → Kryptosekken
 					</Link>
 				</div>
 
-				<nav className="hidden sm:flex absolute left-1/2 -translate-x-1/2 items-center justify-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200">
+				<nav className="hidden sm:flex absolute left-1/2 -translate-x-1/2 items-center justify-center gap-2 font-medium text-slate-700 dark:text-slate-200 text-sm">
 					<Link
 						href="/"
-						className={`rounded-full px-3 py-1 transition ${
+						className={`rounded-full px-4 py-1.5 transition ${
 							pathname === "/"
 								? "text-slate-900 dark:text-white"
 								: "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
@@ -173,7 +173,7 @@ export default function AppHeader() {
 					</Link>
 					<Link
 						href="/csvgenerator"
-						className={`rounded-full px-3 py-1 transition ${
+						className={`rounded-full px-4 py-1.5 transition ${
 							pathname === "/csvgenerator"
 								? "text-slate-900 dark:text-white"
 								: "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
@@ -191,30 +191,30 @@ export default function AppHeader() {
 							<button
 								type="button"
 								onClick={() => setUserMenuOpen((v) => !v)}
-								className="inline-flex h-[24px] items-center justify-center gap-1 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
-							>
-								<FiUser className="h-3.5 w-3.5" />
-								<span className="max-w-[120px] truncate">
-									{userEmail ?? tr({ no: "Bruker", en: "User" })}
-								</span>
-								<FiChevronDown className="h-3.5 w-3.5 opacity-70" />
+							className="inline-flex h-[28px] sm:h-[32px] items-center justify-center gap-1 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+						>
+							<FiUser className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+							<span className="max-w-[120px] truncate">
+								{userEmail ?? tr({ no: "Bruker", en: "User" })}
+							</span>
+							<FiChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 opacity-70" />
 							</button>
 							{userMenuOpen && (
 								<div className="absolute right-0 mt-2 min-w-full w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50">
 									<Link
 										href="/user"
-										className="flex items-center gap-2 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
+										className="flex items-center gap-2 px-3 py-2 text-xs sm:text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
 										onClick={() => setUserMenuOpen(false)}
 									>
-										<FiUser className="h-3.5 w-3.5" />
+										<FiUser className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
 										{tr({ no: "Vis profil", en: "View profile" })}
 									</Link>
 									<button
 										type="button"
 										onClick={signOut}
-										className="flex w-full items-center gap-2 px-3 py-2 text-xs text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+										className="flex w-full items-center gap-2 px-3 py-2 text-xs sm:text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-500/10"
 									>
-										<FiLogOut className="h-3.5 w-3.5" />
+										<FiLogOut className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
 										{tr({ no: "Logg ut", en: "Sign out" })}
 									</button>
 								</div>
@@ -223,7 +223,7 @@ export default function AppHeader() {
 					) : (
 						<Link
 							href="/signin"
-							className="inline-flex h-[24px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+							className="inline-flex h-[28px] sm:h-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
 						>
 							{tr({ no: "Logg inn", en: "Sign in" })}
 						</Link>

@@ -88,6 +88,10 @@ export async function DELETE(req: Request) {
 		if (error) {
 			return NextResponse.json({ error: error.message }, { status: 500 });
 		}
+		await supabase
+			.from("generated_csvs")
+			.delete()
+			.eq("user_id", userData.user.id);
 		return NextResponse.json({ ok: true });
 	}
 
@@ -97,6 +101,11 @@ export async function DELETE(req: Request) {
 
 	const { error } = await supabase
 		.from("search_addresses")
+		.delete()
+		.eq("user_id", userData.user.id)
+		.eq("address", address);
+	await supabase
+		.from("generated_csvs")
 		.delete()
 		.eq("user_id", userData.user.id)
 		.eq("address", address);

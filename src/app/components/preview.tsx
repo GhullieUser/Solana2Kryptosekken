@@ -323,7 +323,7 @@ function CellChrome({
 					? (e) => {
 							e.stopPropagation();
 							onEdit();
-					  }
+						}
 					: undefined
 			}
 			role={clickable ? "button" : undefined}
@@ -335,7 +335,7 @@ function CellChrome({
 								e.preventDefault();
 								onEdit();
 							}
-					  }
+						}
 					: undefined
 			}
 		>
@@ -961,7 +961,7 @@ export default function Preview({
 		setEditDraft(
 			field === "Type" && !TYPE_OPTIONS.includes(currentValue as KSType)
 				? TYPE_OPTIONS[0]
-				: currentValue ?? ""
+				: (currentValue ?? "")
 		);
 		setEditScope("one");
 		setEditOpen(true);
@@ -992,8 +992,8 @@ export default function Preview({
 					typeof prevValue === "string"
 						? prevValue
 						: prevValue == null
-						? ""
-						: String(prevValue);
+							? ""
+							: String(prevValue);
 				if (!isNotesField || textEditMode === "replace") return newVal;
 				if (textEditMode === "prefix") return `${newVal}${prevText}`;
 				return `${prevText}${newVal}`;
@@ -1737,7 +1737,7 @@ export default function Preview({
 						</div>
 					</div>,
 					document.body
-			  )
+				)
 			: null;
 
 		return (
@@ -2180,7 +2180,7 @@ export default function Preview({
 					</div>
 				</div>,
 				document.body
-		  )
+			)
 		: null;
 
 	return (
@@ -2369,11 +2369,11 @@ export default function Preview({
 																		? tr({
 																				no: "Ukjent token",
 																				en: "Unknown token"
-																		  })
+																			})
 																		: tr({
 																				no: "Ukjent marked",
 																				en: "Unknown market"
-																		  })}
+																			})}
 																	: <code className="font-mono">{it.key}</code>
 																	{statusBadge}
 																</div>
@@ -2394,11 +2394,11 @@ export default function Preview({
 																			? tr({
 																					no: "Ny tokensymbol (BTC, ETH, SOL...)",
 																					en: "New token symbol (BTC, ETH, SOL...)"
-																			  })
+																				})
 																			: tr({
 																					no: "Nytt markedsnavn",
 																					en: "New market name"
-																			  })
+																				})
 																	}
 																	className="w-full sm:w-56 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
 																/>
@@ -2425,7 +2425,7 @@ export default function Preview({
 																			? tr({
 																					no: "Angre ignorering",
 																					en: "Undo ignore"
-																			  })
+																				})
 																			: tr({ no: "Ignorer", en: "Ignore" })
 																	}
 																>
@@ -2450,11 +2450,11 @@ export default function Preview({
 																		? tr({
 																				no: "Skjul forekomster",
 																				en: "Hide occurrences"
-																		  })
+																			})
 																		: tr({
 																				no: `Vis forekomster (${occurrenceRows.length})`,
 																				en: `Show occurrences (${occurrenceRows.length})`
-																		  })}
+																			})}
 																</button>
 															</div>
 														</div>
@@ -2489,11 +2489,11 @@ export default function Preview({
 																								? tr({
 																										no: "Gå til rad i forhåndsvisning eller åpne i Solscan",
 																										en: "Jump to row in preview or open in Solscan"
-																								  })
+																									})
 																								: tr({
 																										no: "Ingen signatur funnet",
 																										en: "No signature found"
-																								  })
+																									})
 																						}
 																					>
 																						<div className="flex items-center justify-between gap-2">
@@ -2615,7 +2615,7 @@ export default function Preview({
 														const selMarket =
 															summaryMarketByCurrency[key] ?? "";
 														const typeTotals = selMarket
-															? byMarket[selMarket] ?? []
+															? (byMarket[selMarket] ?? [])
 															: allTypeTotals;
 														const marketOptions = [
 															{
@@ -2989,7 +2989,7 @@ export default function Preview({
 												? tr({
 														no: "Løs ‘Trenger oppmerksomhet’ først",
 														en: "Resolve ‘Needs attention’ first"
-												  })
+													})
 												: tr({ no: "Last ned CSV", en: "Download CSV" })
 										}
 									>

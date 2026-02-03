@@ -195,11 +195,12 @@ const PROGRAM_IDL_NAME_CACHE = new Map<string, string | null>();
 
 function readU32LE(buf: Buffer, offset: number): number {
 	return (
-		buf[offset] |
-		(buf[offset + 1] << 8) |
-		(buf[offset + 2] << 16) |
-		(buf[offset + 3] << 24)
-	) >>> 0;
+		(buf[offset] |
+			(buf[offset + 1] << 8) |
+			(buf[offset + 2] << 16) |
+			(buf[offset + 3] << 24)) >>>
+		0
+	);
 }
 
 /**
@@ -545,8 +546,8 @@ export async function fetchTokenMetadataMap(
 					typeof decimalsRaw === "number"
 						? decimalsRaw
 						: Number.isFinite(parseInt(decimalsRaw))
-						? parseInt(decimalsRaw)
-						: undefined;
+							? parseInt(decimalsRaw)
+							: undefined;
 
 				out.set(mint, {
 					symbol:

@@ -19,11 +19,23 @@ export async function GET() {
 		return NextResponse.json({ error: error.message }, { status: 500 });
 	}
 
+	const { data: csvs, error: csvError } = await supabase
+		.from("generated_csvs")
+		.select(
+			"address,label,raw_count,processed_count,from_iso,to_iso,include_nft,use_oslo,dust_mode,dust_threshold,dust_interval,created_at,updated_at"
+		)
+		.order("updated_at", { ascending: false });
+
+	if (csvError) {
+		return NextResponse.json({ error: csvError.message }, { status: 500 });
+	}
+
 	return NextResponse.json({
 		user: {
 			id: userData.user.id,
 			email: userData.user.email
 		},
-		addresses: data ?? []
+		addresses: data ?? [],
+		generated_csvs: csvs ?? []
 	});
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { z } from "zod";
 import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
@@ -16,12 +16,14 @@ import {
 	FiX,
 	FiTag,
 	FiInfo,
-	FiActivity
+	FiActivity,
+	FiFileText
 } from "react-icons/fi";
 import type { HeliusTx } from "@/lib/helius";
 import { IoWalletOutline, IoOpenOutline } from "react-icons/io5";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 // ⬇️ Preview card
@@ -168,11 +170,25 @@ type AddressHistoryItem = {
 	label?: string | null;
 };
 
-export default function CSVGeneratorPage() {
+type CsvVersion = {
+	id: string;
+	address: string;
+	label?: string | null;
+	from_iso?: string | null;
+	to_iso?: string | null;
+	updated_at?: string | null;
+};
+
+function CSVGeneratorPageInner() {
 	const { tr, locale } = useLocale();
 	const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+	const searchParams = useSearchParams();
 	const formRef = useRef<HTMLFormElement | null>(null);
 	const lastPayloadRef = useRef<Payload | null>(null);
+	const lastCountsRef = useRef<{
+		rawCount: number;
+		processedCount: number;
+	} | null>(null);
 	const abortRef = useRef<AbortController | null>(null);
 	const cacheKeyRef = useRef<string | null>(null);
 
@@ -200,6 +216,184 @@ export default function CSVGeneratorPage() {
 	const [addrHistory, setAddrHistory] = useState<AddressHistoryItem[]>([]);
 	const [addrMenuOpen, setAddrMenuOpen] = useState(false);
 	const [isAuthed, setIsAuthed] = useState(false);
+	const [csvVersions, setCsvVersions] = useState<CsvVersion[]>([]);
+	const [csvVersionId, setCsvVersionId] = useState<string | null>(null);
+
+	useEffect(() => {
+		const addr = searchParams.get("address");
+		if (addr && !address.trim()) {
+			setAddress(addr);
+		}
+	}, [address, searchParams]);
+
+	const formatDateRange = useCallback(
+		(from?: string | null, to?: string | null) => {
+			if (!from && !to) return null;
+			const fmt = (v?: string | null) => {
+				if (!v) return "";
+				const d = new Date(v);
+				if (Number.isNaN(d.getTime())) return v;
+				return d.toLocaleDateString(locale === "en" ? "en-GB" : "no-NO", {
+					year: "numeric",
+					month: "short",
+					day: "2-digit"
+				});
+			};
+			const a = fmt(from);
+			const b = fmt(to);
+			if (a && b) return `${a} – ${b}`;
+			return a || b;
+		},
+		[locale]
+	);
+
+	const extractSigFromNotat = useCallback((notat?: string) => {
+		const m = notat?.match(/sig:([1-9A-HJ-NP-Za-km-z]+)/);
+		return m?.[1];
+	}, []);
+
+	const parseCsvToRows = useCallback((csv: string): KSPreviewRow[] => {
+		const out: KSPreviewRow[] = [];
+		const lines = csv.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+		const rows: string[][] = [];
+		let current = "";
+		let inQuotes = false;
+		let row: string[] = [];
+		for (let i = 0; i < lines.length; i += 1) {
+			const ch = lines[i];
+			const next = lines[i + 1];
+			if (ch === '"') {
+				if (inQuotes && next === '"') {
+					current += '"';
+					i += 1;
+				} else {
+					inQuotes = !inQuotes;
+				}
+				continue;
+			}
+			if (!inQuotes && ch === ",") {
+				row.push(current);
+				current = "";
+				continue;
+			}
+			if (!inQuotes && ch === "\n") {
+				row.push(current);
+				rows.push(row);
+				row = [];
+				current = "";
+				continue;
+			}
+			current += ch;
+		}
+		if (current.length || row.length) {
+			row.push(current);
+			rows.push(row);
+		}
+
+		const header = rows.shift();
+		if (!header || header.length === 0) return out;
+		const idx = (name: string) => header.indexOf(name);
+		const get = (r: string[], name: string) => {
+			const i = idx(name);
+			return i >= 0 ? (r[i] ?? "") : "";
+		};
+
+		for (const r of rows) {
+			if (!r || r.length === 0) continue;
+			out.push({
+				Tidspunkt: get(r, "Tidspunkt"),
+				Type: get(r, "Type") as KSType,
+				Inn: get(r, "Inn"),
+				"Inn-Valuta": get(r, "Inn-Valuta"),
+				Ut: get(r, "Ut"),
+				"Ut-Valuta": get(r, "Ut-Valuta"),
+				Gebyr: get(r, "Gebyr"),
+				"Gebyr-Valuta": get(r, "Gebyr-Valuta"),
+				Marked: get(r, "Marked"),
+				Notat: get(r, "Notat")
+			});
+		}
+		return out;
+	}, []);
+
+	const loadCsvPreview = useCallback(
+		async (query: string) => {
+			const res = await fetch(`/api/csvs?${query}&format=json`);
+			if (!res.ok) return;
+			const j = await res.json();
+			if (!j?.csv) return;
+			const parsedRows = parseCsvToRows(j.csv);
+			setRows(parsedRows);
+			setOk(true);
+			cacheKeyRef.current = null;
+			lastPayloadRef.current = {
+				address: j.meta?.address ?? address.trim(),
+				walletName: j.meta?.label ?? undefined,
+				fromISO: j.meta?.from_iso ?? undefined,
+				toISO: j.meta?.to_iso ?? undefined,
+				includeNFT: j.meta?.include_nft ?? false,
+				useOslo: j.meta?.use_oslo ?? false,
+				dustMode: j.meta?.dust_mode ?? undefined,
+				dustThreshold: j.meta?.dust_threshold ?? undefined,
+				dustInterval: j.meta?.dust_interval ?? undefined
+			};
+			lastCountsRef.current = {
+				rawCount: j.meta?.raw_count ?? parsedRows.length,
+				processedCount: j.meta?.processed_count ?? parsedRows.length
+			};
+			setWalletName(j.meta?.label ?? "");
+			setAddress(j.meta?.address ?? address.trim());
+
+			// Rehydrate debug info for reopened CSVs.
+			try {
+				const debugPayload = {
+					address: j.meta?.address ?? address.trim(),
+					walletName: j.meta?.label ?? undefined,
+					fromISO: j.meta?.from_iso ?? undefined,
+					toISO: j.meta?.to_iso ?? undefined,
+					includeNFT: j.meta?.include_nft ?? false,
+					useOslo: j.meta?.use_oslo ?? false,
+					dustMode: j.meta?.dust_mode ?? undefined,
+					dustThreshold: j.meta?.dust_threshold ?? undefined,
+					dustInterval: j.meta?.dust_interval ?? undefined
+				};
+				const debugRes = await fetch("/api/kryptosekken?format=json", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						Accept: "application/json"
+					},
+					body: JSON.stringify(debugPayload)
+				});
+				if (debugRes.ok) {
+					const debugJson = await debugRes.json();
+					const debugRows = Array.isArray(debugJson?.rows)
+						? (debugJson.rows as KSPreviewRow[])
+						: [];
+					const debugMap = new Map<string, HeliusTx>();
+					for (const row of debugRows) {
+						const sig = row.signature ?? extractSigFromNotat(row.Notat);
+						if (sig && row.debugTx) {
+							debugMap.set(sig, row.debugTx);
+						}
+					}
+					if (debugMap.size > 0) {
+						setRows(
+							(prev) =>
+								prev?.map((row) => {
+									const sig = row.signature ?? extractSigFromNotat(row.Notat);
+									const debugTx = sig ? debugMap.get(sig) : undefined;
+									return debugTx ? { ...row, debugTx } : row;
+								}) ?? null
+						);
+					}
+				}
+			} catch {
+				// Ignore debug rehydration failures.
+			}
+		},
+		[address, extractSigFromNotat, parseCsvToRows]
+	);
 
 	// Settings
 	const [includeNFT, setIncludeNFT] = useState(false);
@@ -215,6 +409,75 @@ export default function CSVGeneratorPage() {
 		symbols: {},
 		markets: {}
 	});
+
+	const buildCsvFromRows = useCallback(
+		(inputRows: KSPreviewRow[], currentOverrides: OverrideMaps) => {
+			const tokenMapRaw = currentOverrides?.symbols ?? {};
+			const marketMap = currentOverrides?.markets ?? {};
+			const normTokenMap: Record<string, string> = {};
+			for (const [from, to] of Object.entries(tokenMapRaw)) {
+				const fromKey = currencyCode(from);
+				const toVal = currencyCode(to);
+				if (fromKey && toVal) normTokenMap[fromKey] = toVal;
+			}
+
+			const rowsForCsv: KSRow[] = inputRows.map((r) => {
+				const inn = r["Inn-Valuta"];
+				const ut = r["Ut-Valuta"];
+				const mkt = r.Marked;
+				const innNew = inn && normTokenMap[inn] ? normTokenMap[inn] : inn;
+				const utNew = ut && normTokenMap[ut] ? normTokenMap[ut] : ut;
+				const mktNew =
+					mkt && marketMap[mkt] !== undefined ? marketMap[mkt]! : mkt;
+
+				return {
+					Tidspunkt: r.Tidspunkt,
+					Type: r.Type,
+					Inn: r.Inn,
+					"Inn-Valuta": innNew,
+					Ut: r.Ut,
+					"Ut-Valuta": utNew,
+					Gebyr: r.Gebyr,
+					"Gebyr-Valuta": r["Gebyr-Valuta"],
+					Marked: mktNew,
+					Notat: r.Notat
+				};
+			});
+
+			return rowsToCSV(rowsForCsv);
+		},
+		[]
+	);
+
+	const saveGeneratedCsv = useCallback(
+		async (csvText: string) => {
+			if (!isAuthed || !lastPayloadRef.current) return;
+			const payload = lastPayloadRef.current;
+			const counts = lastCountsRef.current;
+			const rawCount = counts?.rawCount ?? (rows ? rows.length : undefined);
+			const processedCount =
+				counts?.processedCount ?? (rows ? rows.length : undefined);
+			await fetch("/api/csvs", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					address: payload.address,
+					label: payload.walletName ?? null,
+					csv: csvText,
+					rawCount,
+					processedCount,
+					fromISO: payload.fromISO ?? null,
+					toISO: payload.toISO ?? null,
+					includeNFT: payload.includeNFT ?? false,
+					useOslo: payload.useOslo ?? false,
+					dustMode: payload.dustMode ?? null,
+					dustThreshold: payload.dustThreshold ?? null,
+					dustInterval: payload.dustInterval ?? null
+				})
+			}).catch(() => undefined);
+		},
+		[isAuthed, rows]
+	);
 
 	const previewContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -364,6 +627,47 @@ export default function CSVGeneratorPage() {
 			active = false;
 		};
 	}, [supabase]);
+
+	useEffect(() => {
+		let active = true;
+		(async () => {
+			const addr = address.trim();
+			if (!isAuthed || !isProbablySolanaAddress(addr)) {
+				setCsvVersions([]);
+				setCsvVersionId(null);
+				return;
+			}
+			const res = await fetch(
+				`/api/csvs?address=${encodeURIComponent(addr)}&format=list`
+			);
+			if (!active || !res.ok) return;
+			const j = await res.json();
+			const list: CsvVersion[] = Array.isArray(j?.data) ? j.data : [];
+			setCsvVersions(list);
+			setCsvVersionId(list[0]?.id ?? null);
+		})().catch(() => undefined);
+		return () => {
+			active = false;
+		};
+	}, [address, isAuthed]);
+
+	useEffect(() => {
+		let active = true;
+		(async () => {
+			const csvId = searchParams.get("csvId")?.trim();
+			const addr = searchParams.get("address")?.trim();
+			if (!isAuthed) return;
+			if (!csvId && !addr) return;
+			const query = csvId
+				? `id=${encodeURIComponent(csvId)}`
+				: `address=${encodeURIComponent(addr!)}`;
+			if (!active) return;
+			await loadCsvPreview(query);
+		})().catch(() => undefined);
+		return () => {
+			active = false;
+		};
+	}, [isAuthed, loadCsvPreview, searchParams]);
 	function saveHistory(list: AddressHistoryItem[]) {
 		setAddrHistory(list);
 	}
@@ -585,6 +889,14 @@ export default function CSVGeneratorPage() {
 							cacheKeyRef.current = j.cacheKey;
 							setRows(j.rowsPreview || []);
 							lastPayloadRef.current = parsed.data;
+							lastCountsRef.current = {
+								rawCount: j.rawCount,
+								processedCount: j.count
+							};
+							if (j.rowsPreview?.length) {
+								const csvAuto = buildCsvFromRows(j.rowsPreview, overrides);
+								await saveGeneratedCsv(csvAuto);
+							}
 							setOk(true);
 							if (dustMode !== "off" && j.rawCount !== j.count) {
 								pushLog(
@@ -646,39 +958,8 @@ export default function CSVGeneratorPage() {
 		try {
 			// Fast path: generate CSV locally from the current preview rows (incl. edits/overrides)
 			if (rows && rows.length > 0) {
-				const tokenMapRaw = currentOverrides?.symbols ?? {};
-				const marketMap = currentOverrides?.markets ?? {};
-				const normTokenMap: Record<string, string> = {};
-				for (const [from, to] of Object.entries(tokenMapRaw)) {
-					const fromKey = currencyCode(from);
-					const toVal = currencyCode(to);
-					if (fromKey && toVal) normTokenMap[fromKey] = toVal;
-				}
-
-				const rowsForCsv: KSRow[] = rows.map((r) => {
-					const inn = r["Inn-Valuta"];
-					const ut = r["Ut-Valuta"];
-					const mkt = r.Marked;
-					const innNew = inn && normTokenMap[inn] ? normTokenMap[inn] : inn;
-					const utNew = ut && normTokenMap[ut] ? normTokenMap[ut] : ut;
-					const mktNew =
-						mkt && marketMap[mkt] !== undefined ? marketMap[mkt]! : mkt;
-
-					return {
-						Tidspunkt: r.Tidspunkt,
-						Type: r.Type,
-						Inn: r.Inn,
-						"Inn-Valuta": innNew,
-						Ut: r.Ut,
-						"Ut-Valuta": utNew,
-						Gebyr: r.Gebyr,
-						"Gebyr-Valuta": r["Gebyr-Valuta"],
-						Marked: mktNew,
-						Notat: r.Notat
-					};
-				});
-
-				const csvLocal = rowsToCSV(rowsForCsv);
+				const csvLocal = buildCsvFromRows(rows, currentOverrides);
+				await saveGeneratedCsv(csvLocal);
 				const blobLocal = new Blob([csvLocal], {
 					type: "text/csv;charset=utf-8"
 				});
@@ -765,6 +1046,15 @@ export default function CSVGeneratorPage() {
 							throw new Error(pj.error || previewRes.statusText);
 						}
 						const pj = await previewRes.json();
+						if (
+							typeof pj?.rawCount === "number" &&
+							typeof pj?.count === "number"
+						) {
+							lastCountsRef.current = {
+								rawCount: pj.rawCount,
+								processedCount: pj.count
+							};
+						}
 						const newKey = pj.cacheKey || cacheKey;
 						cacheKeyRef.current = newKey;
 						// Retry CSV download with cacheKey param
@@ -790,6 +1080,8 @@ export default function CSVGeneratorPage() {
 							throw new Error(cj.error || csvRes.statusText);
 						}
 						const blob2 = await csvRes.blob();
+						const csvText2 = await blob2.text();
+						await saveGeneratedCsv(csvText2);
 						const a2 = document.createElement("a");
 						const dlUrl2 = URL.createObjectURL(blob2);
 						a2.href = dlUrl2;
@@ -811,6 +1103,8 @@ export default function CSVGeneratorPage() {
 				throw new Error(j.error || res.statusText);
 			}
 			const blob = await res.blob();
+			const csvText = await blob.text();
+			await saveGeneratedCsv(csvText);
 			const a = document.createElement("a");
 			const dlUrl = URL.createObjectURL(blob);
 			a.href = dlUrl;
@@ -913,6 +1207,16 @@ export default function CSVGeneratorPage() {
 	}
 
 	const hasRows = rows !== null;
+	const csvOptions = useMemo(
+		() =>
+			csvVersions.map((v) => ({
+				value: v.id,
+				label:
+					formatDateRange(v.from_iso, v.to_iso) ||
+					tr({ no: "Uten tidsrom", en: "No range" })
+			})),
+		[csvVersions, formatDateRange, tr]
+	);
 
 	// Shared card class (proper light/dark)
 	const cardCn =
@@ -920,19 +1224,24 @@ export default function CSVGeneratorPage() {
 
 	return (
 		<main className="min-h-screen">
-			<div className="mx-auto max-w-6xl px-4 py-10 sm:py-16">
-				<div className="mb-6">
-					<h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
-						<span className="bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">
-							{tr({ no: "CSV-generator", en: "CSV Generator" })}
-						</span>
-					</h1>
-					<p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-						{tr({
-							no: "Lag en kryptosekken-klar CSV fra Solana-adresser.",
-							en: "Create a Kryptosekken-ready CSV from Solana addresses."
-						})}
-					</p>
+			<div className="mx-auto max-w-6xl px-4 pt-20 sm:pt-24 pb-10 sm:pb-16">
+				<div className="mb-10">
+					<div className="grid grid-cols-[auto_1fr] gap-4 items-center">
+						<FiFileText className="h-8 w-8 sm:h-10 sm:w-10 text-indigo-600" />
+						<div>
+							<h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
+								<span className="bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">
+									{tr({ no: "CSV-generator", en: "CSV Generator" })}
+								</span>
+							</h1>
+							<p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+								{tr({
+									no: "Lim inn en Solana addresse og velg tidsrom for å sjekke historikken.",
+									en: "Paste a Solana address and select a time range to check the history."
+								})}
+							</p>
+						</div>
+					</div>
 				</div>
 
 				{/* ========= Card 1: Inputs / Settings / Log / Cache ========= */}
@@ -950,67 +1259,111 @@ export default function CSVGeneratorPage() {
 							<div className="grid gap-3 sm:grid-cols-[1fr_280px]">
 								{/* Address */}
 								<div className="relative">
-									<IoWalletOutline className="pointer-events-none absolute left-3 inset-y-0 mt-2 h-5 w-5 text-slate-400" />
-									<input
-										ref={addrInputRef}
-										name="address"
-										required
-										autoComplete="off"
-										placeholder={tr({
-											no: "F.eks. ESURTD2D…",
-											en: "e.g. ESURTD2D…"
-										})}
-										value={address}
-										onChange={(e) => {
-											setAddress(e.target.value);
-											setAddrMenuOpen(true);
-										}}
-										onFocus={() => setAddrMenuOpen(true)}
-										onBlur={() => setTimeout(() => setAddrMenuOpen(false), 120)}
-										className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-11 pr-24 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
-									/>
+									<div className="relative">
+										<IoWalletOutline className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+										<input
+											ref={addrInputRef}
+											name="address"
+											required
+											autoComplete="off"
+											placeholder={tr({
+												no: "F.eks. ESURTD2D…",
+												en: "e.g. ESURTD2D…"
+											})}
+											value={address}
+											onChange={(e) => {
+												setAddress(e.target.value);
+												setAddrMenuOpen(true);
+											}}
+											onFocus={() => setAddrMenuOpen(true)}
+											onBlur={() =>
+												setTimeout(() => setAddrMenuOpen(false), 120)
+											}
+											className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-11 pr-24 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+										/>
 
-									{/* right-side actions: clear, history */}
-									<div className="absolute inset-y-0 right-3 flex items-center sm:top-[-19px] gap-1">
-										{/* quick clear */}
-										{hasAddressInput && (
+										{/* right-side actions: clear, history */}
+										<div className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1">
+											{/* quick clear */}
+											{hasAddressInput && (
+												<button
+													type="button"
+													aria-label={tr({ no: "Tøm felt", en: "Clear field" })}
+													onMouseDown={(e) => e.preventDefault()}
+													onClick={() => {
+														setAddress("");
+														setAddrMenuOpen(false);
+														setTimeout(() => addrInputRef.current?.focus(), 0);
+													}}
+													className="rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 h-6 w-6"
+													title={tr({ no: "Tøm felt", en: "Clear field" })}
+												>
+													<FiX className="h-4 w-4" />
+												</button>
+											)}
+											{/* history */}
 											<button
 												type="button"
-												aria-label={tr({ no: "Tøm felt", en: "Clear field" })}
+												aria-label={tr({
+													no: "Adressehistorikk",
+													en: "Address history"
+												})}
 												onMouseDown={(e) => e.preventDefault()}
-												onClick={() => {
-													setAddress("");
-													setAddrMenuOpen(false);
-													setTimeout(() => addrInputRef.current?.focus(), 0);
-												}}
+												onClick={() => setAddrMenuOpen((v) => !v)}
 												className="rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 h-6 w-6"
-												title={tr({ no: "Tøm felt", en: "Clear field" })}
+												title={tr({
+													no: "Adressehistorikk",
+													en: "Address history"
+												})}
 											>
-												<FiX className="h-4 w-4" />
+												<FiClock className="h-4 w-4" />
 											</button>
-										)}
-										{/* history */}
-										<button
-											type="button"
-											aria-label={tr({
-												no: "Adressehistorikk",
-												en: "Address history"
-											})}
-											onMouseDown={(e) => e.preventDefault()}
-											onClick={() => setAddrMenuOpen((v) => !v)}
-											className="rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 h-6 w-6"
-											title={tr({
-												no: "Adressehistorikk",
-												en: "Address history"
-											})}
-										>
-											<FiClock className="h-4 w-4" />
-										</button>
+										</div>
 									</div>
+
+									{isAuthed && csvVersions.length > 0 && csvVersionId && (
+										<div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200/70 bg-indigo-50/70 px-3 py-2 text-xs text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
+											<span className="font-medium">
+												{tr({
+													no: "Genererte CSV-er for denne lommeboken funnet.",
+													en: "Generated CSVs found for this wallet."
+												})}
+											</span>
+											<div className="ml-auto flex items-center gap-2">
+												<StyledSelect
+													value={csvVersionId}
+													onChange={(next) => setCsvVersionId(next)}
+													options={csvOptions}
+													buttonClassName="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-xs text-indigo-700 shadow-sm transition hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-white/5 dark:text-indigo-200 dark:hover:bg-white/10"
+													menuClassName="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden"
+													optionClassName="flex items-center gap-2 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 whitespace-nowrap"
+													labelClassName="truncate whitespace-nowrap"
+													ariaLabel={tr({ no: "Velg CSV", en: "Select CSV" })}
+													minWidthLabel={
+														csvOptions[0]?.label ||
+														tr({ no: "Uten tidsrom", en: "No range" })
+													}
+												/>
+												<button
+													type="button"
+													onClick={() =>
+														loadCsvPreview(
+															`id=${encodeURIComponent(csvVersionId)}`
+														)
+													}
+													className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-white/5 dark:text-indigo-200 dark:hover:bg-white/10"
+													title={tr({ no: "Åpne", en: "Open" })}
+													aria-label={tr({ no: "Åpne", en: "Open" })}
+												>
+													<FiEye className="h-5 w-5" />
+												</button>
+											</div>
+										</div>
+									)}
 
 									{/* Dropdown history */}
 									{addrMenuOpen && (addrHistory.length > 0 || address) && (
-										<div className="absolute z-30 mt-2 w-full max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl">
+										<div className="absolute left-0 right-0 z-30 mt-2 w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl">
 											{filteredHistory.length > 0 ? (
 												<ul className="max-h-64 overflow-auto text-sm">
 													{filteredHistory.map((item) => (
@@ -1800,6 +2153,14 @@ export default function CSVGeneratorPage() {
 				</footer>
 			</div>
 		</main>
+	);
+}
+
+export default function CSVGeneratorPage() {
+	return (
+		<Suspense fallback={<div className="min-h-screen" />}>
+			<CSVGeneratorPageInner />
+		</Suspense>
 	);
 }
 
