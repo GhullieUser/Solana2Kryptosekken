@@ -172,8 +172,8 @@ export default function UserPage() {
 	}, [csvs]);
 
 	return (
-		<main className="min-h-screen">
-			<div className="mx-auto max-w-6xl px-4 py-10 sm:py-16">
+		<main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
+			<div className="mx-auto max-w-6xl px-4 pt-28 sm:pt-32 pb-10 sm:pb-16">
 				<div className="rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 ring-1 ring-slate-300/80 dark:ring-white/10 p-6 sm:p-10">
 					<div className="flex items-center justify-between gap-4">
 						<div>
@@ -291,7 +291,9 @@ export default function UserPage() {
 														<FiEye className="h-5 w-5" />
 													</Link>
 													<button
-														onClick={() => downloadCsv(selected.id, selected.address)}
+														onClick={() =>
+															downloadCsv(selected.id, selected.address)
+														}
 														className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-500"
 														title={tr({
 															no: "Last ned CSV",
@@ -318,18 +320,18 @@ export default function UserPage() {
 							{tr({ no: "Data og personvern", en: "Data & privacy" })}
 						</h2>
 						<div className="flex flex-wrap gap-3">
-						<button
-							onClick={exportData}
-							className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-500"
-						>
-							{tr({ no: "Eksporter data", en: "Export my data" })}
-						</button>
+							<button
+								onClick={exportData}
+								className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-500"
+							>
+								{tr({ no: "Eksporter data", en: "Export my data" })}
+							</button>
 							<button
 								onClick={() => setDeleteOpen(true)}
-							className="rounded-xl border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 px-4 py-2 text-sm font-medium hover:bg-rose-50 dark:hover:bg-rose-500/10"
-						>
-							{tr({ no: "Slett mine data", en: "Delete my data" })}
-						</button>
+								className="rounded-xl border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 px-4 py-2 text-sm font-medium hover:bg-rose-50 dark:hover:bg-rose-500/10"
+							>
+								{tr({ no: "Slett mine data", en: "Delete my data" })}
+							</button>
 						</div>
 					</div>
 

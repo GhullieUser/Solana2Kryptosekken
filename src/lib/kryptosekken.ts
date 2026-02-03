@@ -67,7 +67,7 @@ export function rowsToCSV(rows: KSRow[]): string {
 		"Gebyr",
 		"Gebyr-Valuta",
 		"Marked",
-		"Notat",
+		"Notat"
 	].join(",");
 	const body = rows
 		.map((r) =>
@@ -81,7 +81,7 @@ export function rowsToCSV(rows: KSRow[]): string {
 				r.Gebyr,
 				r["Gebyr-Valuta"],
 				r.Marked,
-				r.Notat,
+				r.Notat
 			]
 				.map(csvEscape)
 				.join(",")

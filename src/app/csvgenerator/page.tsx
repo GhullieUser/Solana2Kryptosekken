@@ -1,6 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from "react";
+import {
+	Suspense,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	useCallback
+} from "react";
 import { z } from "zod";
 import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
@@ -190,7 +197,6 @@ function CSVGeneratorPageInner() {
 		processedCount: number;
 	} | null>(null);
 	const abortRef = useRef<AbortController | null>(null);
-	const cacheKeyRef = useRef<string | null>(null);
 
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -325,7 +331,6 @@ function CSVGeneratorPageInner() {
 			const parsedRows = parseCsvToRows(j.csv);
 			setRows(parsedRows);
 			setOk(true);
-			cacheKeyRef.current = null;
 			lastPayloadRef.current = {
 				address: j.meta?.address ?? address.trim(),
 				walletName: j.meta?.label ?? undefined,
@@ -371,19 +376,64 @@ function CSVGeneratorPageInner() {
 						? (debugJson.rows as KSPreviewRow[])
 						: [];
 					const debugMap = new Map<string, HeliusTx>();
+					const metaMap = new Map<string, Partial<KSPreviewRow>>();
 					for (const row of debugRows) {
 						const sig = row.signature ?? extractSigFromNotat(row.Notat);
-						if (sig && row.debugTx) {
+						if (!sig) continue;
+						if (row.debugTx) {
 							debugMap.set(sig, row.debugTx);
 						}
+						const meta: Partial<KSPreviewRow> = {};
+						if (row.signer) meta.signer = row.signer;
+						const recipient =
+							(row as any).recipient ??
+							(row as any).mottaker ??
+							(row as any).Mottaker ??
+							(row as any).receiver ??
+							(row as any).Receiver ??
+							(row as any).to ??
+							(row as any).To ??
+							(row as any).til ??
+							(row as any).Til;
+						if (recipient) (meta as any).recipient = recipient;
+						const sender =
+							(row as any).sender ??
+							(row as any).Sender ??
+							(row as any).avsender ??
+							(row as any).Avsender ??
+							(row as any).fra ??
+							(row as any).Fra ??
+							(row as any).from ??
+							(row as any).From;
+						if (sender) (meta as any).sender = sender;
+						const programId =
+							(row as any).programId ??
+							(row as any).program_id ??
+							(row as any).ProgramId ??
+							(row as any).program ??
+							(row as any).Program;
+						if (programId) (meta as any).programId = programId;
+						const programName =
+							(row as any).programName ??
+							(row as any).program_name ??
+							(row as any).ProgramName;
+						if (programName) (meta as any).programName = programName;
+						if (row.signature) (meta as any).signature = row.signature;
+						if (Object.keys(meta).length > 0) metaMap.set(sig, meta);
 					}
-					if (debugMap.size > 0) {
+					if (debugMap.size > 0 || metaMap.size > 0) {
 						setRows(
 							(prev) =>
 								prev?.map((row) => {
 									const sig = row.signature ?? extractSigFromNotat(row.Notat);
 									const debugTx = sig ? debugMap.get(sig) : undefined;
-									return debugTx ? { ...row, debugTx } : row;
+									const meta = sig ? metaMap.get(sig) : undefined;
+									if (!debugTx && !meta) return row;
+									return {
+										...row,
+										...(meta ?? {}),
+										...(debugTx ? { debugTx } : {})
+									};
 								}) ?? null
 						);
 					}
@@ -781,7 +831,6 @@ function CSVGeneratorPageInner() {
 		setError(null);
 		setOk(false);
 		setRows(null);
-		cacheKeyRef.current = null;
 
 		clearLog();
 
@@ -884,9 +933,7 @@ function CSVGeneratorPageInner() {
 								rowsPreview: KSPreviewRow[];
 								count: number;
 								rawCount: number;
-								cacheKey: string;
 							};
-							cacheKeyRef.current = j.cacheKey;
 							setRows(j.rowsPreview || []);
 							lastPayloadRef.current = parsed.data;
 							lastCountsRef.current = {
@@ -946,40 +993,15 @@ function CSVGeneratorPageInner() {
 	}
 
 	function onCancel() {
-		if (abortRef.current) {
-			abortRef.current.abort();
-		}
+		if (!abortRef.current) return;
+		abortRef.current.abort();
+		abortRef.current = null;
+		setLoading(false);
 	}
 
-	/* ========== Download CSV ========== */
 	async function downloadCSV(currentOverrides: OverrideMaps) {
-		if (!lastPayloadRef.current) return;
-		setError(null);
+		if (!rows || !lastPayloadRef.current) return;
 		try {
-			// Fast path: generate CSV locally from the current preview rows (incl. edits/overrides)
-			if (rows && rows.length > 0) {
-				const csvLocal = buildCsvFromRows(rows, currentOverrides);
-				await saveGeneratedCsv(csvLocal);
-				const blobLocal = new Blob([csvLocal], {
-					type: "text/csv;charset=utf-8"
-				});
-				const aLocal = document.createElement("a");
-				const dlUrlLocal = URL.createObjectURL(blobLocal);
-				aLocal.href = dlUrlLocal;
-				aLocal.download = `sol2ks_${lastPayloadRef.current.address}.csv`;
-				document.body.appendChild(aLocal);
-				aLocal.click();
-				aLocal.remove();
-				URL.revokeObjectURL(dlUrlLocal);
-				pushLog(
-					tr({
-						no: "✅ CSV klar (med redigeringer).",
-						en: "✅ CSV ready (with edits)."
-					})
-				);
-				return;
-			}
-
 			// Build a map of rowId -> full row fields (server will selectively merge)
 			const clientEdits: Record<string, Partial<KSRow>> = {};
 			for (const r of rows ?? []) {
@@ -998,107 +1020,17 @@ function CSVGeneratorPageInner() {
 				};
 			}
 
-			const url = cacheKeyRef.current
-				? `/api/kryptosekken?useCache=1&cacheKey=${encodeURIComponent(
-						cacheKeyRef.current
-					)}`
-				: "/api/kryptosekken?useCache=1";
-			const res = await fetch(url, {
+			const res = await fetch("/api/kryptosekken?format=csv", {
 				method: "POST",
 				headers: { "Content-Type": "application/json", Accept: "text/csv" },
 				body: JSON.stringify({
 					...lastPayloadRef.current,
 					overrides: currentOverrides,
-					clientEdits // NEW
+					clientEdits
 				})
 			});
 
 			if (!res.ok) {
-				// If server replies 412 it means no cached preview exists.
-				if (res.status === 412) {
-					const j = await res.json().catch(() => ({}) as any);
-					const cacheKey = j?.cacheKey;
-					if (cacheKey) {
-						// Generate preview first, then retry CSV fetch using the returned cacheKey
-						pushLog(
-							tr({
-								no: "ℹ️ Ingen bufret forhåndsvisning — lager forhåndsvisning nå...",
-								en: "ℹ️ No cached preview — generating a preview now..."
-							})
-						);
-						// Important: explicitly hit JSON mode so the server will scan+cache (CSV mode refuses to scan).
-						const previewRes = await fetch("/api/kryptosekken?format=json", {
-							method: "POST",
-							headers: {
-								"Content-Type": "application/json",
-								Accept: "application/json"
-							},
-							body: JSON.stringify({
-								...lastPayloadRef.current,
-								overrides: currentOverrides,
-								clientEdits
-							})
-						});
-						if (!previewRes.ok) {
-							const pj = await previewRes
-								.json()
-								.catch(() => ({ error: previewRes.statusText }));
-							throw new Error(pj.error || previewRes.statusText);
-						}
-						const pj = await previewRes.json();
-						if (
-							typeof pj?.rawCount === "number" &&
-							typeof pj?.count === "number"
-						) {
-							lastCountsRef.current = {
-								rawCount: pj.rawCount,
-								processedCount: pj.count
-							};
-						}
-						const newKey = pj.cacheKey || cacheKey;
-						cacheKeyRef.current = newKey;
-						// Retry CSV download with cacheKey param
-						const csvUrl = `/api/kryptosekken?useCache=1&cacheKey=${encodeURIComponent(
-							newKey
-						)}`;
-						const csvRes = await fetch(csvUrl, {
-							method: "POST",
-							headers: {
-								"Content-Type": "application/json",
-								Accept: "text/csv"
-							},
-							body: JSON.stringify({
-								...lastPayloadRef.current,
-								overrides: currentOverrides,
-								clientEdits
-							})
-						});
-						if (!csvRes.ok) {
-							const cj = await csvRes
-								.json()
-								.catch(() => ({ error: csvRes.statusText }));
-							throw new Error(cj.error || csvRes.statusText);
-						}
-						const blob2 = await csvRes.blob();
-						const csvText2 = await blob2.text();
-						await saveGeneratedCsv(csvText2);
-						const a2 = document.createElement("a");
-						const dlUrl2 = URL.createObjectURL(blob2);
-						a2.href = dlUrl2;
-						a2.download = `sol2ks_${lastPayloadRef.current.address}.csv`;
-						document.body.appendChild(a2);
-						a2.click();
-						a2.remove();
-						URL.revokeObjectURL(dlUrl2);
-						pushLog(
-							tr({
-								no: "✅ CSV klar (med redigeringer).",
-								en: "✅ CSV ready (with edits)."
-							})
-						);
-						return;
-					}
-				}
 				const j = await res.json().catch(() => ({ error: "Feil" }));
 				throw new Error(j.error || res.statusText);
 			}
@@ -1156,56 +1088,6 @@ function CSVGeneratorPageInner() {
 
 	const nice = (d?: Date) => (d ? d.toLocaleDateString("no-NO") : "—");
 
-	async function clearCacheNow() {
-		try {
-			const payload = lastPayloadRef.current || buildPayload();
-			if (!payload.address?.trim()) {
-				pushLog(
-					tr({
-						no: "⚠️ Ingen adresse valgt – kan ikke tømme cache.",
-						en: "⚠️ No address selected — cannot clear cache."
-					})
-				);
-				return;
-			}
-			const res = await fetch("/api/kryptosekken?clearCache=1", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(payload)
-			});
-			if (!res.ok) {
-				const j = await res.json().catch(() => ({ error: res.statusText }));
-				throw new Error(j.error || res.statusText);
-			}
-			const j = await res.json();
-			if (j.cleared) {
-				pushLog(
-					tr({
-						no: "🧹 Mellomlager tømt for denne forespørselen.",
-						en: "🧹 Cache cleared for this request."
-					})
-				);
-			} else {
-				pushLog(
-					tr({
-						no: "ℹ️ Fant ingen cache å tømme for disse parametrene.",
-						en: "ℹ️ No cache found to clear for these parameters."
-					})
-				);
-			}
-			cacheKeyRef.current = null;
-			setRows(null);
-			setOk(false);
-		} catch (err: any) {
-			pushLog(
-				tr({
-					no: "❌ Klarte ikke å tømme cache:",
-					en: "❌ Failed to clear cache:"
-				}) + ` ${err?.message || err}`
-			);
-		}
-	}
-
 	const hasRows = rows !== null;
 	const csvOptions = useMemo(
 		() =>
@@ -1223,7 +1105,7 @@ function CSVGeneratorPageInner() {
 		"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 ring-1 ring-slate-300/80 dark:ring-white/10";
 
 	return (
-		<main className="min-h-screen">
+		<main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
 			<div className="mx-auto max-w-6xl px-4 pt-20 sm:pt-24 pb-10 sm:pb-16">
 				<div className="mb-10">
 					<div className="grid grid-cols-[auto_1fr] gap-4 items-center">
@@ -2076,30 +1958,6 @@ function CSVGeneratorPageInner() {
 											))}
 										</ul>
 									)}
-								</div>
-							)}
-
-							{/* Cache banner */}
-							{cacheKeyRef.current && !loading && (
-								<div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
-									<span>
-										{tr({
-											no: "Treff i cache for denne adressen/perioden. Du kan tømme cache hvis du vil foreta et nytt sjekk.",
-											en: "Cache hit for this address/period. You can clear the cache if you want to run a new check."
-										})}
-									</span>
-									<button
-										type="button"
-										onClick={clearCacheNow}
-										className="inline-flex items-center gap-1 rounded-md border border-amber-300 dark:border-amber-800 bg-white/60 dark:bg-white/10 px-2 py-1 hover:bg-white dark:hover:bg-white/15 whitespace-nowrap w-full sm:w-auto justify-center"
-										title={tr({
-											no: "Tøm mellomlager for denne forespørselen",
-											en: "Clear cache for this request"
-										})}
-									>
-										<FiTrash2 className="h-4 w-4" />
-										{tr({ no: "Tøm cache", en: "Clear cache" })}
-									</button>
 								</div>
 							)}
 						</form>

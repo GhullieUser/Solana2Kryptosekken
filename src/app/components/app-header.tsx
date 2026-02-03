@@ -111,6 +111,7 @@ export default function AppHeader() {
 	const [userEmail, setUserEmail] = useState<string | null>(null);
 	const [userMenuOpen, setUserMenuOpen] = useState(false);
 	const userMenuRef = useRef<HTMLDivElement | null>(null);
+	const [scrolled, setScrolled] = useState(false);
 
 	useEffect(() => {
 		let active = true;
@@ -136,13 +137,28 @@ export default function AppHeader() {
 		return () => document.removeEventListener("mousedown", onDocClick);
 	}, []);
 
+	useEffect(() => {
+		function onScroll() {
+			setScrolled(window.scrollY > 4);
+		}
+		onScroll();
+		window.addEventListener("scroll", onScroll, { passive: true });
+		return () => window.removeEventListener("scroll", onScroll);
+	}, []);
+
 	async function signOut() {
 		await supabase.auth.signOut();
 		window.location.href = "/";
 	}
 
 	return (
-		<header className="fixed top-0 inset-x-0 z-40 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+		<header
+			className={`fixed top-0 inset-x-0 z-40 text-xs sm:text-sm text-slate-600 dark:text-slate-300 transition-all ${
+				scrolled
+					? "bg-white/90 dark:bg-[#0b1220]/90 backdrop-blur border-b border-slate-200/70 dark:border-white/10 shadow-sm"
+					: "bg-transparent"
+			}`}
+		>
 			<div className="relative mx-auto max-w-6xl px-4 py-3 sm:py-4 flex items-center justify-between gap-3">
 				<div className="flex items-center gap-2 sm:gap-3 font-medium text-slate-800 dark:text-slate-200">
 					<Image

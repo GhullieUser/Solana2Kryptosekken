@@ -39,13 +39,25 @@ export default function LandingPage() {
 
 	return (
 		<>
-			<div className="min-h-dvh flex flex-col">
+			<div className="min-h-dvh flex flex-col bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
 				<main className="relative flex flex-1 items-center justify-center overflow-hidden pt-24 sm:pt-28 pb-16">
 					<div className="pointer-events-none absolute inset-0 -z-10">
-						<div className="absolute -top-32 left-1/2 h-96 w-[500px] -translate-x-1/2 rotate-12 bg-indigo-400/30 blur-[100px]" style={{ borderRadius: '45% 55% 60% 40% / 50% 45% 55% 50%' }} />
-						<div className="absolute top-24 right-[-6rem] h-80 w-[400px] -rotate-12 bg-emerald-400/20 blur-[90px]" style={{ borderRadius: '60% 40% 55% 45% / 45% 60% 40% 55%' }} />
-						<div className="absolute bottom-[-8rem] left-[-6rem] h-96 w-[420px] rotate-6 bg-sky-400/20 blur-[95px]" style={{ borderRadius: '50% 50% 45% 55% / 55% 45% 55% 45%' }} />
-						<div className="absolute top-1/3 left-1/4 h-64 w-[350px] -rotate-45 bg-indigo-300/15 blur-[80px]" style={{ borderRadius: '40% 60% 50% 50% / 60% 40% 60% 40%' }} />
+						<div
+							className="absolute -top-32 left-1/2 h-96 w-[500px] -translate-x-1/2 rotate-12 bg-indigo-400/30 blur-[100px]"
+							style={{ borderRadius: "45% 55% 60% 40% / 50% 45% 55% 50%" }}
+						/>
+						<div
+							className="absolute top-24 right-[-6rem] h-80 w-[400px] -rotate-12 bg-emerald-400/20 blur-[90px]"
+							style={{ borderRadius: "60% 40% 55% 45% / 45% 60% 40% 55%" }}
+						/>
+						<div
+							className="absolute bottom-[-8rem] left-[-6rem] h-96 w-[420px] rotate-6 bg-sky-400/20 blur-[95px]"
+							style={{ borderRadius: "50% 50% 45% 55% / 55% 45% 55% 45%" }}
+						/>
+						<div
+							className="absolute top-1/3 left-1/4 h-64 w-[350px] -rotate-45 bg-indigo-300/15 blur-[80px]"
+							style={{ borderRadius: "40% 60% 50% 50% / 60% 40% 60% 40%" }}
+						/>
 						<div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(15,23,42,0.08),_transparent_60%)] dark:bg-[radial-gradient(circle_at_top,_rgba(148,163,184,0.08),_transparent_60%)]" />
 					</div>
 					<div className="mx-auto w-full max-w-6xl px-4 pt-4 sm:pt-6 pb-0">
@@ -102,7 +114,7 @@ export default function LandingPage() {
 												alt="Solana"
 												width={144}
 												height={144}
-												className="h-21 w-21 sm:h-48 sm:w-48 object-contain brightness-0 invert"
+												className="h-18 w-18 sm:h-44 sm:w-44 object-contain brightness-0 invert"
 												priority
 											/>
 										</div>
