@@ -8,6 +8,8 @@ import { useLocale } from "@/app/components/locale-provider";
 export default function UpdatePasswordPage() {
 	const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 	const { tr } = useLocale();
+	const [email, setEmail] = useState<string | null>(null);
+	const [currentPassword, setCurrentPassword] = useState("");
 	const [password, setPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
 	const [loading, setLoading] = useState(false);
@@ -21,9 +23,13 @@ export default function UpdatePasswordPage() {
 	useEffect(() => {
 		let active = true;
 		(async () => {
-			const { data } = await supabase.auth.getSession();
+			const [{ data: sessionData }, { data: userData }] = await Promise.all([
+				supabase.auth.getSession(),
+				supabase.auth.getUser()
+			]);
 			if (!active) return;
-			setHasSession(Boolean(data.session));
+			setHasSession(Boolean(sessionData.session));
+			setEmail(userData.user?.email ?? null);
 		})().catch(() => {
 			if (active) setHasSession(false);
 		});
@@ -36,6 +42,16 @@ export default function UpdatePasswordPage() {
 		e.preventDefault();
 		setMessage(null);
 		setMessageType(null);
+		if (!email) {
+			setMessage(tr({ no: "Fant ikke e-post for brukeren.", en: "User email not found." }));
+			setMessageType("error");
+			return;
+		}
+		if (currentPassword.trim().length === 0) {
+			setMessage(tr({ no: "Skriv inn ditt gamle passord.", en: "Enter your current password." }));
+			setMessageType("error");
+			return;
+		}
 		if (password !== confirmPassword) {
 			setMessage(
 				tr({ no: "Passordene matcher ikke.", en: "Passwords do not match." })
@@ -44,6 +60,16 @@ export default function UpdatePasswordPage() {
 			return;
 		}
 		setLoading(true);
+		const { error: signInError } = await supabase.auth.signInWithPassword({
+			email,
+			password: currentPassword
+		});
+		if (signInError) {
+			setMessage(tr({ no: "Gammelt passord er feil.", en: "Current password is incorrect." }));
+			setMessageType("error");
+			setLoading(false);
+			return;
+		}
 		const { error } = await supabase.auth.updateUser({ password });
 		if (error) {
 			setMessage(error.message);
@@ -88,7 +114,7 @@ export default function UpdatePasswordPage() {
 						<Link
 							href="/signin"
 							style={{ color: "#ffffff" }}
-							className="block w-full rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 py-3 text-sm font-medium hover:from-indigo-500 hover:to-emerald-500 transition-all shadow-lg shadow-indigo-500/30"
+							className="block w-full rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white py-2 text-sm font-medium hover:from-indigo-500 hover:to-emerald-500"
 						>
 							{tr({ no: "Gå til innlogging", en: "Go to sign in" })}
 						</Link>
@@ -102,12 +128,12 @@ export default function UpdatePasswordPage() {
 		<main className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
 			<div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] p-6 shadow-xl shadow-slate-900/10 dark:shadow-black/35">
 				<h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-					{tr({ no: "Sett nytt passord", en: "Set new password" })}
+					{tr({ no: "Oppdater passord", en: "Update password" })}
 				</h1>
 				<p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
 					{tr({
-						no: "Skriv inn et nytt passord for kontoen din.",
-						en: "Enter a new password for your account."
+						no: "Skriv inn ditt gamle passord og velg et nytt.",
+						en: "Enter your current password and choose a new one."
 					})}
 				</p>
 
@@ -121,6 +147,15 @@ export default function UpdatePasswordPage() {
 				)}
 
 				<form className="mt-4 space-y-3" onSubmit={updatePassword}>
+					<input
+						type="password"
+						required
+						placeholder={tr({ no: "Gammelt passord", en: "Current password" })}
+						value={currentPassword}
+						onChange={(e) => setCurrentPassword(e.target.value)}
+						autoComplete="current-password"
+						className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+					/>
 					<input
 						type="password"
 						required
@@ -140,7 +175,7 @@ export default function UpdatePasswordPage() {
 					<button
 						type="submit"
 						disabled={loading || hasSession === false}
-						className="w-full rounded-xl bg-indigo-600 text-white py-2 text-sm font-medium hover:bg-indigo-500 disabled:opacity-60"
+						className="w-full rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white py-2 text-sm font-medium hover:from-indigo-500 hover:to-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed"
 					>
 						{loading
 							? tr({ no: "Lagrer…", en: "Saving…" })
@@ -162,12 +197,12 @@ export default function UpdatePasswordPage() {
 					</div>
 				)}
 
-				<div className="mt-4 text-xs text-slate-600 dark:text-slate-300">
+				<div className="mt-4 text-xs text-slate-600 dark:text-slate-300 text-center">
 					<Link
-						href="/signin"
+						href="/user"
 						className="hover:text-slate-900 dark:hover:text-white"
 					>
-						{tr({ no: "Tilbake til innlogging", en: "Back to sign in" })}
+						{tr({ no: "Tilbake til brukerprofil", en: "Back to profile" })}
 					</Link>
 				</div>
 			</div>

@@ -49,7 +49,11 @@ function ThemePill() {
 			title={tr({ no: "Bytt lys/mørk", en: "Toggle light/dark" })}
 			aria-label={tr({ no: "Bytt lys/mørk", en: "Toggle light/dark" })}
 		>
-			{isDark ? <FiMoon className="h-4 w-4 sm:h-5 sm:w-5" /> : <FiSun className="h-4 w-4 sm:h-5 sm:w-5" />}
+			{isDark ? (
+				<FiMoon className="h-4 w-4 sm:h-5 sm:w-5" />
+			) : (
+				<FiSun className="h-4 w-4 sm:h-5 sm:w-5" />
+			)}
 		</button>
 	);
 }
@@ -161,13 +165,19 @@ export default function AppHeader() {
 		>
 			<div className="relative mx-auto max-w-6xl px-4 py-3 sm:py-4 flex items-center justify-between gap-3">
 				<div className="flex items-center gap-2 sm:gap-3 font-medium text-slate-800 dark:text-slate-200">
-					<Image
-						src="/Sol2KS_logo.svg"
-						alt="Sol2KS"
-						width={32}
-						height={32}
-						className="block w-6 h-6 sm:w-8 sm:h-8"
-					/>
+					<Link
+						href="/"
+						className="group inline-flex items-center justify-center rounded-full transition-transform"
+						aria-label={tr({ no: "Hjem", en: "Home" })}
+					>
+						<Image
+							src="/Sol2KS_logo.svg"
+							alt="Sol2KS"
+							width={32}
+							height={32}
+							className="block w-6 h-6 sm:w-8 sm:h-8 transition-transform duration-200 group-hover:scale-110 group-active:scale-95"
+						/>
+					</Link>
 					<Link
 						href="/"
 						className="inline-flex items-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 py-1 sm:py-1.5 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition text-xs sm:text-sm"
@@ -207,13 +217,13 @@ export default function AppHeader() {
 							<button
 								type="button"
 								onClick={() => setUserMenuOpen((v) => !v)}
-							className="inline-flex h-[28px] sm:h-[32px] items-center justify-center gap-1 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
-						>
-							<FiUser className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-							<span className="max-w-[120px] truncate">
-								{userEmail ?? tr({ no: "Bruker", en: "User" })}
-							</span>
-							<FiChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 opacity-70" />
+								className="inline-flex h-[28px] sm:h-[32px] items-center justify-center gap-1 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+							>
+								<FiUser className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+								<span className="max-w-[120px] truncate">
+									{userEmail ?? tr({ no: "Bruker", en: "User" })}
+								</span>
+								<FiChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 opacity-70" />
 							</button>
 							{userMenuOpen && (
 								<div className="absolute right-0 mt-2 min-w-full w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50">

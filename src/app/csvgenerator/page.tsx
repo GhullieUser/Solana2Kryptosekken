@@ -18,7 +18,6 @@ import {
 	//FiExternalLink,
 	FiClock,
 	FiTrash2,
-	FiSliders,
 	FiChevronDown,
 	FiX,
 	FiTag,
@@ -26,6 +25,7 @@ import {
 	FiActivity,
 	FiFileText
 } from "react-icons/fi";
+import { MdOutlineCleaningServices } from "react-icons/md";
 import type { HeliusTx } from "@/lib/helius";
 import { IoWalletOutline, IoOpenOutline } from "react-icons/io5";
 
@@ -831,6 +831,15 @@ function CSVGeneratorPageInner() {
 		setError(null);
 		setOk(false);
 		setRows(null);
+		if (!isAuthed) {
+			setError(
+				tr({
+					no: "Du må være innlogget for å generere CSV-er.",
+					en: "You must be signed in to generate CSVs."
+				})
+			);
+			return;
+		}
 
 		clearLog();
 
@@ -1000,6 +1009,15 @@ function CSVGeneratorPageInner() {
 	}
 
 	async function downloadCSV(currentOverrides: OverrideMaps) {
+		if (!isAuthed) {
+			setError(
+				tr({
+					no: "Du må være innlogget for å generere CSV-er.",
+					en: "You must be signed in to generate CSVs."
+				})
+			);
+			return;
+		}
 		if (!rows || !lastPayloadRef.current) return;
 		try {
 			// Build a map of rowId -> full row fields (server will selectively merge)
@@ -1311,12 +1329,6 @@ function CSVGeneratorPageInner() {
 										</div>
 									)}
 								</div>
-								{!isAuthed && (
-									<p className="text-xs text-slate-500 dark:text-slate-400 sm:col-span-2">
-										Sign in to save your address history across devices.
-									</p>
-								)}
-
 								{/* Wallet name */}
 								<div className="relative">
 									<FiTag className="pointer-events-none absolute left-3 inset-y-0 mt-2.5 h-5 w-5 text-slate-400" />
@@ -1345,17 +1357,17 @@ function CSVGeneratorPageInner() {
 											}}
 											className={`inline-flex items-center gap-2 rounded-xl border  text-sm shadow-sm dark:shadow-black/25 aspect-square p-2 h-[37px] w-[37px] justify-center
                         ${
-													canOpenExplorer
-														? "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-white/10"
-														: "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-white/5 text-slate-400 cursor-not-allowed"
-												}`}
+												canOpenExplorer
+													? "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-white/10"
+												: "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-white/5 text-slate-400 cursor-not-allowed"
+											}`}
 											title={
 												canOpenExplorer
 													? tr({ no: "Åpne i Solscan", en: "Open in Solscan" })
 													: tr({
 															no: "Skriv inn en adresse først",
 															en: "Enter an address first"
-														})
+													})
 											}
 										>
 											<IoOpenOutline className="h-[17px] w-[17px]" />
@@ -1610,7 +1622,7 @@ function CSVGeneratorPageInner() {
 							<div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
 								<div className="mb-3 flex items-center justify-between">
 									<div className="inline-flex items-center gap-2 text-sm font-medium text-slate-800 dark:text-slate-200">
-										<FiSliders className="h-4 w-4" />
+										<MdOutlineCleaningServices className="h-4 w-4" />
 										{tr({ no: "Støvtransaksjoner", en: "Dust transactions" })}
 									</div>
 
@@ -1876,7 +1888,7 @@ function CSVGeneratorPageInner() {
 							<div className="mt-6 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3">
 								<button
 									type="submit"
-									disabled={loading}
+									disabled={loading || !isAuthed}
 									className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:shadow-lg hover:from-indigo-700 hover:to-emerald-700 focus:outline-none focus:ring-4 focus:ring-indigo-200/60 dark:focus:ring-indigo-900/40 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
 								>
 									{loading ? (
@@ -1912,6 +1924,19 @@ function CSVGeneratorPageInner() {
 									>
 										{error}
 									</span>
+								)}
+								{!error && !isAuthed && (
+									<div className="sm:ml-2 text-sm text-slate-600 dark:text-slate-300">
+										<Link
+											href="/signin"
+											className="text-indigo-600 dark:text-indigo-400 hover:underline"
+										>
+											{tr({
+												no: "Logg inn for å sjekke lommebøker.",
+												en: "Sign in to check wallets."
+											})}
+										</Link>
+									</div>
 								)}
 								{!error && effectiveRows && effectiveRows.length > 0 && (
 									<span className="sm:ml-2 text-sm text-emerald-700 dark:text-emerald-400">

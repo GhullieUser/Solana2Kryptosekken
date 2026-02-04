@@ -1,51 +1,204 @@
 <!doctype html>
 <html>
 	<head>
-		<!doctype html>
-		<html>
-			<head>
-				<meta charset="UTF-8" />
-				<title>Confirm your account</title>
-			</head>
-			<body style="margin: 0; padding: 0; background-color: #f8fafc;" bgcolor="#f8fafc">
-				<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#f8fafc" style="background-color: #f8fafc;">
-					<tr>
-						<td align="center" bgcolor="#f8fafc" style="padding: 32px 12px; background-color: #f8fafc;">
-							<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" bgcolor="#ffffff" style="max-width: 560px; width: 100%; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 20px; overflow: hidden;">
-								<tr>
-									<td style="padding: 24px 28px; border-bottom: 1px solid #e2e8f0;">
-										<table role="presentation" cellpadding="0" cellspacing="0" border="0">
-											<tr>
-												<td style="padding-right: 12px;">
-													<img src="https://www.sol2ks.no/Sol2KS_logo.png" alt="Sol2KS" width="40" height="40" style="display: block;" />
-												</td>
-												<td style="font-family: Inter, Segoe UI, Arial, sans-serif; font-size: 16px; font-weight: 600; letter-spacing: 0.2px; color: #0f172a;">
-													Solana → Kryptosekken
-												</td>
-											</tr>
-										</table>
-									</td>
-								</tr>
-								<tr>
-									<td style="padding: 28px; font-family: Inter, Segoe UI, Arial, sans-serif; color: #0f172a;">
-										<h1 style="margin: 0 0 8px; font-size: 22px; font-weight: 700; color: #0f172a;">Confirm your Sol2KS account</h1>
-										<p style="margin: 0 0 16px; font-size: 14px; line-height: 1.6; color: #475569;">You’re creating a Sol2KS account. Confirm your email to activate it.</p>
-										<table role="presentation" cellpadding="0" cellspacing="0" border="0">
-											<tr>
-												<td bgcolor="#4f46e5" style="border-radius: 12px;">
-													<a href="{{ .ConfirmationURL }}" style="display: inline-block; padding: 12px 18px; font-size: 14px; font-weight: 600; color: #ffffff; text-decoration: none; font-family: Inter, Segoe UI, Arial, sans-serif;">Confirm Sol2KS email</a>
-												</td>
-											</tr>
-										</table>
-										<p style="margin: 12px 0 0; font-size: 12px; line-height: 1.6; color: #64748b; word-break: break-all;">If the button doesn’t work, copy and paste this link into your browser:<br />{{ .ConfirmationURL }}</p>
-										<p style="margin: 16px 0 0; font-size: 12px; line-height: 1.6; color: #64748b;">If you didn’t request this, you can ignore this email. No action is required.</p>
-										<div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8;">Sol2KS • Solana2Kryptosekken</div>
-									</td>
-								</tr>
-							</table>
-						</td>
-					</tr>
-				</table>
-			</body>
-		</html>
-						</td>
+		<meta charset="UTF-8" />
+		<title>Confirm your account</title>
+	</head>
+	<body
+		style="margin: 0; padding: 0; background-color: #f8fafc"
+		bgcolor="#f8fafc"
+	>
+		<table
+			role="presentation"
+			cellpadding="0"
+			cellspacing="0"
+			border="0"
+			width="100%"
+			bgcolor="#f8fafc"
+			style="background-color: #f8fafc"
+		>
+			<tr>
+				<td
+					align="center"
+					bgcolor="#f8fafc"
+					style="padding: 32px 12px; background-color: #f8fafc"
+				>
+					<table
+						role="presentation"
+						cellpadding="0"
+						cellspacing="0"
+						border="0"
+						width="560"
+						bgcolor="#ffffff"
+						style="
+							max-width: 560px;
+							width: 100%;
+							background-color: #ffffff;
+							border: 1px solid #e2e8f0;
+							border-radius: 20px;
+							overflow: hidden;
+						"
+					>
+						<tr>
+							<td
+								bgcolor="#ffffff"
+								style="
+									padding: 24px 28px;
+									border-bottom: 1px solid #e2e8f0;
+									background-color: #ffffff;
+								"
+							>
+								<table
+									role="presentation"
+									cellpadding="0"
+									cellspacing="0"
+									border="0"
+									bgcolor="#ffffff"
+									style="background-color: #ffffff"
+								>
+									<tr>
+										<td
+											bgcolor="#ffffff"
+											style="padding-right: 12px; background-color: #ffffff"
+										>
+											<img
+												src="https://www.sol2ks.no/Sol2KS_logo.png"
+												alt="Sol2KS"
+												width="40"
+												height="40"
+												style="display: block"
+											/>
+										</td>
+										<td
+											bgcolor="#ffffff"
+											style="
+												font-family:
+													Inter,
+													Segoe UI,
+													Arial,
+													sans-serif;
+												font-size: 16px;
+												font-weight: 600;
+												letter-spacing: 0.2px;
+												color: #0f172a;
+												background-color: #ffffff;
+											"
+										>
+											Solana → Kryptosekken
+										</td>
+									</tr>
+								</table>
+							</td>
+						</tr>
+						<tr>
+							<td
+								bgcolor="#ffffff"
+								style="
+									padding: 28px;
+									font-family:
+										Inter,
+										Segoe UI,
+										Arial,
+										sans-serif;
+									color: #0f172a;
+									background-color: #ffffff;
+								"
+							>
+								<h1
+									style="
+										margin: 0 0 8px;
+										font-size: 22px;
+										font-weight: 700;
+										color: #0f172a;
+									"
+								>
+									Confirm your Sol2KS account
+								</h1>
+								<p
+									style="
+										margin: 0 0 16px;
+										font-size: 14px;
+										line-height: 1.6;
+										color: #475569;
+									"
+								>
+									You’re creating a Sol2KS account. Confirm your email to
+									activate it.
+								</p>
+								<table
+									role="presentation"
+									cellpadding="0"
+									cellspacing="0"
+									border="0"
+									bgcolor="#ffffff"
+									style="background-color: #ffffff"
+								>
+									<tr>
+										<td
+											bgcolor="#4f46e5"
+											style="border-radius: 12px; background-color: #4f46e5"
+										>
+											<a
+												href="{{ .ConfirmationURL }}"
+												style="
+													display: inline-block;
+													padding: 12px 18px;
+													font-size: 14px;
+													font-weight: 600;
+													color: #ffffff;
+													text-decoration: none;
+													font-family:
+														Inter,
+														Segoe UI,
+														Arial,
+														sans-serif;
+													background-color: #4f46e5;
+													border-radius: 12px;
+												"
+												>Confirm Sol2KS email</a
+											>
+										</td>
+									</tr>
+								</table>
+								<p
+									style="
+										margin: 12px 0 0;
+										font-size: 12px;
+										line-height: 1.6;
+										color: #64748b;
+										word-break: break-all;
+									"
+								>
+									If the button doesn’t work, copy and paste this link into your
+									browser:<br />{{ .ConfirmationURL }}
+								</p>
+								<p
+									style="
+										margin: 16px 0 0;
+										font-size: 12px;
+										line-height: 1.6;
+										color: #64748b;
+									"
+								>
+									If you didn’t request this, you can ignore this email. No
+									action is required.
+								</p>
+								<div
+									style="
+										margin-top: 20px;
+										padding-top: 16px;
+										border-top: 1px solid #e2e8f0;
+										font-size: 11px;
+										color: #94a3b8;
+									"
+								>
+									Sol2KS • Solana2Kryptosekken
+								</div>
+							</td>
+						</tr>
+					</table>
+				</td>
+			</tr>
+		</table>
+	</body>
+</html>

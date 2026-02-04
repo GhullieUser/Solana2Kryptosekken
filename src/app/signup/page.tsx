@@ -69,7 +69,7 @@ export default function SignUpPage() {
 				</h1>
 				<p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
 					{tr({
-						no: "Opprett konto for å lagre adressehistorikk.",
+						no: "Opprett konto for å bruke Sol2KS.",
 						en: "Create an account to save address history."
 					})}
 				</p>
