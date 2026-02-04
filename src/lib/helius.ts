@@ -64,6 +64,8 @@ export type FetchOptions = {
 	apiKey?: string; // falls back to env
 	limit?: number; // Helius hard-cap is 100
 	maxPages?: number;
+	/** optional cursor to start pagination before this signature */
+	before?: string;
 	/** optional small delay between pages to be gentle with rate limits (ms) */
 	pageDelayMs?: number;
 };
@@ -392,9 +394,10 @@ export async function* fetchEnhancedTxs(
 	const perPageDelay =
 		typeof opts.pageDelayMs === "number" ? opts.pageDelayMs : 150;
 
-	let before: string | undefined;
+	let before: string | undefined = opts.before;
 	let pages = 0;
 	const seenBefores = new Set<string>();
+	if (before) seenBefores.add(before);
 
 	while (true) {
 		const url = new URL(base);

@@ -200,6 +200,7 @@ function CSVGeneratorPageInner() {
 
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [errorCta, setErrorCta] = useState<{ label: string; href: string } | null>(null);
 	const [ok, setOk] = useState(false);
 
 	// Default range = last 30 days
@@ -829,6 +830,7 @@ function CSVGeneratorPageInner() {
 	async function onCheckWallet(e: React.FormEvent<HTMLFormElement>) {
 		e.preventDefault();
 		setError(null);
+		setErrorCta(null);
 		setOk(false);
 		setRows(null);
 		if (!isAuthed) {
@@ -838,6 +840,7 @@ function CSVGeneratorPageInner() {
 					en: "You must be signed in to generate CSVs."
 				})
 			);
+			setErrorCta(null);
 			return;
 		}
 
@@ -847,6 +850,7 @@ function CSVGeneratorPageInner() {
 		const parsed = schema.safeParse(payload);
 		if (!parsed.success) {
 			setError(parsed.error.issues[0]?.message ?? "Invalid input");
+			setErrorCta(null);
 			pushLog(tr({ no: "❌ Ugyldig input", en: "❌ Invalid input" }));
 			setLogOpen(true);
 			return;
@@ -864,6 +868,7 @@ function CSVGeneratorPageInner() {
 		abortRef.current = ctrl;
 
 		setLoading(true);
+		let pendingErrorCta: { label: string; href: string } | null = null;
 		try {
 			pushLog(
 				tr({
@@ -887,6 +892,8 @@ function CSVGeneratorPageInner() {
 						(typeof j?.error === "string" && j.error) ||
 						(typeof j?.message === "string" && j.message) ||
 						errMsg;
+					pendingErrorCta =
+						j?.cta && typeof j.cta?.href === "string" ? j.cta : null;
 				} catch {
 					errMsg = text?.trim()?.slice(0, 300) || errMsg;
 				}
@@ -916,6 +923,9 @@ function CSVGeneratorPageInner() {
 									? evt.error
 									: "Something went wrong";
 							setError(msg);
+							setErrorCta(
+								evt?.cta && typeof evt.cta?.href === "string" ? evt.cta : null
+							);
 							pushLog(tr({ no: "❌ Feil:", en: "❌ Error:" }) + ` ${msg}`);
 						} else if (evt.type === "page") {
 							const prefix =
@@ -949,6 +959,7 @@ function CSVGeneratorPageInner() {
 								rawCount: j.rawCount,
 								processedCount: j.count
 							};
+							setErrorCta(null);
 							if (j.rowsPreview?.length) {
 								const csvAuto = buildCsvFromRows(j.rowsPreview, overrides);
 								await saveGeneratedCsv(csvAuto);
@@ -994,6 +1005,7 @@ function CSVGeneratorPageInner() {
 							? err
 							: "Something went wrong";
 				setError(message);
+				setErrorCta(pendingErrorCta);
 			}
 		} finally {
 			setLoading(false);
@@ -1077,6 +1089,7 @@ function CSVGeneratorPageInner() {
 						? err
 						: "Something went wrong";
 			setError(message);
+			setErrorCta(null);
 		}
 	}
 
@@ -1085,6 +1098,7 @@ function CSVGeneratorPageInner() {
 		formRef.current?.reset();
 		setRows(null);
 		setError(null);
+		setErrorCta(null);
 		setOk(false);
 		setAddress("");
 		setWalletName("");
@@ -1917,13 +1931,21 @@ function CSVGeneratorPageInner() {
 								</button>
 
 								{error && (
-									<span
+									<div
 										role="status"
 										aria-live="polite"
-										className="sm:ml-2 text-sm text-red-600"
+										className="sm:ml-2 text-sm text-red-600 flex flex-wrap items-center gap-2"
 									>
-										{error}
-									</span>
+										<span>{error}</span>
+										{errorCta && (
+											<Link
+												href={errorCta.href}
+												className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200 px-3 py-1 text-[11px] font-semibold hover:bg-amber-200/70 dark:hover:bg-amber-500/25"
+											>
+												{errorCta.label || tr({ no: "Kjøp flere", en: "Top up" })}
+											</Link>
+										)}
+									</div>
 								)}
 								{!error && !isAuthed && (
 									<div className="sm:ml-2 text-sm text-slate-600 dark:text-slate-300">

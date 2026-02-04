@@ -10,7 +10,6 @@ type CookieToSet = {
 };
 
 export async function middleware(request: NextRequest) {
-	console.log("=== MIDDLEWARE RUNNING ===", request.nextUrl.pathname);
 	const { pathname } = request.nextUrl;
 
 	const isStaticAsset =

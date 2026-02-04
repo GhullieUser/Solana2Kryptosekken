@@ -34,6 +34,7 @@ type CacheVal = {
 	rawCount: number;
 	count: number;
 	createdAt: number;
+	partial?: boolean;
 	sigToSigner?: Record<string, string>;
 	recipients?: Record<string, string>;
 	programIds?: Record<string, string>;
@@ -81,6 +82,17 @@ async function ensureCreditsRow(
 	return inserted?.credits_remaining ?? 0;
 }
 
+async function getAvailableRawTx(
+	supabase: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
+	userId: string
+) {
+	const rawUsed = await ensureUsageRow(supabase, userId);
+	const creditsRemaining = await ensureCreditsRow(supabase, userId);
+	const freeRemaining = Math.max(0, FREE_RAW_TX - rawUsed);
+	const availableRawTx = freeRemaining + creditsRemaining;
+	return { rawUsed, freeRemaining, creditsRemaining, availableRawTx };
+}
+
 async function consumeRawUsage(
 	supabase: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
 	userId: string,
@@ -93,18 +105,20 @@ async function consumeRawUsage(
 
 	const { data: existing } = await supabase
 		.from("billing_usage_events")
-		.select("id")
+		.select("id, raw_count")
 		.eq("user_id", userId)
 		.eq("cache_key", cacheKey)
 		.maybeSingle();
-	if (existing) {
+	const alreadyBilled = existing?.raw_count ?? 0;
+	const deltaRaw = Math.max(0, rawCount - alreadyBilled);
+	if (deltaRaw <= 0) {
 		return { ok: true, charged: 0, freeRemaining: 0, creditsRemaining: 0 };
 	}
 
 	const rawUsed = await ensureUsageRow(supabase, userId);
 	const creditsRemaining = await ensureCreditsRow(supabase, userId);
 	const freeRemaining = Math.max(0, FREE_RAW_TX - rawUsed);
-	const requiredCredits = Math.max(0, rawCount - freeRemaining);
+	const requiredCredits = Math.max(0, deltaRaw - freeRemaining);
 
 	if (requiredCredits > creditsRemaining) {
 		return {
@@ -118,7 +132,7 @@ async function consumeRawUsage(
 	const now = new Date().toISOString();
 	await supabase
 		.from("billing_user_usage")
-		.update({ raw_tx_used: rawUsed + rawCount, updated_at: now })
+		.update({ raw_tx_used: rawUsed + deltaRaw, updated_at: now })
 		.eq("user_id", userId);
 
 	if (requiredCredits > 0) {
@@ -128,16 +142,24 @@ async function consumeRawUsage(
 			.eq("user_id", userId);
 	}
 
-	await supabase.from("billing_usage_events").insert({
-		user_id: userId,
-		cache_key: cacheKey,
-		raw_count: rawCount
-	});
+	if (existing) {
+		await supabase
+			.from("billing_usage_events")
+			.update({ raw_count: rawCount, created_at: now })
+			.eq("user_id", userId)
+			.eq("cache_key", cacheKey);
+	} else {
+		await supabase.from("billing_usage_events").insert({
+			user_id: userId,
+			cache_key: cacheKey,
+			raw_count: rawCount
+		});
+	}
 
 	return {
 		ok: true,
 		charged: requiredCredits,
-		freeRemaining: Math.max(0, freeRemaining - rawCount),
+		freeRemaining: Math.max(0, freeRemaining - deltaRaw),
 		creditsRemaining: creditsRemaining - requiredCredits
 	};
 }
@@ -2620,6 +2642,8 @@ type ScanResult = {
 	sigToSigner: Map<string, string>;
 	sigToProgramId: Map<string, string>;
 	sigToProgramName: Map<string, string>;
+	rawTxCount: number;
+	partial: boolean;
 };
 
 type MetaResult = {
@@ -2631,6 +2655,7 @@ type ClassifyResult = {
 	rowsProcessed: KSRow[];
 	count: number;
 	rawCount: number;
+	partial: boolean;
 };
 
 const MAX_PAGES = 50;
@@ -2929,8 +2954,15 @@ async function scanAddresses(
 	address: string,
 	fromISO: string | undefined,
 	toISO: string | undefined,
-	onProgress?: (p: Progress) => void
+	onProgress?: (p: Progress) => void,
+	maxRawTx?: number
 ): Promise<ScanResult> {
+	const rawTxLimit =
+		typeof maxRawTx === "number" && Number.isFinite(maxRawTx)
+			? Math.max(0, Math.floor(maxRawTx))
+			: undefined;
+	let hitLimit = false;
+
 	onProgress?.({ type: "log", message: "Henter token-kontoer (ATAer) …" });
 	const tokenAccounts = await getTokenAccountsByOwner(
 		address,
@@ -2959,6 +2991,10 @@ async function scanAddresses(
 			.replace(/\b\w/g, (c) => c.toUpperCase());
 
 	for (let ai = 0; ai < addressesToQuery.length; ai++) {
+		if (rawTxLimit !== undefined && sigMap.size >= rawTxLimit) {
+			hitLimit = true;
+			break;
+		}
 		const who = addressesToQuery[ai];
 		const isMain = ai === 0;
 		let pages = 0;
@@ -2978,14 +3014,21 @@ async function scanAddresses(
 		})) {
 			pages++;
 			for (const tx of txPage) {
+				if (rawTxLimit !== undefined && sigMap.size >= rawTxLimit) {
+					hitLimit = true;
+					break;
+				}
 				if (!tx?.signature) continue;
+				const isNew = !sigMap.has(tx.signature);
 				sigMap.set(tx.signature, tx);
 
-				const fpRaw: unknown = (tx as any).feePayer;
-				if (typeof fpRaw === "string" && fpRaw) {
-					sigToSigner.set(tx.signature, fpRaw);
-				} else {
-					missing.add(tx.signature);
+				if (isNew) {
+					const fpRaw: unknown = (tx as any).feePayer;
+					if (typeof fpRaw === "string" && fpRaw) {
+						sigToSigner.set(tx.signature, fpRaw);
+					} else {
+						missing.add(tx.signature);
+					}
 				}
 
 				// Extract program address from instructions array + friendly name from source
@@ -3036,13 +3079,20 @@ async function scanAddresses(
 				const label = programLabelFor(extractedProgramAddress);
 				if (label) extractedProgramName = label;
 
-				if (extractedProgramAddress) {
-					sigToProgramId.set(tx.signature, extractedProgramAddress);
+				if (isNew) {
+					if (extractedProgramAddress) {
+						sigToProgramId.set(tx.signature, extractedProgramAddress);
+					}
+					if (extractedProgramName) {
+						sigToProgramName.set(tx.signature, extractedProgramName);
+					}
 				}
-				if (extractedProgramName) {
-					sigToProgramName.set(tx.signature, extractedProgramName);
+				if (rawTxLimit !== undefined && sigMap.size >= rawTxLimit) {
+					hitLimit = true;
+					break;
 				}
 			}
+			if (hitLimit) break;
 			onProgress?.({
 				type: "page",
 				page: pages,
@@ -3054,6 +3104,7 @@ async function scanAddresses(
 			});
 			if (pages >= MAX_PAGES) break;
 		}
+		if (hitLimit) break;
 
 		onProgress?.({
 			type: "addrDone",
@@ -3102,7 +3153,15 @@ async function scanAddresses(
 		}
 	}
 
-	return { myATAs, sigMap, sigToSigner, sigToProgramId, sigToProgramName };
+	return {
+		myATAs,
+		sigMap,
+		sigToSigner,
+		sigToProgramId,
+		sigToProgramName,
+		rawTxCount: sigMap.size,
+		partial: hitLimit
+	};
 }
 
 function collectMints(allTxs: HeliusTx[]): string[] {
@@ -3186,7 +3245,9 @@ function postProcessAndCache(
 	selfSignerMap?: Map<string, string>,
 	precomputedRecipients?: Map<string, string>,
 	precomputedProgramIds?: Map<string, string>,
-	precomputedProgramNames?: Map<string, string>
+	precomputedProgramNames?: Map<string, string>,
+	rawTxCount?: number,
+	partial = false
 ) {
 	const getSigner = selfSignerMap
 		? (s: string) => (s ? selfSignerMap.get(s) : undefined)
@@ -3230,13 +3291,15 @@ function postProcessAndCache(
 		rowsRaw: rows,
 		rowsProcessed: consolidated,
 		count: consolidated.length,
-		rawCount: rows.length
+		rawCount: Number.isFinite(rawTxCount) ? (rawTxCount as number) : rows.length,
+		partial
 	};
 
 	putCache(ctx.cacheKey, {
 		rowsProcessed: consolidated,
 		count: res.count,
 		rawCount: res.rawCount,
+		partial: res.partial,
 		sigToSigner: selfSignerMap
 			? Object.fromEntries(selfSignerMap.entries())
 			: undefined,
@@ -3342,6 +3405,11 @@ export async function POST(req: NextRequest) {
 			cacheKey: ckey
 		};
 
+		const creditState = await getAvailableRawTx(supabase, userId);
+		const availableRawTx = creditState.availableRawTx;
+		const noCreditsError = "not enough TX Credits to perform a search";
+		const topUpCta = { label: "Top up", href: "/pricing" };
+
 		/* ---------- NDJSON streaming (preview with progress) ---------- */
 		if (wantNDJSON) {
 			const stream = new ReadableStream({
@@ -3351,7 +3419,10 @@ export async function POST(req: NextRequest) {
 						controller.enqueue(enc.encode(JSON.stringify(obj) + "\n"));
 
 					const cached = getOrNull(ckey);
-					if (cached) {
+					const canUseCached =
+						cached &&
+						(!cached.partial || availableRawTx <= cached.rawCount);
+					if (cached && canUseCached) {
 						const billing = await consumeRawUsage(
 							supabase,
 							userId,
@@ -3391,16 +3462,36 @@ export async function POST(req: NextRequest) {
 								rowsPreview,
 								count: cached.count,
 								rawCount: cached.rawCount,
-								cacheKey: ckey
+								cacheKey: ckey,
+								partial: cached.partial ?? false
 							}
 						});
 						controller.close();
 						return;
 					}
 
+					if (availableRawTx <= 0) {
+						await send({
+							type: "error",
+							error: noCreditsError,
+							cta: topUpCta
+						});
+						await send({
+							type: "log",
+							message:
+								"⚠️ Ikke nok TX Credits. Kjøp flere for å fortsette."
+						});
+						controller.close();
+						return;
+					}
+
 					try {
-						const scan = await scanAddresses(address, fromISO, toISO, (p) =>
-							send(p)
+						const scan = await scanAddresses(
+							address,
+							fromISO,
+							toISO,
+							(p) => send(p),
+							availableRawTx
 						);
 						const allTxs = [...scan.sigMap.values()].sort(
 							(a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
@@ -3436,7 +3527,9 @@ export async function POST(req: NextRequest) {
 							scan.sigToSigner,
 							recipients, // ← pass precomputed recipients
 							scan.sigToProgramId,
-							scan.sigToProgramName
+							scan.sigToProgramName,
+							scan.rawTxCount,
+							scan.partial
 						);
 						const rowsPreview = attachSigAndSigner(
 							result.rowsProcessed,
@@ -3472,7 +3565,8 @@ export async function POST(req: NextRequest) {
 								rowsPreview,
 								count: result.count,
 								rawCount: result.rawCount,
-								cacheKey: ckey
+								cacheKey: ckey,
+								partial: result.partial
 							}
 						});
 					} catch (err: any) {
@@ -3504,7 +3598,9 @@ export async function POST(req: NextRequest) {
 		/* ---------- JSON (non-stream) ---------- */
 		if (wantJSON) {
 			const cached = getOrNull(ckey);
-			if (cached) {
+			const canUseCached =
+				cached && (!cached.partial || availableRawTx <= cached.rawCount);
+			if (cached && canUseCached) {
 				const billing = await consumeRawUsage(
 					supabase,
 					userId,
@@ -3534,11 +3630,25 @@ export async function POST(req: NextRequest) {
 					rows: rowsOut,
 					count: cached.count,
 					rawCount: cached.rawCount,
-					cacheKey: ckey
+					cacheKey: ckey,
+					partial: cached.partial ?? false
 				});
 			}
 
-			const scan = await scanAddresses(address, fromISO, toISO);
+			if (availableRawTx <= 0) {
+				return NextResponse.json(
+					{ error: noCreditsError, cta: topUpCta },
+					{ status: 402 }
+				);
+			}
+
+			const scan = await scanAddresses(
+				address,
+				fromISO,
+				toISO,
+				undefined,
+				availableRawTx
+			);
 			const allTxs = [...scan.sigMap.values()].sort(
 				(a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
 			);
@@ -3569,7 +3679,9 @@ export async function POST(req: NextRequest) {
 				scan.sigToSigner,
 				recipients, // ← pass precomputed recipients
 				scan.sigToProgramId, // ← pass precomputed program IDs
-				scan.sigToProgramName
+				scan.sigToProgramName,
+				scan.rawTxCount,
+				scan.partial
 			);
 
 			const rowsOutRaw = attachSigAndSigner(
@@ -3603,7 +3715,8 @@ export async function POST(req: NextRequest) {
 				rows: rowsOut,
 				count: result.count,
 				rawCount: result.rawCount,
-				cacheKey: ckey
+				cacheKey: ckey,
+				partial: result.partial
 			});
 		}
 
