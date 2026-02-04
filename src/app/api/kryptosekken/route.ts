@@ -1,6 +1,7 @@
 // app/api/kryptosekken/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { createSupabaseRouteClient } from "@/lib/supabase/server";
 import {
 	fetchEnhancedTxs,
 	fetchTokenMetadataMap,
@@ -41,6 +42,105 @@ type CacheVal = {
 
 const CACHE = new Map<string, CacheVal>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+const FREE_RAW_TX = 50;
+
+async function ensureUsageRow(
+	supabase: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
+	userId: string
+) {
+	const { data } = await supabase
+		.from("billing_user_usage")
+		.select("raw_tx_used")
+		.eq("user_id", userId)
+		.maybeSingle();
+	if (data) return data.raw_tx_used ?? 0;
+	const { data: inserted } = await supabase
+		.from("billing_user_usage")
+		.insert({ user_id: userId })
+		.select("raw_tx_used")
+		.single();
+	return inserted?.raw_tx_used ?? 0;
+}
+
+async function ensureCreditsRow(
+	supabase: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
+	userId: string
+) {
+	const { data } = await supabase
+		.from("billing_user_credits")
+		.select("credits_remaining")
+		.eq("user_id", userId)
+		.maybeSingle();
+	if (data) return data.credits_remaining ?? 0;
+	const { data: inserted } = await supabase
+		.from("billing_user_credits")
+		.insert({ user_id: userId })
+		.select("credits_remaining")
+		.single();
+	return inserted?.credits_remaining ?? 0;
+}
+
+async function consumeRawUsage(
+	supabase: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
+	userId: string,
+	rawCount: number,
+	cacheKey: string
+) {
+	if (!Number.isFinite(rawCount) || rawCount <= 0) {
+		return { ok: true, charged: 0, freeRemaining: 0, creditsRemaining: 0 };
+	}
+
+	const { data: existing } = await supabase
+		.from("billing_usage_events")
+		.select("id")
+		.eq("user_id", userId)
+		.eq("cache_key", cacheKey)
+		.maybeSingle();
+	if (existing) {
+		return { ok: true, charged: 0, freeRemaining: 0, creditsRemaining: 0 };
+	}
+
+	const rawUsed = await ensureUsageRow(supabase, userId);
+	const creditsRemaining = await ensureCreditsRow(supabase, userId);
+	const freeRemaining = Math.max(0, FREE_RAW_TX - rawUsed);
+	const requiredCredits = Math.max(0, rawCount - freeRemaining);
+
+	if (requiredCredits > creditsRemaining) {
+		return {
+			ok: false,
+			requiredCredits,
+			creditsRemaining,
+			freeRemaining
+		};
+	}
+
+	const now = new Date().toISOString();
+	await supabase
+		.from("billing_user_usage")
+		.update({ raw_tx_used: rawUsed + rawCount, updated_at: now })
+		.eq("user_id", userId);
+
+	if (requiredCredits > 0) {
+		await supabase
+			.from("billing_user_credits")
+			.update({ credits_remaining: creditsRemaining - requiredCredits, updated_at: now })
+			.eq("user_id", userId);
+	}
+
+	await supabase.from("billing_usage_events").insert({
+		user_id: userId,
+		cache_key: cacheKey,
+		raw_count: rawCount
+	});
+
+	return {
+		ok: true,
+		charged: requiredCredits,
+		freeRemaining: Math.max(0, freeRemaining - rawCount),
+		creditsRemaining: creditsRemaining - requiredCredits
+	};
+}
 
 function mkCacheKey(input: {
 	address: string;
@@ -3173,6 +3273,13 @@ interface Body {
 
 export async function POST(req: NextRequest) {
 	try {
+		const supabase = await createSupabaseRouteClient();
+		const { data: userData, error: userError } = await supabase.auth.getUser();
+		if (userError || !userData?.user) {
+			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+		}
+		const userId = userData.user.id;
+
 		const body = (await req.json()) as Body;
 
 		const address = String(body.address || "").trim();
@@ -3245,6 +3352,25 @@ export async function POST(req: NextRequest) {
 
 					const cached = getOrNull(ckey);
 					if (cached) {
+						const billing = await consumeRawUsage(
+							supabase,
+							userId,
+							cached.rawCount,
+							ckey
+						);
+						if (!billing.ok) {
+							await send({
+								type: "error",
+								error: "Payment required"
+							});
+							await send({
+								type: "log",
+								message:
+									"⚠️ Ikke nok kreditter. Kjøp flere TX for å fortsette."
+							});
+							controller.close();
+							return;
+						}
 						const rowsPreview = attachSigAndSigner(
 							cached.rowsProcessed,
 							walletTagStr,
@@ -3323,6 +3449,23 @@ export async function POST(req: NextRequest) {
 							scan.sigMap
 						);
 
+						const billing = await consumeRawUsage(
+							supabase,
+							userId,
+							result.rawCount,
+							ckey
+						);
+						if (!billing.ok) {
+							await send({ type: "error", error: "Payment required" });
+							await send({
+								type: "log",
+								message:
+									"⚠️ Ikke nok kreditter. Kjøp flere TX for å fortsette."
+							});
+							controller.close();
+							return;
+						}
+
 						await send({
 							type: "done",
 							data: {
@@ -3362,6 +3505,18 @@ export async function POST(req: NextRequest) {
 		if (wantJSON) {
 			const cached = getOrNull(ckey);
 			if (cached) {
+				const billing = await consumeRawUsage(
+					supabase,
+					userId,
+					cached.rawCount,
+					ckey
+				);
+				if (!billing.ok) {
+					return NextResponse.json(
+						{ error: "Payment required" },
+						{ status: 402 }
+					);
+				}
 				const rowsOutRaw = attachSigAndSigner(
 					cached.rowsProcessed,
 					walletTagStr,
@@ -3430,6 +3585,19 @@ export async function POST(req: NextRequest) {
 
 			let rowsOut = applyClientEdits(rowsOutRaw, body.clientEdits);
 			rowsOut = applyOverridesToRows(rowsOut, body.overrides);
+
+			const billing = await consumeRawUsage(
+				supabase,
+				userId,
+				result.rawCount,
+				ckey
+			);
+			if (!billing.ok) {
+				return NextResponse.json(
+					{ error: "Payment required" },
+					{ status: 402 }
+				);
+			}
 
 			return NextResponse.json({
 				rows: rowsOut,

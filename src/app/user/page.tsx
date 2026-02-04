@@ -10,6 +10,7 @@ import {
 	FiDownload,
 	FiUser
 } from "react-icons/fi";
+import { BsXDiamondFill } from "react-icons/bs";
 import { MdOutlineCleaningServices } from "react-icons/md";
 import StyledSelect from "@/app/components/styled-select";
 import { useLocale } from "@/app/components/locale-provider";
@@ -46,6 +47,11 @@ export default function UserPage() {
 	const [deleteOpen, setDeleteOpen] = useState(false);
 	const [deleting, setDeleting] = useState(false);
 	const [showRawTx, setShowRawTx] = useState(true);
+	const [billingStatus, setBillingStatus] = useState<{
+		rawUsed: number;
+		freeRemaining: number;
+		creditsRemaining: number;
+	} | null>(null);
 
 	useEffect(() => {
 		let active = true;
@@ -69,6 +75,11 @@ export default function UserPage() {
 				const j = await csvRes.json();
 				if (active) setCsvs(j.data || []);
 			}
+			const billingRes = await fetch("/api/billing/status");
+			if (billingRes.ok) {
+				const j = await billingRes.json();
+				if (active) setBillingStatus(j);
+			}
 			if (active) setLoading(false);
 		})();
 
@@ -76,6 +87,7 @@ export default function UserPage() {
 			active = false;
 		};
 	}, [supabase]);
+
 
 	async function signOut() {
 		await supabase.auth.signOut();
@@ -144,7 +156,6 @@ export default function UserPage() {
 		URL.revokeObjectURL(url);
 	}
 
-
 	function formatDateRange(from?: string | null, to?: string | null) {
 		if (!from && !to) return null;
 		const fmt = (v?: string | null) => {
@@ -196,7 +207,6 @@ export default function UserPage() {
 			txProcessedTotal
 		};
 	}, [addresses.length, csvs]);
-
 
 	return (
 		<main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
@@ -283,7 +293,10 @@ export default function UserPage() {
 												: "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
 										}`}
 										title={tr({ no: "Etter støvbehandling", en: "Processed" })}
-										aria-label={tr({ no: "Etter støvbehandling", en: "Processed" })}
+										aria-label={tr({
+											no: "Etter støvbehandling",
+											en: "Processed"
+										})}
 									>
 										<MdOutlineCleaningServices className="h-3.5 w-3.5" />
 									</button>
@@ -303,6 +316,38 @@ export default function UserPage() {
 								</div>
 							</div>
 						</div>
+
+							<div className="mt-4 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-white/5 p-4">
+								<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+									<div>
+										<p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 flex items-center gap-2">
+											<BsXDiamondFill className="h-3.5 w-3.5 text-amber-500" />
+											{tr({ no: "TX Credits", en: "TX Credits" })}
+										</p>
+										{billingStatus ? (
+											<p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+												{tr({
+													no: `Gratis igjen: ${billingStatus.freeRemaining} • TX Credits: ${billingStatus.creditsRemaining}`,
+													en: `Free left: ${billingStatus.freeRemaining} • TX Credits: ${billingStatus.creditsRemaining}`
+											})}
+										</p>
+										) : (
+											<p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+												{tr({ no: "Laster…", en: "Loading…" })}
+											</p>
+										)}
+									</div>
+									<div>
+										<Link
+											href="/pricing"
+											className="inline-flex items-center rounded-xl bg-indigo-600 text-white px-4 py-2 text-xs font-semibold hover:bg-indigo-500"
+											style={{ color: "#ffffff" }}
+										>
+											{tr({ no: "Kjøp flere", en: "Buy more" })}
+										</Link>
+									</div>
+								</div>
+							</div>
 
 						<div className="mt-6">
 							<h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
@@ -334,7 +379,8 @@ export default function UserPage() {
 										const selectedId =
 											csvSelection[group.address] || group.latest?.id;
 										const selected =
-											group.list.find((r) => r.id === selectedId) || group.latest;
+											group.list.find((r) => r.id === selectedId) ||
+											group.latest;
 										if (!selected) return null;
 										const options = group.list.map((opt) => ({
 											value: opt.id,
@@ -363,10 +409,11 @@ export default function UserPage() {
 																<span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-200 px-2 py-0.5">
 																	<FiActivity className="h-3 w-3" />
 																	<span>
-																		{tr({ no: "TX", en: "TX" })}: {" "}
+																		{tr({ no: "TX", en: "TX" })}:{" "}
 																		{selected.raw_count ?? 0}
 																		{selected.processed_count !== null &&
-																		selected.processed_count !== selected.raw_count
+																		selected.processed_count !==
+																			selected.raw_count
 																			? ` → ${selected.processed_count}`
 																			: ""}
 																	</span>
@@ -406,7 +453,9 @@ export default function UserPage() {
 															<FiEye className="h-5 w-5" />
 														</Link>
 														<button
-															onClick={() => downloadCsv(selected.id, selected.address)}
+															onClick={() =>
+																downloadCsv(selected.id, selected.address)
+															}
 															className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-500"
 															title={tr({
 																no: "Last ned CSV",
@@ -426,27 +475,27 @@ export default function UserPage() {
 									})}
 								</ul>
 							)}
-							</div>
+						</div>
 
-							<div className="mt-8">
-								<h2 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">
-									{tr({ no: "Data og personvern", en: "Data & privacy" })}
-								</h2>
-								<div className="flex flex-wrap gap-3">
-									<button
-										onClick={exportData}
-										className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-500"
-									>
-										{tr({ no: "Eksporter data", en: "Export my data" })}
-									</button>
-									<button
-										onClick={() => setDeleteOpen(true)}
-										className="rounded-xl border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 px-4 py-2 text-sm font-medium hover:bg-rose-50 dark:hover:bg-rose-500/10"
-									>
-										{tr({ no: "Slett mine data", en: "Delete my data" })}
-									</button>
-								</div>
+						<div className="mt-8">
+							<h2 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">
+								{tr({ no: "Data og personvern", en: "Data & privacy" })}
+							</h2>
+							<div className="flex flex-wrap gap-3">
+								<button
+									onClick={exportData}
+									className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-500"
+								>
+									{tr({ no: "Eksporter data", en: "Export my data" })}
+								</button>
+								<button
+									onClick={() => setDeleteOpen(true)}
+									className="rounded-xl border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 px-4 py-2 text-sm font-medium hover:bg-rose-50 dark:hover:bg-rose-500/10"
+								>
+									{tr({ no: "Slett mine data", en: "Delete my data" })}
+								</button>
 							</div>
+						</div>
 
 						{message && (
 							<p className="mt-3 text-sm text-slate-600 dark:text-slate-300">

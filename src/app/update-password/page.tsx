@@ -43,12 +43,22 @@ export default function UpdatePasswordPage() {
 		setMessage(null);
 		setMessageType(null);
 		if (!email) {
-			setMessage(tr({ no: "Fant ikke e-post for brukeren.", en: "User email not found." }));
+			setMessage(
+				tr({
+					no: "Fant ikke e-post for brukeren.",
+					en: "User email not found."
+				})
+			);
 			setMessageType("error");
 			return;
 		}
 		if (currentPassword.trim().length === 0) {
-			setMessage(tr({ no: "Skriv inn ditt gamle passord.", en: "Enter your current password." }));
+			setMessage(
+				tr({
+					no: "Skriv inn ditt gamle passord.",
+					en: "Enter your current password."
+				})
+			);
 			setMessageType("error");
 			return;
 		}
@@ -65,7 +75,12 @@ export default function UpdatePasswordPage() {
 			password: currentPassword
 		});
 		if (signInError) {
-			setMessage(tr({ no: "Gammelt passord er feil.", en: "Current password is incorrect." }));
+			setMessage(
+				tr({
+					no: "Gammelt passord er feil.",
+					en: "Current password is incorrect."
+				})
+			);
 			setMessageType("error");
 			setLoading(false);
 			return;

@@ -107,6 +107,89 @@ on public.generated_csvs (
 create index if not exists generated_csvs_user_updated_idx
 on public.generated_csvs (user_id, updated_at desc);
 
+-- ================= Billing: prepaid credits + usage =================
+create table if not exists public.billing_user_usage (
+	user_id uuid primary key references auth.users(id) on delete cascade,
+	raw_tx_used int not null default 0,
+	created_at timestamptz not null default now(),
+	updated_at timestamptz not null default now()
+);
+
+alter table public.billing_user_usage enable row level security;
+
+drop policy if exists "select_own_billing_usage" on public.billing_user_usage;
+drop policy if exists "insert_own_billing_usage" on public.billing_user_usage;
+drop policy if exists "update_own_billing_usage" on public.billing_user_usage;
+
+create policy "select_own_billing_usage" on public.billing_user_usage
+for select
+using (auth.uid() = user_id);
+
+create policy "insert_own_billing_usage" on public.billing_user_usage
+for insert
+with check (auth.uid() = user_id);
+
+create policy "update_own_billing_usage" on public.billing_user_usage
+for update
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create table if not exists public.billing_user_credits (
+	user_id uuid primary key references auth.users(id) on delete cascade,
+	credits_remaining int not null default 0,
+	created_at timestamptz not null default now(),
+	updated_at timestamptz not null default now()
+);
+
+alter table public.billing_user_credits enable row level security;
+
+drop policy if exists "select_own_billing_credits" on public.billing_user_credits;
+drop policy if exists "insert_own_billing_credits" on public.billing_user_credits;
+drop policy if exists "update_own_billing_credits" on public.billing_user_credits;
+
+create policy "select_own_billing_credits" on public.billing_user_credits
+for select
+using (auth.uid() = user_id);
+
+create policy "insert_own_billing_credits" on public.billing_user_credits
+for insert
+with check (auth.uid() = user_id);
+
+create policy "update_own_billing_credits" on public.billing_user_credits
+for update
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create table if not exists public.billing_usage_events (
+	id uuid primary key default gen_random_uuid(),
+	user_id uuid not null references auth.users(id) on delete cascade,
+	cache_key text not null,
+	raw_count int not null,
+	created_at timestamptz not null default now(),
+	unique (user_id, cache_key)
+);
+
+alter table public.billing_usage_events enable row level security;
+
+drop policy if exists "select_own_billing_events" on public.billing_usage_events;
+drop policy if exists "insert_own_billing_events" on public.billing_usage_events;
+
+create policy "select_own_billing_events" on public.billing_usage_events
+for select
+using (auth.uid() = user_id);
+
+create policy "insert_own_billing_events" on public.billing_usage_events
+for insert
+with check (auth.uid() = user_id);
+
+create table if not exists public.billing_webhook_events (
+	id text primary key,
+	event_type text,
+	processed_at timestamptz not null default now()
+);
+
+alter table public.billing_webhook_events enable row level security;
+
 -- Retention policy example: delete rows older than 90 days (adjust as needed)
 -- Schedule via Supabase cron or external scheduler:
 -- delete from public.search_addresses where last_used_at < now() - interval '90 days';

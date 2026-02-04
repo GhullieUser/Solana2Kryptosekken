@@ -85,12 +85,12 @@ export default function LandingPage() {
 									>
 										{tr({ no: "Prøv gratis", en: "Try for free" })}
 									</button>
-									<button
-										type="button"
+									<Link
+										href="/pricing"
 										className="inline-flex items-center rounded-2xl border border-slate-200 bg-white/70 px-6 py-3 text-base sm:text-lg font-semibold text-slate-800 shadow-sm hover:bg-white hover:border-slate-300 transition dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10 dark:hover:border-white/20"
 									>
 										{tr({ no: "Se priser", en: "See pricing" })}
-									</button>
+									</Link>
 								</div>
 							</div>
 

@@ -1357,17 +1357,17 @@ function CSVGeneratorPageInner() {
 											}}
 											className={`inline-flex items-center gap-2 rounded-xl border  text-sm shadow-sm dark:shadow-black/25 aspect-square p-2 h-[37px] w-[37px] justify-center
                         ${
-												canOpenExplorer
-													? "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-white/10"
-												: "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-white/5 text-slate-400 cursor-not-allowed"
-											}`}
+													canOpenExplorer
+														? "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-white/10"
+														: "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-white/5 text-slate-400 cursor-not-allowed"
+												}`}
 											title={
 												canOpenExplorer
 													? tr({ no: "Åpne i Solscan", en: "Open in Solscan" })
 													: tr({
 															no: "Skriv inn en adresse først",
 															en: "Enter an address first"
-													})
+														})
 											}
 										>
 											<IoOpenOutline className="h-[17px] w-[17px]" />

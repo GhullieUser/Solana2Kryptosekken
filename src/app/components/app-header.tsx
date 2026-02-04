@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { useLocale } from "@/app/components/locale-provider";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { FiMoon, FiSun, FiUser, FiChevronDown, FiLogOut } from "react-icons/fi";
+import { BsXDiamondFill } from "react-icons/bs";
 
 function useTheme() {
 	const [isDark, setIsDark] = useState(false);
@@ -45,7 +46,7 @@ function ThemePill() {
 		<button
 			type="button"
 			onClick={toggle}
-			className="inline-flex h-[28px] sm:h-[32px] w-[36px] sm:w-[40px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+			className="inline-flex h-[24px] sm:h-[26px] w-[28px] sm:w-[30px] items-center justify-center rounded-full text-slate-700 dark:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-white/10 transition"
 			title={tr({ no: "Bytt lys/mørk", en: "Toggle light/dark" })}
 			aria-label={tr({ no: "Bytt lys/mørk", en: "Toggle light/dark" })}
 		>
@@ -67,10 +68,7 @@ function LocalePill() {
 		"opacity-60 saturate-0 hover:opacity-100 hover:saturate-100";
 
 	return (
-		<div
-			className="inline-flex h-[28px] sm:h-[32px] items-center gap-1 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-1.5 py-1 text-xs font-medium shadow-sm dark:shadow-black/25"
-			aria-label={tr({ no: "Språk", en: "Language" })}
-		>
+		<div className="inline-flex items-center gap-1" aria-label={tr({ no: "Språk", en: "Language" })}>
 			<button
 				type="button"
 				onClick={() => setLocale("no")}
@@ -116,6 +114,7 @@ export default function AppHeader() {
 	const [userMenuOpen, setUserMenuOpen] = useState(false);
 	const userMenuRef = useRef<HTMLDivElement | null>(null);
 	const [scrolled, setScrolled] = useState(false);
+	const [creditsRemaining, setCreditsRemaining] = useState<number | null>(null);
 
 	useEffect(() => {
 		let active = true;
@@ -129,6 +128,35 @@ export default function AppHeader() {
 			active = false;
 		};
 	}, [supabase]);
+
+	useEffect(() => {
+		if (!isAuthed) {
+			setCreditsRemaining(null);
+			return;
+		}
+		const controller = new AbortController();
+		(async () => {
+			try {
+				const res = await fetch("/api/billing/status", {
+					method: "GET",
+					cache: "no-store",
+					signal: controller.signal,
+				});
+				if (!res.ok) return;
+				const data = (await res.json()) as {
+					creditsRemaining?: number;
+				};
+				setCreditsRemaining(
+					typeof data.creditsRemaining === "number"
+						? data.creditsRemaining
+						: 0
+				);
+			} catch {
+				// ignore
+			}
+		})();
+		return () => controller.abort();
+	}, [isAuthed]);
 
 	useEffect(() => {
 		function onDocClick(e: MouseEvent) {
@@ -163,7 +191,7 @@ export default function AppHeader() {
 					: "bg-transparent"
 			}`}
 		>
-			<div className="relative mx-auto max-w-6xl px-4 py-3 sm:py-4 flex items-center justify-between gap-3">
+			<div className="relative mx-auto max-w-6xl px-4 py-3 sm:py-4 flex items-center gap-3">
 				<div className="flex items-center gap-2 sm:gap-3 font-medium text-slate-800 dark:text-slate-200">
 					<Link
 						href="/"
@@ -180,13 +208,13 @@ export default function AppHeader() {
 					</Link>
 					<Link
 						href="/"
-						className="inline-flex items-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 py-1 sm:py-1.5 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition text-xs sm:text-sm"
+						className="inline-flex items-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 py-1 sm:py-1.5 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition text-[11px] sm:text-xs"
 					>
 						Solana → Kryptosekken
 					</Link>
 				</div>
 
-				<nav className="hidden sm:flex absolute left-1/2 -translate-x-1/2 items-center justify-center gap-2 font-medium text-slate-700 dark:text-slate-200 text-sm">
+				<nav className="hidden sm:flex flex-1 items-center justify-center gap-2 font-medium text-slate-700 dark:text-slate-200 text-sm">
 					<Link
 						href="/"
 						className={`rounded-full px-4 py-1.5 transition ${
@@ -207,17 +235,43 @@ export default function AppHeader() {
 					>
 						{tr({ no: "CSV Generator", en: "CSV Generator" })}
 					</Link>
+					<Link
+						href="/pricing"
+						className={`rounded-full px-4 py-1.5 transition ${
+							pathname === "/pricing"
+								? "text-slate-900 dark:text-white"
+								: "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+						}`}
+					>
+						{tr({ no: "Priser", en: "Pricing" })}
+					</Link>
 				</nav>
 
 				<div className="flex items-center gap-2">
-					<LocalePill />
-					<ThemePill />
+					<div className="inline-flex h-[28px] sm:h-[32px] items-center gap-2 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-1.5 sm:px-2 shadow-sm dark:shadow-black/25">
+						<LocalePill />
+						<span className="h-4 w-px bg-slate-200/80 dark:bg-white/15" aria-hidden="true" />
+						<ThemePill />
+					</div>
+					{isAuthed && (
+						<Link
+							href="/pricing"
+							className="inline-flex h-[28px] sm:h-[32px] items-center justify-center gap-2 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 text-[11px] sm:text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+							aria-label={tr({ no: "TX Credits", en: "TX Credits" })}
+							title={tr({ no: "TX Credits", en: "TX Credits" })}
+						>
+							<BsXDiamondFill className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-500" />
+							<span className="tabular-nums">
+								{creditsRemaining === null ? "—" : creditsRemaining}
+							</span>
+						</Link>
+					)}
 					{isAuthed ? (
 						<div className="relative" ref={userMenuRef}>
 							<button
 								type="button"
 								onClick={() => setUserMenuOpen((v) => !v)}
-								className="inline-flex h-[28px] sm:h-[32px] items-center justify-center gap-1 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+								className="inline-flex h-[28px] sm:h-[32px] items-center justify-center gap-1 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 text-[11px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
 							>
 								<FiUser className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
 								<span className="max-w-[120px] truncate">
@@ -249,7 +303,7 @@ export default function AppHeader() {
 					) : (
 						<Link
 							href="/signin"
-							className="inline-flex h-[28px] sm:h-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+							className="inline-flex h-[28px] sm:h-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 text-[11px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
 						>
 							{tr({ no: "Logg inn", en: "Sign in" })}
 						</Link>
