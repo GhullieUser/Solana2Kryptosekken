@@ -190,19 +190,77 @@ html.dark :focus-visible {
 	outline-color: rgba(99, 102, 241, 0.45);
 }
 
+/* ================= Header border ================= */
+.s2ks-header::after {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 1px;
+	background: rgba(226, 232, 240, 0.7);
+	opacity: 0;
+	transition: opacity 200ms ease;
+	pointer-events: none;
+}
+
+html.dark .s2ks-header::after {
+	background: rgba(255, 255, 255, 0.1);
+}
+
+.s2ks-header[data-scrolled="true"]::after {
+	opacity: 1;
+}
+
+.s2ks-footer {
+	position: relative;
+}
+
+.s2ks-footer::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 0;
+	height: 1px;
+	background: rgba(226, 232, 240, 0.7);
+	pointer-events: none;
+}
+
+html.dark .s2ks-footer::before {
+	background: rgba(255, 255, 255, 0.1);
+}
+
 /* ================= Hero logo glow ================= */
 .s2ks-glow {
 	position: relative;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	perspective: 900px;
-	--flip-depth: 60px;
+	--cube-size: 120px;
+	width: var(--cube-size);
+	height: var(--cube-size);
+	--flip-depth: calc(var(--cube-size) / 2);
+	perspective: calc(var(--cube-size) * 6);
+	transform-style: preserve-3d;
 }
 
 @media (min-width: 640px) {
 	.s2ks-glow {
-		--flip-depth: 108px;
+		--cube-size: 216px;
+	}
+}
+
+.s2ks-face-media {
+	width: 80%;
+	height: 80%;
+	display: block;
+}
+
+@media (min-width: 640px) {
+	.s2ks-face-media {
+		width: 84%;
+		height: 84%;
 	}
 }
 

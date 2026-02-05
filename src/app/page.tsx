@@ -61,8 +61,8 @@ export default function LandingPage() {
 						<div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(15,23,42,0.08),_transparent_60%)] dark:bg-[radial-gradient(circle_at_top,_rgba(148,163,184,0.08),_transparent_60%)]" />
 					</div>
 					<div className="mx-auto w-full max-w-6xl px-4 pt-4 sm:pt-6 pb-0">
-						<section className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,240px)] items-center gap-8 sm:gap-4">
-							<div className="min-w-0 text-center sm:text-left">
+						<section className="my-8 sm:my-0 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,240px)] items-center gap-8 sm:gap-4">
+							<div className="order-2 sm:order-1 min-w-0 text-center sm:text-left">
 								<h1 className="text-balance text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight max-w-[18ch] sm:max-w-[20ch] lg:max-w-[22ch] mx-auto sm:mx-0">
 									<span className="bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">
 										{tr({
@@ -77,25 +77,25 @@ export default function LandingPage() {
 										en: "Extract transactions from any Solana address into a CSV file ready for Kryptosekken."
 									})}
 								</p>
-								<div className="mt-6 flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-3">
+								<div className="mt-12 sm:mt-6 flex flex-col sm:flex-row items-stretch justify-center sm:justify-start gap-3 w-full sm:w-auto">
 									<button
 										type="button"
 										onClick={handleOpenGenerator}
-										className="inline-flex items-center rounded-2xl bg-gradient-to-r from-indigo-600 via-blue-600 to-emerald-600 text-white !text-white px-7 py-3.5 text-base sm:text-lg font-semibold shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:via-blue-500 hover:to-emerald-500 transition"
+										className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-600 via-blue-600 to-emerald-600 text-white !text-white px-7 py-3.5 text-base sm:text-lg font-semibold shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:via-blue-500 hover:to-emerald-500 transition h-full w-full sm:w-auto"
 									>
 										{tr({ no: "Prøv gratis", en: "Try for free" })}
 									</button>
 									<Link
 										href="/pricing"
-										className="inline-flex items-center rounded-2xl border border-slate-200 bg-white/70 px-6 py-3 text-base sm:text-lg font-semibold text-slate-800 shadow-sm hover:bg-white hover:border-slate-300 transition dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10 dark:hover:border-white/20"
+										className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white/70 px-6 py-3 text-base sm:text-lg font-semibold text-slate-800 shadow-sm hover:bg-white hover:border-slate-300 transition dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10 dark:hover:border-white/20 h-full w-full sm:w-auto"
 									>
 										{tr({ no: "Se priser", en: "See pricing" })}
 									</Link>
 								</div>
 							</div>
 
-							<div className="hidden sm:flex flex-col items-center gap-5 sm:justify-self-start sm:-ml-2">
-								<div className="s2ks-glow h-30 w-30 sm:h-54 sm:w-54">
+							<div className="order-1 sm:order-2 flex flex-col items-center gap-5 sm:justify-self-start sm:-ml-2">
+								<div className="s2ks-glow">
 									<div className="s2ks-flip">
 										<div className="s2ks-face face-1">
 											<Image
@@ -103,7 +103,7 @@ export default function LandingPage() {
 												alt="Sol2KS"
 												width={144}
 												height={144}
-												className="h-21 w-21 sm:h-48 sm:w-48 object-contain"
+												className="s2ks-face-media object-contain"
 												sizes="(min-width: 640px) 12rem, 5.25rem"
 												priority
 											/>
@@ -114,7 +114,7 @@ export default function LandingPage() {
 												alt="Solana"
 												width={144}
 												height={144}
-												className="h-18 w-18 sm:h-44 sm:w-44 object-contain brightness-0 invert"
+												className="s2ks-face-media object-contain brightness-0 invert"
 												priority
 											/>
 										</div>
@@ -124,12 +124,12 @@ export default function LandingPage() {
 												alt="S2KS"
 												width={144}
 												height={144}
-												className="h-21 w-21 sm:h-48 sm:w-48 object-contain"
+												className="s2ks-face-media object-contain"
 												priority
 											/>
 										</div>
 										<div className="s2ks-face face-4">
-											<FiFileText className="h-21 w-21 sm:h-48 sm:w-48 text-white" />
+											<FiFileText className="s2ks-face-media text-white" />
 										</div>
 									</div>
 								</div>
@@ -309,36 +309,6 @@ export default function LandingPage() {
 						</div>
 					</div>
 				</main>
-				<footer className="mt-auto py-3 text-xs text-slate-600 dark:text-slate-300">
-					<div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-2 px-4 sm:flex-row">
-						<p>
-							{tr({
-								no: "© 2026 Sol2KS. Alle rettigheter forbeholdt.",
-								en: "© 2026 Sol2KS. All rights reserved."
-							})}
-						</p>
-						<div className="flex items-center gap-4">
-							<Link
-								href="/personvern"
-								className="hover:text-slate-900 dark:hover:text-white transition"
-							>
-								{tr({ no: "Personvern", en: "Privacy" })}
-							</Link>
-							<Link
-								href="/vilkar"
-								className="hover:text-slate-900 dark:hover:text-white transition"
-							>
-								{tr({ no: "Vilkår", en: "Terms" })}
-							</Link>
-							<a
-								href="mailto:hello@sol2ks.no"
-								className="hover:text-slate-900 dark:hover:text-white transition"
-							>
-								{tr({ no: "Kontakt", en: "Contact" })}
-							</a>
-						</div>
-					</div>
-				</footer>
 			</div>
 		</>
 	);

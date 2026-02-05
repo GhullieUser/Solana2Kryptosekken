@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseRouteClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -10,15 +11,8 @@ export async function DELETE() {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
-	const { error } = await supabase
-		.from("search_addresses")
-		.delete()
-		.eq("user_id", userData.user.id);
-	await supabase
-		.from("generated_csvs")
-		.delete()
-		.eq("user_id", userData.user.id);
-
+	const admin = createSupabaseAdminClient();
+	const { error } = await admin.auth.admin.deleteUser(userData.user.id);
 	if (error) {
 		return NextResponse.json({ error: error.message }, { status: 500 });
 	}

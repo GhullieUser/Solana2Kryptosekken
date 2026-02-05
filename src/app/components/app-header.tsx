@@ -6,7 +6,15 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useLocale } from "@/app/components/locale-provider";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { FiMoon, FiSun, FiUser, FiChevronDown, FiLogOut } from "react-icons/fi";
+import {
+	FiMoon,
+	FiSun,
+	FiUser,
+	FiChevronDown,
+	FiLogOut,
+	FiMenu,
+	FiSettings
+} from "react-icons/fi";
 import { BsXDiamondFill } from "react-icons/bs";
 
 function useTheme() {
@@ -116,6 +124,10 @@ export default function AppHeader() {
 	const [userEmail, setUserEmail] = useState<string | null>(null);
 	const [userMenuOpen, setUserMenuOpen] = useState(false);
 	const userMenuRef = useRef<HTMLDivElement | null>(null);
+	const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+	const settingsMenuRef = useRef<HTMLDivElement | null>(null);
+	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+	const mobileMenuRef = useRef<HTMLDivElement | null>(null);
 	const [scrolled, setScrolled] = useState(false);
 	const [creditsRemaining, setCreditsRemaining] = useState<number | null>(null);
 	const [freeRemaining, setFreeRemaining] = useState<number | null>(null);
@@ -177,9 +189,18 @@ export default function AppHeader() {
 
 	useEffect(() => {
 		function onDocClick(e: MouseEvent) {
-			if (!userMenuRef.current) return;
-			if (!userMenuRef.current.contains(e.target as Node)) {
+			const target = e.target as Node;
+			if (userMenuRef.current && !userMenuRef.current.contains(target)) {
 				setUserMenuOpen(false);
+			}
+			if (
+				settingsMenuRef.current &&
+				!settingsMenuRef.current.contains(target)
+			) {
+				setSettingsMenuOpen(false);
+			}
+			if (mobileMenuRef.current && !mobileMenuRef.current.contains(target)) {
+				setMobileMenuOpen(false);
 			}
 		}
 		document.addEventListener("mousedown", onDocClick);
@@ -202,13 +223,14 @@ export default function AppHeader() {
 
 	return (
 		<header
-			className={`fixed top-0 inset-x-0 z-40 text-xs sm:text-sm text-slate-600 dark:text-slate-300 transition-all ${
+			data-scrolled={scrolled}
+			className={`s2ks-header fixed top-0 inset-x-0 z-40 text-xs sm:text-sm text-slate-600 dark:text-slate-300 transition-[background-color,box-shadow,backdrop-filter] ${
 				scrolled
-					? "bg-white/90 dark:bg-[#0b1220]/90 backdrop-blur border-b border-slate-200/70 dark:border-white/10 shadow-sm"
+					? "bg-white/90 dark:bg-slate-900/80 backdrop-blur shadow-sm"
 					: "bg-transparent"
 			}`}
 		>
-			<div className="relative mx-auto max-w-6xl px-4 py-3 sm:py-4 flex items-center gap-3">
+			<div className="relative mx-auto max-w-6xl px-4 py-3 sm:py-4 flex items-center gap-2 sm:gap-3">
 				<div className="flex items-center gap-2 sm:gap-3 font-medium text-slate-800 dark:text-slate-200">
 					<Link
 						href="/"
@@ -220,18 +242,12 @@ export default function AppHeader() {
 							alt="Sol2KS"
 							width={32}
 							height={32}
-							className="block w-6 h-6 sm:w-8 sm:h-8 transition-transform duration-200 group-hover:scale-110 group-active:scale-95"
+							className="block w-8 h-8 sm:w-8 sm:h-8 transition-transform duration-200 group-hover:scale-110 group-active:scale-95"
 						/>
-					</Link>
-					<Link
-						href="/"
-						className="inline-flex items-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 py-1 sm:py-1.5 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition text-[11px] sm:text-xs"
-					>
-						Solana → Kryptosekken
 					</Link>
 				</div>
 
-				<nav className="hidden sm:flex flex-1 items-center justify-center gap-2 font-medium text-slate-700 dark:text-slate-200 text-sm">
+				<nav className="hidden md:flex flex-1 items-center justify-center gap-2 font-medium text-slate-700 dark:text-slate-200 text-sm">
 					<Link
 						href="/"
 						className={`rounded-full px-4 py-1.5 transition ${
@@ -264,15 +280,7 @@ export default function AppHeader() {
 					</Link>
 				</nav>
 
-				<div className="flex items-center gap-2">
-					<div className="inline-flex h-[28px] sm:h-[32px] items-center gap-2 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-1.5 sm:px-2 shadow-sm dark:shadow-black/25">
-						<LocalePill />
-						<span
-							className="h-4 w-px bg-slate-200/80 dark:bg-white/15"
-							aria-hidden="true"
-						/>
-						<ThemePill />
-					</div>
+				<div className="flex items-center gap-2 ml-auto">
 					{isAuthed && (
 						<Link
 							href="/pricing"
@@ -296,13 +304,16 @@ export default function AppHeader() {
 								className="inline-flex h-[28px] sm:h-[32px] items-center justify-center gap-1 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 text-[11px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
 							>
 								<FiUser className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-								<span className="max-w-[120px] truncate">
+								<span className="hidden lg:inline-block max-w-[160px] truncate">
 									{userEmail ?? tr({ no: "Bruker", en: "User" })}
 								</span>
 								<FiChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 opacity-70" />
 							</button>
 							{userMenuOpen && (
-								<div className="absolute right-0 mt-2 min-w-full w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50">
+								<div className="absolute right-0 mt-2 min-w-[220px] w-max rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50">
+									<div className="lg:hidden px-3 py-2 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 border-b border-slate-100/70 dark:border-white/10 truncate">
+										{userEmail ?? tr({ no: "Bruker", en: "User" })}
+									</div>
 									<Link
 										href="/user"
 										className="flex items-center gap-2 px-3 py-2 text-xs sm:text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
@@ -330,6 +341,65 @@ export default function AppHeader() {
 							{tr({ no: "Logg inn", en: "Sign in" })}
 						</Link>
 					)}
+					<div className="relative" ref={settingsMenuRef}>
+						<button
+							type="button"
+							onClick={() => setSettingsMenuOpen((v) => !v)}
+							className="inline-flex h-[28px] sm:h-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 text-[11px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+							aria-label={tr({ no: "Innstillinger", en: "Settings" })}
+							title={tr({ no: "Innstillinger", en: "Settings" })}
+						>
+							<FiSettings className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+						</button>
+						{settingsMenuOpen && (
+							<div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50 p-2">
+								<div className="flex items-center justify-between px-2 py-1.5 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+									{tr({ no: "Språk", en: "Language" })}
+									<LocalePill />
+								</div>
+								<div className="flex items-center justify-between px-2 py-1.5 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
+									{tr({ no: "Tema", en: "Theme" })}
+									<ThemePill />
+								</div>
+							</div>
+						)}
+					</div>
+					<div className="relative" ref={mobileMenuRef}>
+						<button
+							type="button"
+							onClick={() => setMobileMenuOpen((v) => !v)}
+							className="md:hidden inline-flex h-[28px] sm:h-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 text-[11px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+							aria-label={tr({ no: "Meny", en: "Menu" })}
+							title={tr({ no: "Meny", en: "Menu" })}
+						>
+							<FiMenu className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+						</button>
+						{mobileMenuOpen && (
+							<div className="md:hidden absolute right-0 top-full mt-2 w-56 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50">
+								<Link
+									href="/"
+									className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
+									onClick={() => setMobileMenuOpen(false)}
+								>
+									{tr({ no: "Hjem", en: "Home" })}
+								</Link>
+								<Link
+									href="/csvgenerator"
+									className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
+									onClick={() => setMobileMenuOpen(false)}
+								>
+									{tr({ no: "CSV Generator", en: "CSV Generator" })}
+								</Link>
+								<Link
+									href="/pricing"
+									className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
+									onClick={() => setMobileMenuOpen(false)}
+								>
+									{tr({ no: "Priser", en: "Pricing" })}
+								</Link>
+							</div>
+						)}
+					</div>
 				</div>
 			</div>
 		</header>

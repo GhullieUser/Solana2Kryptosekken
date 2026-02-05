@@ -4,14 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
-	FiActivity,
-	FiFileText,
-	FiEye,
-	FiDownload,
 	FiUser,
 	FiInfo,
 	FiAlertTriangle,
-	FiTrash2
+	FiTrash2,
+	FiActivity,
+	FiFileText,
+	FiEye,
+	FiDownload
 } from "react-icons/fi";
 import { BsXDiamondFill } from "react-icons/bs";
 import { MdOutlineCleaningServices } from "react-icons/md";
@@ -21,18 +21,19 @@ import { useLocale } from "@/app/components/locale-provider";
 type AddressRow = {
 	address: string;
 	label: string | null;
-	last_used_at: string | null;
-	created_at: string | null;
+	last_used_at?: string | null;
+	created_at?: string | null;
+	updated_at?: string | null;
 };
 
 type CsvRow = {
 	id: string;
 	address: string;
-	label: string | null;
-	created_at: string | null;
-	updated_at: string | null;
-	raw_count: number | null;
-	processed_count: number | null;
+	label?: string | null;
+	created_at?: string | null;
+	updated_at?: string | null;
+	raw_count?: number | null;
+	processed_count?: number | null;
 	partial?: boolean | null;
 	from_iso?: string | null;
 	to_iso?: string | null;
@@ -143,13 +144,15 @@ export default function UserPage() {
 			setCsvs([]);
 			setMessage(
 				tr({
-					no: "Alle lagrede adresser og CSV-er slettet.",
-					en: "All saved addresses and CSVs deleted."
+					no: "Kontoen din er slettet.",
+					en: "Your account has been deleted."
 				})
 			);
+			await supabase.auth.signOut();
+			window.location.href = "/";
 		} else {
 			setMessage(
-				tr({ no: "Kunne ikke slette data.", en: "Failed to delete data." })
+				tr({ no: "Kunne ikke slette konto.", en: "Failed to delete account." })
 			);
 		}
 		setDeleting(false);
@@ -288,6 +291,12 @@ export default function UserPage() {
 		};
 	}, [addresses.length, csvs]);
 
+	const shortAddress = (value?: string | null) => {
+		if (!value) return "";
+		if (value.length <= 10) return value;
+		return `${value.slice(0, 5)}…${value.slice(-5)}`;
+	};
+
 	return (
 		<main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
 			<div className="mx-auto max-w-6xl px-4 pt-28 sm:pt-32 pb-10 sm:pb-16">
@@ -312,17 +321,17 @@ export default function UserPage() {
 									)}
 								</div>
 							</div>
-							<div className="flex flex-wrap items-center gap-2">
+							<div className="grid w-full sm:w-auto grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-end">
 								<Link
 									href="/update-password"
-									className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-500"
+									className="inline-flex w-full items-center justify-center rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-500 whitespace-nowrap"
 									style={{ color: "#ffffff" }}
 								>
 									{tr({ no: "Endre passord", en: "Change password" })}
 								</Link>
 								<button
 									onClick={signOut}
-									className="rounded-xl border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 px-4 py-2 text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5"
+									className="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 px-4 py-2 text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5 whitespace-nowrap"
 								>
 									{tr({ no: "Logg ut", en: "Sign out" })}
 								</button>
@@ -399,12 +408,12 @@ export default function UserPage() {
 
 						<div className="mt-4 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50/80 dark:bg-white/5 p-4">
 							<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-								<div>
-									<div className="flex items-center justify-between gap-1">
+								<div className="flex-1">
+									<div className="flex items-center gap-2">
 										<p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
 											{tr({ no: "TX Credits", en: "TX Credits" })}
 										</p>
-										<div className="relative group -mr-1">
+										<div className="relative group">
 											<button
 												type="button"
 												aria-label={tr({
@@ -449,12 +458,21 @@ export default function UserPage() {
 										</div>
 									</div>
 									{billingStatus ? (
-										<div className="mt-2 flex items-center gap-2 text-xl font-semibold text-slate-900 dark:text-slate-100">
-											<BsXDiamondFill className="h-4 w-4 text-amber-500" />
-											<span className="tabular-nums">
-												{billingStatus.freeRemaining +
-													billingStatus.creditsRemaining}
-											</span>
+										<div className="mt-2 flex items-center justify-between gap-3">
+											<div className="flex items-center gap-2 text-xl font-semibold text-slate-900 dark:text-slate-100">
+												<BsXDiamondFill className="h-4 w-4 text-amber-500" />
+												<span className="tabular-nums">
+													{billingStatus.freeRemaining +
+														billingStatus.creditsRemaining}
+												</span>
+											</div>
+											<Link
+												href="/pricing"
+												className="inline-flex sm:hidden items-center rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-500 whitespace-nowrap"
+												style={{ color: "#ffffff" }}
+											>
+												{tr({ no: "Kjøp flere", en: "Buy more" })}
+											</Link>
 										</div>
 									) : (
 										<p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -462,15 +480,17 @@ export default function UserPage() {
 										</p>
 									)}
 								</div>
-								<div>
-									<Link
-										href="/pricing"
-										className="inline-flex items-center rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-500"
-										style={{ color: "#ffffff" }}
-									>
-										{tr({ no: "Kjøp flere", en: "Buy more" })}
-									</Link>
-								</div>
+								{billingStatus && (
+									<div className="hidden sm:flex items-center gap-3 sm:ml-6 sm:justify-end">
+										<Link
+											href="/pricing"
+											className="inline-flex items-center rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-500 whitespace-nowrap"
+											style={{ color: "#ffffff" }}
+										>
+											{tr({ no: "Kjøp flere", en: "Buy more" })}
+										</Link>
+									</div>
+								)}
 							</div>
 						</div>
 
@@ -524,29 +544,42 @@ export default function UserPage() {
 										return (
 											<li
 												key={group.address}
-												className="rounded-2xl border border-slate-200 dark:border-white/10 p-4 text-sm"
+												className="relative rounded-2xl border border-slate-200 dark:border-white/10 p-4 text-sm"
 											>
+												<div className="absolute right-4 top-4 md:hidden">
+													<span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-200 px-2 py-0.5 text-xs">
+														<FiActivity className="h-3 w-3" />
+														<span>
+															{tr({ no: "TX", en: "TX" })}: {selected.raw_count ?? 0}
+															{selected.processed_count !== null &&
+															selected.processed_count !== selected.raw_count
+																? ` → ${selected.processed_count}`
+																: ""}
+														</span>
+													</span>
+												</div>
 												<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 													<div className="flex items-start gap-3">
-														<div className="mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
+														<div className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
 															<FiFileText className="h-4 w-4" />
 														</div>
 														<div>
-															<div className="font-medium text-slate-800 dark:text-slate-100">
+															<div className="pr-14 md:pr-0 max-w-[55vw] sm:max-w-[320px] truncate font-medium text-slate-800 dark:text-slate-100" title={selected.label || selected.address}>
 																{selected.label || selected.address}
 															</div>
-															<div className="text-slate-500 dark:text-slate-400">
+															<div className="mt-0.5 pr-14 md:pr-0 text-xs text-slate-500 dark:text-slate-400 md:hidden">
+																{shortAddress(selected.address)}
+															</div>
+															<div className="mt-0.5 pr-0 text-xs text-slate-500 dark:text-slate-400 hidden md:block">
 																{selected.address}
 															</div>
 															<div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-																<span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-200 px-2 py-0.5">
+																<span className="hidden md:inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-200 px-2 py-0.5">
 																	<FiActivity className="h-3 w-3" />
 																	<span>
-																		{tr({ no: "TX", en: "TX" })}:{" "}
-																		{selected.raw_count ?? 0}
+																		{tr({ no: "TX", en: "TX" })}: {selected.raw_count ?? 0}
 																		{selected.processed_count !== null &&
-																		selected.processed_count !==
-																			selected.raw_count
+																		selected.processed_count !== selected.raw_count
 																			? ` → ${selected.processed_count}`
 																			: ""}
 																	</span>
@@ -565,7 +598,7 @@ export default function UserPage() {
 															</div>
 														</div>
 													</div>
-													<div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:justify-end">
+													<div className="mt-2 flex w-full flex-col gap-2 sm:mt-0 sm:w-auto sm:flex-row sm:items-center sm:gap-2 sm:ml-auto">
 														<StyledSelect
 															value={selected.id}
 															onChange={(next) =>
@@ -575,8 +608,8 @@ export default function UserPage() {
 																}))
 															}
 															options={options}
-															buttonClassName="inline-flex items-center gap-2 rounded-lg bg-white/90 ring-1 ring-black/10 px-3 py-1 text-xs text-slate-700 shadow-sm transition hover:bg-white dark:bg-white/5 dark:text-slate-200 dark:ring-white/10 dark:hover:bg-white/10"
-															menuClassName="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden"
+															buttonClassName="inline-flex w-full sm:w-auto items-center justify-between gap-2 rounded-lg bg-white/90 ring-1 ring-black/10 px-3 py-1 text-xs text-slate-700 shadow-sm transition hover:bg-white dark:bg-white/5 dark:text-slate-200 dark:ring-white/10 dark:hover:bg-white/10"
+															menuClassName="w-full sm:w-auto rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden"
 															optionClassName="flex items-center gap-2 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 whitespace-nowrap"
 															labelClassName="truncate whitespace-nowrap"
 															ariaLabel={tr({
@@ -588,19 +621,20 @@ export default function UserPage() {
 																tr({ no: "Uten tidsrom", en: "No range" })
 															}
 														/>
-														<button
-															onClick={() => {
-																setCsvDeleteTarget({
-																	id: selected.id,
-																	address: selected.address,
-																	label: selected.label || selected.address,
-																	rangeLabel:
-																		formatDateRange(
-																			selected.from_iso,
-																			selected.to_iso
-																		) ||
-																		tr({ no: "Uten tidsrom", en: "No range" })
-																});
+														<div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
+															<button
+																onClick={() => {
+																	setCsvDeleteTarget({
+																		id: selected.id,
+																		address: selected.address,
+																		label: selected.label || selected.address,
+																		rangeLabel:
+																			formatDateRange(
+																				selected.from_iso,
+																				selected.to_iso
+																			) ||
+																			tr({ no: "Uten tidsrom", en: "No range" })
+																	});
 																setCsvDeleteOpen(true);
 															}}
 															className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-500/10"
@@ -609,7 +643,7 @@ export default function UserPage() {
 																no: "Slett CSV",
 																en: "Delete CSV"
 															})}
-														>
+															>
 															<FiTrash2 className="h-5 w-5" />
 														</button>
 														<Link
@@ -638,6 +672,7 @@ export default function UserPage() {
 														</button>
 													</div>
 												</div>
+												</div>
 											</li>
 										);
 									})}
@@ -649,18 +684,18 @@ export default function UserPage() {
 							<h2 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">
 								{tr({ no: "Data og personvern", en: "Data & privacy" })}
 							</h2>
-							<div className="flex flex-wrap gap-3">
+							<div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
 								<button
 									onClick={exportData}
-									className="rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-500"
+									className="inline-flex w-full sm:w-auto items-center justify-center rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-500 whitespace-nowrap"
 								>
 									{tr({ no: "Eksporter data", en: "Export my data" })}
 								</button>
 								<button
 									onClick={() => setDeleteOpen(true)}
-									className="rounded-xl border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 px-4 py-2 text-sm font-medium hover:bg-rose-50 dark:hover:bg-rose-500/10"
+									className="inline-flex w-full sm:w-auto items-center justify-center rounded-xl border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 px-4 py-2 text-sm font-medium hover:bg-rose-50 dark:hover:bg-rose-500/10 whitespace-nowrap"
 								>
-									{tr({ no: "Slett mine data", en: "Delete my data" })}
+									{tr({ no: "Slett kontoen min", en: "Delete my account" })}
 								</button>
 							</div>
 						</div>
@@ -684,12 +719,12 @@ export default function UserPage() {
 					/>
 					<div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-[#0e1729] border border-slate-200 dark:border-white/10 shadow-xl p-6">
 						<h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-							{tr({ no: "Slette data?", en: "Delete data?" })}
+							{tr({ no: "Slette konto?", en: "Delete account?" })}
 						</h3>
 						<p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
 							{tr({
-								no: "Dette sletter alle lagrede adresser og CSV-er. Handlingen kan ikke angres.",
-								en: "This deletes all saved addresses and CSVs. This action cannot be undone."
+								no: "Dette sletter kontoen din og alle lagrede adresser og CSV-er. Handlingen kan ikke angres.",
+								en: "This deletes your account and all saved addresses and CSVs. This action cannot be undone."
 							})}
 						</p>
 						<div className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">

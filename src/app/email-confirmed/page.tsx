@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useLocale } from "@/app/components/locale-provider";
 import { useEffect, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { BsXDiamondFill } from "react-icons/bs";
 
 export default function EmailConfirmedPage() {
 	const { tr } = useLocale();
@@ -44,31 +45,33 @@ export default function EmailConfirmedPage() {
 						en: "Your account is now activated and ready to use."
 					})}
 				</p>
+				<div className="mt-3 inline-flex items-center justify-center gap-2 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 px-3 py-1 text-xs font-medium">
+					<BsXDiamondFill className="h-3.5 w-3.5 text-amber-500" />
+					<span>
+						{tr({
+							no: "Du har fått 50 gratis TX Credits for testing.",
+							en: "You’ve been granted 50 free TX Credits for testing."
+						})}
+					</span>
+				</div>
 
 				<div className="mt-6 space-y-3">
 					{isAuthenticated ? (
 						<Link
 							href="/csvgenerator"
-							className="block w-full rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white py-3 text-sm font-medium hover:from-indigo-500 hover:to-emerald-500 transition-all shadow-lg shadow-indigo-500/30"
+							className="block w-full rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white !text-white py-3 text-sm font-medium hover:from-indigo-500 hover:to-emerald-500 transition-all shadow-lg shadow-indigo-500/30"
 						>
 							{tr({ no: "Gå til appen", en: "Go to app" })}
 						</Link>
 					) : (
 						<Link
 							href="/signin"
-							className="block w-full rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white py-3 text-sm font-medium hover:from-indigo-500 hover:to-emerald-500 transition-all shadow-lg shadow-indigo-500/30"
+							className="block w-full rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white !text-white py-3 text-sm font-medium hover:from-indigo-500 hover:to-emerald-500 transition-all shadow-lg shadow-indigo-500/30"
 						>
 							{tr({ no: "Logg inn", en: "Sign in" })}
 						</Link>
 					)}
 				</div>
-
-				<p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
-					{tr({
-						no: "Velkommen til Sol2KS!",
-						en: "Welcome to Sol2KS!"
-					})}
-				</p>
 			</div>
 		</main>
 	);

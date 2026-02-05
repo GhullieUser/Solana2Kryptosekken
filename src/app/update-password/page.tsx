@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { FiEye, FiEyeOff } from "react-icons/fi";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useLocale } from "@/app/components/locale-provider";
 
@@ -12,6 +13,9 @@ export default function UpdatePasswordPage() {
 	const [currentPassword, setCurrentPassword] = useState("");
 	const [password, setPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
+	const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+	const [showPassword, setShowPassword] = useState(false);
+	const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 	const [loading, setLoading] = useState(false);
 	const [message, setMessage] = useState<string | null>(null);
 	const [messageType, setMessageType] = useState<"error" | "success" | null>(
@@ -19,9 +23,12 @@ export default function UpdatePasswordPage() {
 	);
 	const [hasSession, setHasSession] = useState<boolean | null>(null);
 	const [success, setSuccess] = useState(false);
+	const [isRecoveryFlow, setIsRecoveryFlow] = useState(false);
 
 	useEffect(() => {
 		let active = true;
+		const hash = typeof window !== "undefined" ? window.location.hash : "";
+		setIsRecoveryFlow(hash.includes("type=recovery") || hash.includes("access_token"));
 		(async () => {
 			const [{ data: sessionData }, { data: userData }] = await Promise.all([
 				supabase.auth.getSession(),
@@ -52,7 +59,7 @@ export default function UpdatePasswordPage() {
 			setMessageType("error");
 			return;
 		}
-		if (currentPassword.trim().length === 0) {
+		if (!isRecoveryFlow && currentPassword.trim().length === 0) {
 			setMessage(
 				tr({
 					no: "Skriv inn ditt gamle passord.",
@@ -70,20 +77,22 @@ export default function UpdatePasswordPage() {
 			return;
 		}
 		setLoading(true);
-		const { error: signInError } = await supabase.auth.signInWithPassword({
-			email,
-			password: currentPassword
-		});
-		if (signInError) {
-			setMessage(
-				tr({
-					no: "Gammelt passord er feil.",
-					en: "Current password is incorrect."
-				})
-			);
-			setMessageType("error");
-			setLoading(false);
-			return;
+		if (!isRecoveryFlow) {
+			const { error: signInError } = await supabase.auth.signInWithPassword({
+				email,
+				password: currentPassword
+			});
+			if (signInError) {
+				setMessage(
+					tr({
+						no: "Gammelt passord er feil.",
+						en: "Current password is incorrect."
+					})
+				);
+				setMessageType("error");
+				setLoading(false);
+				return;
+			}
 		}
 		const { error } = await supabase.auth.updateUser({ password });
 		if (error) {
@@ -162,31 +171,84 @@ export default function UpdatePasswordPage() {
 				)}
 
 				<form className="mt-4 space-y-3" onSubmit={updatePassword}>
-					<input
-						type="password"
-						required
-						placeholder={tr({ no: "Gammelt passord", en: "Current password" })}
-						value={currentPassword}
-						onChange={(e) => setCurrentPassword(e.target.value)}
-						autoComplete="current-password"
-						className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
-					/>
-					<input
-						type="password"
-						required
-						placeholder={tr({ no: "Nytt passord", en: "New password" })}
-						value={password}
-						onChange={(e) => setPassword(e.target.value)}
-						className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
-					/>
-					<input
-						type="password"
-						required
-						placeholder={tr({ no: "Bekreft passord", en: "Confirm password" })}
-						value={confirmPassword}
-						onChange={(e) => setConfirmPassword(e.target.value)}
-						className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
-					/>
+					{!isRecoveryFlow && (
+						<div className="relative">
+							<input
+								type={showCurrentPassword ? "text" : "password"}
+								required
+								placeholder={tr({ no: "Gammelt passord", en: "Current password" })}
+								value={currentPassword}
+								onChange={(e) => setCurrentPassword(e.target.value)}
+								autoComplete="current-password"
+								className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+							/>
+							<button
+								type="button"
+								onClick={() => setShowCurrentPassword((v) => !v)}
+								className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"
+								aria-label={tr({
+									no: showCurrentPassword ? "Skjul passord" : "Vis passord",
+									en: showCurrentPassword ? "Hide password" : "Show password"
+								})}
+							>
+								{showCurrentPassword ? (
+									<FiEyeOff className="h-4 w-4" />
+								) : (
+									<FiEye className="h-4 w-4" />
+								)}
+							</button>
+						</div>
+					)}
+					<div className="relative">
+						<input
+							type={showPassword ? "text" : "password"}
+							required
+							placeholder={tr({ no: "Nytt passord", en: "New password" })}
+							value={password}
+							onChange={(e) => setPassword(e.target.value)}
+							className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+						/>
+						<button
+							type="button"
+							onClick={() => setShowPassword((v) => !v)}
+							className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"
+							aria-label={tr({
+								no: showPassword ? "Skjul passord" : "Vis passord",
+								en: showPassword ? "Hide password" : "Show password"
+							})}
+						>
+							{showPassword ? (
+								<FiEyeOff className="h-4 w-4" />
+							) : (
+								<FiEye className="h-4 w-4" />
+							)}
+						</button>
+					</div>
+					<div className="relative">
+						<input
+							type={showConfirmPassword ? "text" : "password"}
+							required
+							placeholder={tr({ no: "Bekreft passord", en: "Confirm password" })}
+							value={confirmPassword}
+							onChange={(e) => setConfirmPassword(e.target.value)}
+							className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+						/>
+						<button
+							type="button"
+							onClick={() => setShowConfirmPassword((v) => !v)}
+							className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"
+							aria-label={tr({
+								no: showConfirmPassword ? "Skjul passord" : "Vis passord",
+								en: showConfirmPassword ? "Hide password" : "Show password"
+							})}
+						>
+							{showConfirmPassword ? (
+								<FiEyeOff className="h-4 w-4" />
+							) : (
+								<FiEye className="h-4 w-4" />
+							)}
+						</button>
+					</div>
 					<button
 						type="submit"
 						disabled={loading || hasSession === false}
