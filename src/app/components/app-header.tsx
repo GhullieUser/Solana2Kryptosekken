@@ -68,7 +68,10 @@ function LocalePill() {
 		"opacity-60 saturate-0 hover:opacity-100 hover:saturate-100";
 
 	return (
-		<div className="inline-flex items-center gap-1" aria-label={tr({ no: "Språk", en: "Language" })}>
+		<div
+			className="inline-flex items-center gap-1"
+			aria-label={tr({ no: "Språk", en: "Language" })}
+		>
 			<button
 				type="button"
 				onClick={() => setLocale("no")}
@@ -115,6 +118,30 @@ export default function AppHeader() {
 	const userMenuRef = useRef<HTMLDivElement | null>(null);
 	const [scrolled, setScrolled] = useState(false);
 	const [creditsRemaining, setCreditsRemaining] = useState<number | null>(null);
+	const [freeRemaining, setFreeRemaining] = useState<number | null>(null);
+
+	const refreshCredits = async (signal?: AbortSignal) => {
+		try {
+			const res = await fetch("/api/billing/status", {
+				method: "GET",
+				cache: "no-store",
+				signal
+			});
+			if (!res.ok) return;
+			const data = (await res.json()) as {
+				creditsRemaining?: number;
+				freeRemaining?: number;
+			};
+			setCreditsRemaining(
+				typeof data.creditsRemaining === "number" ? data.creditsRemaining : 0
+			);
+			setFreeRemaining(
+				typeof data.freeRemaining === "number" ? data.freeRemaining : 0
+			);
+		} catch {
+			// ignore
+		}
+	};
 
 	useEffect(() => {
 		let active = true;
@@ -132,30 +159,20 @@ export default function AppHeader() {
 	useEffect(() => {
 		if (!isAuthed) {
 			setCreditsRemaining(null);
+			setFreeRemaining(null);
 			return;
 		}
 		const controller = new AbortController();
-		(async () => {
-			try {
-				const res = await fetch("/api/billing/status", {
-					method: "GET",
-					cache: "no-store",
-					signal: controller.signal,
-				});
-				if (!res.ok) return;
-				const data = (await res.json()) as {
-					creditsRemaining?: number;
-				};
-				setCreditsRemaining(
-					typeof data.creditsRemaining === "number"
-						? data.creditsRemaining
-						: 0
-				);
-			} catch {
-				// ignore
-			}
-		})();
+		refreshCredits(controller.signal);
 		return () => controller.abort();
+	}, [isAuthed]);
+
+	useEffect(() => {
+		if (!isAuthed) return;
+		const onBillingUpdate = () => refreshCredits();
+		window.addEventListener("sol2ks:billing:update", onBillingUpdate);
+		return () =>
+			window.removeEventListener("sol2ks:billing:update", onBillingUpdate);
 	}, [isAuthed]);
 
 	useEffect(() => {
@@ -250,7 +267,10 @@ export default function AppHeader() {
 				<div className="flex items-center gap-2">
 					<div className="inline-flex h-[28px] sm:h-[32px] items-center gap-2 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-1.5 sm:px-2 shadow-sm dark:shadow-black/25">
 						<LocalePill />
-						<span className="h-4 w-px bg-slate-200/80 dark:bg-white/15" aria-hidden="true" />
+						<span
+							className="h-4 w-px bg-slate-200/80 dark:bg-white/15"
+							aria-hidden="true"
+						/>
 						<ThemePill />
 					</div>
 					{isAuthed && (
@@ -262,7 +282,9 @@ export default function AppHeader() {
 						>
 							<BsXDiamondFill className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-500" />
 							<span className="tabular-nums">
-								{creditsRemaining === null ? "—" : creditsRemaining}
+								{creditsRemaining === null || freeRemaining === null
+									? "—"
+									: creditsRemaining + freeRemaining}
 							</span>
 						</Link>
 					)}

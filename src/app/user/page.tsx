@@ -8,7 +8,10 @@ import {
 	FiFileText,
 	FiEye,
 	FiDownload,
-	FiUser
+	FiUser,
+	FiInfo,
+	FiAlertTriangle,
+	FiTrash2
 } from "react-icons/fi";
 import { BsXDiamondFill } from "react-icons/bs";
 import { MdOutlineCleaningServices } from "react-icons/md";
@@ -30,6 +33,7 @@ type CsvRow = {
 	updated_at: string | null;
 	raw_count: number | null;
 	processed_count: number | null;
+	partial?: boolean | null;
 	from_iso?: string | null;
 	to_iso?: string | null;
 };
@@ -46,7 +50,23 @@ export default function UserPage() {
 	const [message, setMessage] = useState<string | null>(null);
 	const [deleteOpen, setDeleteOpen] = useState(false);
 	const [deleting, setDeleting] = useState(false);
+	const [csvDeleteOpen, setCsvDeleteOpen] = useState(false);
+	const [csvDeleting, setCsvDeleting] = useState(false);
+	const [csvDeleteTarget, setCsvDeleteTarget] = useState<{
+		id: string;
+		address: string;
+		label: string;
+		rangeLabel: string;
+	} | null>(null);
 	const [showRawTx, setShowRawTx] = useState(true);
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const params = new URLSearchParams(window.location.search);
+		if (params.get("checkout") === "success") {
+			window.dispatchEvent(new Event("sol2ks:billing:update"));
+		}
+	}, []);
 	const [billingStatus, setBillingStatus] = useState<{
 		rawUsed: number;
 		freeRemaining: number;
@@ -87,7 +107,6 @@ export default function UserPage() {
 			active = false;
 		};
 	}, [supabase]);
-
 
 	async function signOut() {
 		await supabase.auth.signOut();
@@ -174,6 +193,67 @@ export default function UserPage() {
 		return a || b;
 	}
 
+	function getLatestCsvId(list: CsvRow[]) {
+		if (list.length === 0) return null;
+		const sorted = [...list].sort((a, b) => {
+			const at = new Date(a.updated_at || a.created_at || 0).getTime();
+			const bt = new Date(b.updated_at || b.created_at || 0).getTime();
+			return bt - at;
+		});
+		return sorted[0]?.id ?? null;
+	}
+
+	async function deleteCsv({
+		id,
+		address,
+		mode
+	}: {
+		id: string;
+		address: string;
+		mode: "single" | "all";
+	}) {
+		setMessage(null);
+		setCsvDeleting(true);
+		const res = await fetch("/api/csvs", {
+			method: "DELETE",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(mode === "single" ? { id } : { address })
+		});
+		if (res.ok) {
+			setCsvs((prev) => {
+				const next =
+					mode === "single"
+						? prev.filter((row) => row.id !== id)
+						: prev.filter((row) => row.address !== address);
+				const addressList = next.filter((row) => row.address === address);
+				setCsvSelection((prevSel) => {
+					const updated = { ...prevSel };
+					if (addressList.length === 0) {
+						delete updated[address];
+					} else {
+						const latestId = getLatestCsvId(addressList);
+						if (latestId) updated[address] = latestId;
+					}
+					return updated;
+				});
+				return next;
+			});
+			setMessage(
+				mode === "single"
+					? tr({ no: "CSV slettet.", en: "CSV deleted." })
+					: tr({
+							no: "Alle CSV-er for adressen slettet.",
+							en: "All CSVs for the address deleted."
+						})
+			);
+		} else {
+			setMessage(
+				tr({ no: "Kunne ikke slette CSV.", en: "Failed to delete CSV." })
+			);
+		}
+		setCsvDeleting(false);
+	}
+
 	const csvGroups = useMemo(() => {
 		const map = new Map<string, CsvRow[]>();
 		for (const row of csvs) {
@@ -211,7 +291,7 @@ export default function UserPage() {
 	return (
 		<main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
 			<div className="mx-auto max-w-6xl px-4 pt-28 sm:pt-32 pb-10 sm:pb-16">
-				<div className="rounded-3xl bg-white/95 dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 ring-1 ring-slate-300/70 dark:ring-white/10 overflow-hidden">
+				<div className="rounded-3xl bg-white/95 dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 ring-1 ring-slate-300/70 dark:ring-white/10 overflow-visible">
 					<div className="border-b border-slate-200/70 dark:border-white/10 px-6 py-5 sm:px-10">
 						<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 							<div className="flex items-center gap-4">
@@ -317,37 +397,82 @@ export default function UserPage() {
 							</div>
 						</div>
 
-							<div className="mt-4 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-white/5 p-4">
-								<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-									<div>
-										<p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 flex items-center gap-2">
-											<BsXDiamondFill className="h-3.5 w-3.5 text-amber-500" />
+						<div className="mt-4 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50/80 dark:bg-white/5 p-4">
+							<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+								<div>
+									<div className="flex items-center justify-between gap-1">
+										<p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
 											{tr({ no: "TX Credits", en: "TX Credits" })}
 										</p>
-										{billingStatus ? (
-											<p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
-												{tr({
-													no: `Gratis igjen: ${billingStatus.freeRemaining} • TX Credits: ${billingStatus.creditsRemaining}`,
-													en: `Free left: ${billingStatus.freeRemaining} • TX Credits: ${billingStatus.creditsRemaining}`
-											})}
+										<div className="relative group -mr-1">
+											<button
+												type="button"
+												aria-label={tr({
+													no: "Hvordan fungerer TX Credits?",
+													en: "How do TX Credits work?"
+												})}
+												className="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 focus:outline-none"
+											>
+												<FiInfo className="h-4 w-4" />
+											</button>
+											<div
+												role="tooltip"
+												className="pointer-events-none absolute left-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl group-hover:block group-focus-within:block sm:left-auto sm:right-0"
+											>
+												<p className="mb-1 font-medium">
+													{tr({
+														no: "Slik fungerer TX Credits",
+														en: "How TX Credits work"
+													})}
+												</p>
+												<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
+													<li>
+														{tr({
+															no: "1 TX Credit brukes per 1 rå transaksjon.",
+															en: "1 TX Credit is spent per 1 raw transaction."
+														})}
+													</li>
+													<li>
+														{tr({
+															no: "Rå transaksjoner = transaksjoner som ikke er støvbehandlet.",
+															en: "Raw transactions are transactions that are not dust-processed."
+														})}
+													</li>
+													<li>
+														{tr({
+															no: "Alle brukere får 50 gratis TX Credits ved registrering.",
+															en: "Every user gets 50 free TX Credits on sign up."
+														})}
+													</li>
+												</ul>
+											</div>
+										</div>
+									</div>
+									{billingStatus ? (
+										<div className="mt-2 flex items-center gap-2 text-xl font-semibold text-slate-900 dark:text-slate-100">
+											<BsXDiamondFill className="h-4 w-4 text-amber-500" />
+											<span className="tabular-nums">
+												{billingStatus.freeRemaining +
+													billingStatus.creditsRemaining}
+											</span>
+										</div>
+									) : (
+										<p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+											{tr({ no: "Laster…", en: "Loading…" })}
 										</p>
-										) : (
-											<p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-												{tr({ no: "Laster…", en: "Loading…" })}
-											</p>
-										)}
-									</div>
-									<div>
-										<Link
-											href="/pricing"
-											className="inline-flex items-center rounded-xl bg-indigo-600 text-white px-4 py-2 text-xs font-semibold hover:bg-indigo-500"
-											style={{ color: "#ffffff" }}
-										>
-											{tr({ no: "Kjøp flere", en: "Buy more" })}
-										</Link>
-									</div>
+									)}
+								</div>
+								<div>
+									<Link
+										href="/pricing"
+										className="inline-flex items-center rounded-xl bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-500"
+										style={{ color: "#ffffff" }}
+									>
+										{tr({ no: "Kjøp flere", en: "Buy more" })}
+									</Link>
 								</div>
 							</div>
+						</div>
 
 						<div className="mt-6">
 							<h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
@@ -382,12 +507,20 @@ export default function UserPage() {
 											group.list.find((r) => r.id === selectedId) ||
 											group.latest;
 										if (!selected) return null;
-										const options = group.list.map((opt) => ({
-											value: opt.id,
-											label:
+										const options = group.list.map((opt) => {
+											const baseLabel =
 												formatDateRange(opt.from_iso, opt.to_iso) ||
-												tr({ no: "Uten tidsrom", en: "No range" })
-										}));
+												tr({ no: "Uten tidsrom", en: "No range" });
+											return {
+												value: opt.id,
+												label: opt.partial
+													? `${baseLabel} · ${tr({
+															no: "Ufullstendig",
+															en: "Incomplete"
+														})}`
+													: baseLabel
+											};
+										});
 										return (
 											<li
 												key={group.address}
@@ -418,6 +551,17 @@ export default function UserPage() {
 																			: ""}
 																	</span>
 																</span>
+																{selected.partial && (
+																	<span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200 px-2 py-0.5">
+																		<FiAlertTriangle className="h-3 w-3" />
+																		<span>
+																			{tr({
+																				no: "Ufullstendig skann",
+																				en: "Incomplete scan"
+																			})}
+																		</span>
+																	</span>
+																)}
 															</div>
 														</div>
 													</div>
@@ -444,6 +588,30 @@ export default function UserPage() {
 																tr({ no: "Uten tidsrom", en: "No range" })
 															}
 														/>
+														<button
+															onClick={() => {
+																setCsvDeleteTarget({
+																	id: selected.id,
+																	address: selected.address,
+																	label: selected.label || selected.address,
+																	rangeLabel:
+																		formatDateRange(
+																			selected.from_iso,
+																			selected.to_iso
+																		) ||
+																		tr({ no: "Uten tidsrom", en: "No range" })
+																});
+																setCsvDeleteOpen(true);
+															}}
+															className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+															title={tr({ no: "Slett CSV", en: "Delete CSV" })}
+															aria-label={tr({
+																no: "Slett CSV",
+																en: "Delete CSV"
+															})}
+														>
+															<FiTrash2 className="h-5 w-5" />
+														</button>
 														<Link
 															href={`/csvgenerator?csvId=${encodeURIComponent(selected.id)}`}
 															className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
@@ -545,6 +713,87 @@ export default function UserPage() {
 								{deleting
 									? tr({ no: "Sletter...", en: "Deleting..." })
 									: tr({ no: "Slett", en: "Delete" })}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{csvDeleteOpen && csvDeleteTarget && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+					<button
+						type="button"
+						className="absolute inset-0 bg-slate-900/50"
+						onClick={() => !csvDeleting && setCsvDeleteOpen(false)}
+						aria-label={tr({ no: "Lukk", en: "Close" })}
+					/>
+					<div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-[#0e1729] border border-slate-200 dark:border-white/10 shadow-xl p-6">
+						<h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+							{tr({ no: "Slette CSV?", en: "Delete CSV?" })}
+						</h3>
+						<div className="mt-2 space-y-1 text-sm text-slate-600 dark:text-slate-300">
+							<p>
+								{tr({ no: "Adresse:", en: "Address:" })} {csvDeleteTarget.label}
+							</p>
+							<p>
+								{tr({ no: "Tidsrom:", en: "Timeframe:" })}{" "}
+								{csvDeleteTarget.rangeLabel}
+							</p>
+							<p className="pt-1">
+								{tr({
+									no: "Velg om du vil slette bare dette tidsrommet eller alle CSV-er for adressen.",
+									en: "Choose whether to delete only this timeframe or all CSVs for the address."
+								})}
+							</p>
+							<p className="text-rose-600 dark:text-rose-300">
+								{tr({
+									no: "Denne handlingen kan ikke angres.",
+									en: "There is no way back from this action."
+								})}
+							</p>
+						</div>
+						<div className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+							<button
+								type="button"
+								onClick={() => setCsvDeleteOpen(false)}
+								disabled={csvDeleting}
+								className="rounded-xl border border-slate-200 dark:border-white/10 px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-50"
+							>
+								{tr({ no: "Avbryt", en: "Cancel" })}
+							</button>
+							<button
+								type="button"
+								onClick={async () => {
+									await deleteCsv({
+										id: csvDeleteTarget.id,
+										address: csvDeleteTarget.address,
+										mode: "all"
+									});
+									setCsvDeleteOpen(false);
+								}}
+								disabled={csvDeleting}
+								className="rounded-xl border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 px-4 py-2 text-sm font-medium hover:bg-rose-50 dark:hover:bg-rose-500/10 disabled:opacity-50"
+							>
+								{csvDeleting
+									? tr({ no: "Sletter...", en: "Deleting..." })
+									: tr({ no: "Slett alle", en: "Delete all" })}
+							</button>
+							<button
+								type="button"
+								onClick={async () => {
+									await deleteCsv({
+										id: csvDeleteTarget.id,
+										address: csvDeleteTarget.address,
+										mode: "single"
+									});
+									setCsvDeleteOpen(false);
+								}}
+								disabled={csvDeleting}
+								className="rounded-xl bg-rose-600 text-white px-4 py-2 text-sm font-medium hover:bg-rose-500 disabled:opacity-50"
+							>
+								{csvDeleting
+									? tr({ no: "Sletter...", en: "Deleting..." })
+									: tr({ no: "Slett valgt", en: "Delete selected" })}
 							</button>
 						</div>
 					</div>

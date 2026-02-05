@@ -13,8 +13,9 @@ export async function middleware(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 
 	const isStaticAsset =
-		/\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|map|txt|woff2?|ttf|otf)$/i.test(pathname) ||
-		pathname.startsWith("/logos/");
+		/\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|map|txt|woff2?|ttf|otf)$/i.test(
+			pathname
+		) || pathname.startsWith("/logos/");
 	if (isStaticAsset) {
 		return NextResponse.next();
 	}
@@ -24,7 +25,11 @@ export async function middleware(request: NextRequest) {
 		const accessToken = request.cookies.get("site-access")?.value;
 		const sitePassword = process.env.SITE_PASSWORD;
 
-		console.log("Password check:", { pathname, sitePassword: !!sitePassword, accessToken: !!accessToken });
+		console.log("Password check:", {
+			pathname,
+			sitePassword: !!sitePassword,
+			accessToken: !!accessToken
+		});
 
 		if (sitePassword && accessToken !== sitePassword) {
 			console.log("Redirecting to password page");

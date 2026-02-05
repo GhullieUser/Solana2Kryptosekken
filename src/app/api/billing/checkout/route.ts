@@ -18,7 +18,7 @@ const PRICE_MAP = {
 		credits: 10000,
 		priceId: process.env.STRIPE_PRICE_10000
 	},
-	"test": {
+	test: {
 		credits: 750,
 		priceId: process.env.STRIPE_PRICE_TEST
 	}
@@ -41,12 +41,18 @@ export async function POST(req: Request) {
 
 	const stripeKey = process.env.STRIPE_SECRET_KEY;
 	if (!stripeKey) {
-		return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
+		return NextResponse.json(
+			{ error: "Stripe not configured" },
+			{ status: 500 }
+		);
 	}
 
 	const { credits, priceId } = PRICE_MAP[tier];
 	if (!priceId) {
-		return NextResponse.json({ error: "Missing Stripe price" }, { status: 500 });
+		return NextResponse.json(
+			{ error: "Missing Stripe price" },
+			{ status: 500 }
+		);
 	}
 
 	const stripe = new Stripe(stripeKey, { apiVersion: "2024-06-20" });

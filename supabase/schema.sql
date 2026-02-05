@@ -54,6 +54,8 @@ create table if not exists public.generated_csvs (
 	csv_text text not null,
 	raw_count int,
 	processed_count int,
+	partial boolean not null default false,
+	scan_session_id text,
 	from_iso timestamptz,
 	to_iso timestamptz,
 	include_nft boolean,
@@ -106,6 +108,12 @@ on public.generated_csvs (
 
 create index if not exists generated_csvs_user_updated_idx
 on public.generated_csvs (user_id, updated_at desc);
+
+alter table public.generated_csvs
+add column if not exists partial boolean not null default false;
+
+alter table public.generated_csvs
+add column if not exists scan_session_id text;
 
 -- ================= Billing: prepaid credits + usage =================
 create table if not exists public.billing_user_usage (

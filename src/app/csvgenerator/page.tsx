@@ -23,8 +23,10 @@ import {
 	FiTag,
 	FiInfo,
 	FiActivity,
-	FiFileText
+	FiFileText,
+	FiAlertTriangle
 } from "react-icons/fi";
+import { BsXDiamondFill } from "react-icons/bs";
 import { MdOutlineCleaningServices } from "react-icons/md";
 import type { HeliusTx } from "@/lib/helius";
 import { IoWalletOutline, IoOpenOutline } from "react-icons/io5";
@@ -197,11 +199,67 @@ function CSVGeneratorPageInner() {
 		processedCount: number;
 	} | null>(null);
 	const abortRef = useRef<AbortController | null>(null);
+	const loadedFromParamsRef = useRef(false);
 
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	const [errorCta, setErrorCta] = useState<{ label: string; href: string } | null>(null);
+	const [errorCta, setErrorCta] = useState<{
+		label: string;
+		href: string;
+	} | null>(null);
 	const [ok, setOk] = useState(false);
+	const [creditsSpent, setCreditsSpent] = useState<number | null>(null);
+	const [partialResult, setPartialResult] = useState(false);
+	const [scanSessionId, setScanSessionId] = useState<string | null>(null);
+	const lastPayloadKeyRef = useRef<string | null>(null);
+	const [billingStatus, setBillingStatus] = useState<{
+		freeRemaining: number;
+		creditsRemaining: number;
+	} | null>(null);
+	const [isAuthed, setIsAuthed] = useState(false);
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		if (creditsSpent !== null && ok) {
+			window.dispatchEvent(new Event("sol2ks:billing:update"));
+		}
+	}, [creditsSpent, ok]);
+
+	const refreshBilling = useCallback(async () => {
+		try {
+			const res = await fetch("/api/billing/status", {
+				method: "GET",
+				cache: "no-store"
+			});
+			if (!res.ok) return;
+			const data = (await res.json()) as {
+				freeRemaining?: number;
+				creditsRemaining?: number;
+			};
+			setBillingStatus({
+				freeRemaining: data.freeRemaining ?? 0,
+				creditsRemaining: data.creditsRemaining ?? 0
+			});
+		} catch {
+			// ignore
+		}
+	}, []);
+
+	useEffect(() => {
+		if (!isAuthed) {
+			setBillingStatus(null);
+			return;
+		}
+		refreshBilling();
+	}, [isAuthed, refreshBilling]);
+
+	useEffect(() => {
+		if (!isAuthed) return;
+		const onBillingUpdate = () => refreshBilling();
+		window.addEventListener("sol2ks:billing:update", onBillingUpdate);
+		return () =>
+			window.removeEventListener("sol2ks:billing:update", onBillingUpdate);
+	}, [isAuthed, refreshBilling]);
 
 	// Default range = last 30 days
 	const [range, setRange] = useState<DateRange | undefined>();
@@ -222,9 +280,42 @@ function CSVGeneratorPageInner() {
 	const [walletName, setWalletName] = useState("");
 	const [addrHistory, setAddrHistory] = useState<AddressHistoryItem[]>([]);
 	const [addrMenuOpen, setAddrMenuOpen] = useState(false);
-	const [isAuthed, setIsAuthed] = useState(false);
 	const [csvVersions, setCsvVersions] = useState<CsvVersion[]>([]);
 	const [csvVersionId, setCsvVersionId] = useState<string | null>(null);
+
+	// Live log
+	const [logOpen, setLogOpen] = useState(false);
+	const [logLines, setLogLines] = useState<string[]>([]);
+	const logRef = useRef<HTMLDivElement | null>(null);
+
+	const normalizeCreditError = useCallback(
+		(message: string) => {
+			if (!message) return message;
+			if (message.toLowerCase().includes("not enough tx credits")) {
+				return tr({
+					no: "Ikke nok TX Credits til å utføre et søk.",
+					en: "Not enough TX Credits to perform a search."
+				});
+			}
+			return message;
+		},
+		[tr]
+	);
+
+	const resetPreview = useCallback(() => {
+		setRows(null);
+		setOk(false);
+		setError(null);
+		setErrorCta(null);
+		setCreditsSpent(null);
+		setPartialResult(false);
+		setScanSessionId(null);
+		lastPayloadKeyRef.current = null;
+		setLogOpen(false);
+		setLogLines([]);
+		lastPayloadRef.current = null;
+		lastCountsRef.current = null;
+	}, []);
 
 	useEffect(() => {
 		const addr = searchParams.get("address");
@@ -329,10 +420,12 @@ function CSVGeneratorPageInner() {
 			if (!res.ok) return;
 			const j = await res.json();
 			if (!j?.csv) return;
+			setError(null);
+			setErrorCta(null);
 			const parsedRows = parseCsvToRows(j.csv);
 			setRows(parsedRows);
 			setOk(true);
-			lastPayloadRef.current = {
+			const metaPayload: Payload = {
 				address: j.meta?.address ?? address.trim(),
 				walletName: j.meta?.label ?? undefined,
 				fromISO: j.meta?.from_iso ?? undefined,
@@ -343,12 +436,54 @@ function CSVGeneratorPageInner() {
 				dustThreshold: j.meta?.dust_threshold ?? undefined,
 				dustInterval: j.meta?.dust_interval ?? undefined
 			};
+			lastPayloadRef.current = metaPayload;
+			const metaKey = payloadKeyFromPayload(metaPayload);
+			lastPayloadKeyRef.current = metaKey;
+			setScanSessionId(j.meta?.scan_session_id ?? null);
 			lastCountsRef.current = {
 				rawCount: j.meta?.raw_count ?? parsedRows.length,
 				processedCount: j.meta?.processed_count ?? parsedRows.length
 			};
+			setPartialResult(Boolean(j.meta?.partial));
+			setCreditsSpent(null);
+			if (j.meta?.partial && !j.meta?.scan_session_id) {
+				const newSessionId = getScanSessionId();
+				setScanSessionId(newSessionId);
+				await saveGeneratedCsv(j.csv, true, newSessionId);
+			} else {
+				setScanSessionId(j.meta?.scan_session_id ?? null);
+			}
 			setWalletName(j.meta?.label ?? "");
 			setAddress(j.meta?.address ?? address.trim());
+			setIncludeNFT(Boolean(j.meta?.include_nft ?? false));
+			setUseOslo(Boolean(j.meta?.use_oslo ?? false));
+			const dustModeRaw = (j.meta?.dust_mode ?? "off") as
+				| DustMode
+				| "aggregate";
+			setDustMode(
+				dustModeRaw === "aggregate" ? "aggregate-period" : dustModeRaw
+			);
+			if (
+				j.meta?.dust_threshold !== undefined &&
+				j.meta?.dust_threshold !== null
+			) {
+				setDustThreshold(String(j.meta.dust_threshold));
+			}
+			if (j.meta?.dust_interval) {
+				setDustInterval(j.meta.dust_interval as DustInterval);
+			}
+			const fromISO = j.meta?.from_iso ? new Date(j.meta.from_iso) : undefined;
+			const toISO = j.meta?.to_iso ? new Date(j.meta.to_iso) : undefined;
+			const fromValid = fromISO && !Number.isNaN(fromISO.getTime());
+			const toValid = toISO && !Number.isNaN(toISO.getTime());
+			if (fromValid || toValid) {
+				setRange({
+					from: fromValid ? fromISO : undefined,
+					to: toValid ? toISO : undefined
+				});
+			} else {
+				setRange(undefined);
+			}
 
 			// Rehydrate debug info for reopened CSVs.
 			try {
@@ -501,13 +636,19 @@ function CSVGeneratorPageInner() {
 	);
 
 	const saveGeneratedCsv = useCallback(
-		async (csvText: string) => {
+		async (
+			csvText: string,
+			partialOverride?: boolean,
+			scanSessionOverride?: string | null
+		) => {
 			if (!isAuthed || !lastPayloadRef.current) return;
 			const payload = lastPayloadRef.current;
 			const counts = lastCountsRef.current;
 			const rawCount = counts?.rawCount ?? (rows ? rows.length : undefined);
 			const processedCount =
 				counts?.processedCount ?? (rows ? rows.length : undefined);
+			const partialValue =
+				typeof partialOverride === "boolean" ? partialOverride : partialResult;
 			await fetch("/api/csvs", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -517,6 +658,11 @@ function CSVGeneratorPageInner() {
 					csv: csvText,
 					rawCount,
 					processedCount,
+					partial: partialValue,
+					scanSessionId:
+						scanSessionOverride !== undefined
+							? scanSessionOverride
+							: scanSessionId,
 					fromISO: payload.fromISO ?? null,
 					toISO: payload.toISO ?? null,
 					includeNFT: payload.includeNFT ?? false,
@@ -527,7 +673,7 @@ function CSVGeneratorPageInner() {
 				})
 			}).catch(() => undefined);
 		},
-		[isAuthed, rows]
+		[isAuthed, partialResult, rows, scanSessionId]
 	);
 
 	const previewContainerRef = useRef<HTMLDivElement | null>(null);
@@ -552,10 +698,10 @@ function CSVGeneratorPageInner() {
 		}));
 	}, [rows, overrides]);
 
-	// Live log
-	const [logOpen, setLogOpen] = useState(false);
-	const [logLines, setLogLines] = useState<string[]>([]);
-	const logRef = useRef<HTMLDivElement | null>(null);
+	const isCreditError =
+		typeof error === "string" &&
+		(error.toLowerCase().includes("not enough tx credits") ||
+			error.toLowerCase().includes("ikke nok tx credits"));
 
 	const localizeStreamLog = useCallback(
 		(msg: string) => {
@@ -709,11 +855,13 @@ function CSVGeneratorPageInner() {
 			const addr = searchParams.get("address")?.trim();
 			if (!isAuthed) return;
 			if (!csvId && !addr) return;
+			if (loadedFromParamsRef.current) return;
 			const query = csvId
 				? `id=${encodeURIComponent(csvId)}`
 				: `address=${encodeURIComponent(addr!)}`;
 			if (!active) return;
 			await loadCsvPreview(query);
+			loadedFromParamsRef.current = true;
 		})().catch(() => undefined);
 		return () => {
 			active = false;
@@ -743,6 +891,7 @@ function CSVGeneratorPageInner() {
 		}).catch(() => undefined);
 	}
 	async function pickAddress(addr: string) {
+		resetPreview();
 		setAddress(addr);
 		const match = addrHistory.find((x) => x.address === addr);
 		setWalletName(match?.label ?? "");
@@ -822,6 +971,24 @@ function CSVGeneratorPageInner() {
 			useOslo
 		};
 	}
+	function payloadKeyFromPayload(payload: Payload) {
+		return JSON.stringify({
+			address: payload.address,
+			fromISO: payload.fromISO ?? null,
+			toISO: payload.toISO ?? null,
+			includeNFT: payload.includeNFT ?? false,
+			useOslo: payload.useOslo ?? false,
+			dustMode: payload.dustMode ?? "off",
+			dustThreshold: payload.dustThreshold ?? null,
+			dustInterval: payload.dustInterval ?? "day"
+		});
+	}
+	function getScanSessionId() {
+		if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+			return crypto.randomUUID();
+		}
+		return `scan_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+	}
 	function q(s?: string) {
 		return `"${String(s ?? "").replace(/"/g, '\\"')}"`;
 	}
@@ -829,10 +996,6 @@ function CSVGeneratorPageInner() {
 	/* ========== Streamed preview with progress + cancel ========== */
 	async function onCheckWallet(e: React.FormEvent<HTMLFormElement>) {
 		e.preventDefault();
-		setError(null);
-		setErrorCta(null);
-		setOk(false);
-		setRows(null);
 		if (!isAuthed) {
 			setError(
 				tr({
@@ -841,6 +1004,8 @@ function CSVGeneratorPageInner() {
 				})
 			);
 			setErrorCta(null);
+			setCreditsSpent(null);
+			setPartialResult(false);
 			return;
 		}
 
@@ -851,16 +1016,46 @@ function CSVGeneratorPageInner() {
 		if (!parsed.success) {
 			setError(parsed.error.issues[0]?.message ?? "Invalid input");
 			setErrorCta(null);
+			setCreditsSpent(null);
+			setPartialResult(false);
 			pushLog(tr({ no: "❌ Ugyldig input", en: "❌ Invalid input" }));
 			setLogOpen(true);
 			return;
 		}
 
+		const payloadKey = payloadKeyFromPayload(parsed.data);
+		const shouldReuseSession =
+			lastPayloadKeyRef.current === payloadKey && !!scanSessionId;
+		const nextSessionId = shouldReuseSession
+			? scanSessionId
+			: getScanSessionId();
+		setScanSessionId(nextSessionId);
+		lastPayloadKeyRef.current = payloadKey;
+
+		setError(null);
+		setErrorCta(null);
+		setOk(false);
+		setRows(null);
+		setCreditsSpent(null);
+		setPartialResult(false);
+
+		const rangeLabel = formatDateRange(payload.fromISO, payload.toISO);
 		pushLog(
-			tr({ no: "Ny sjekk", en: "New check" }) +
-				` ${q(payload.walletName)} ${q(payload.address)}`
+			(shouldReuseSession
+				? tr({ no: "Fortsetter skann", en: "Continuing scan" })
+				: tr({ no: "Ny sjekk", en: "New check" })) +
+				` ${q(payload.walletName)} ${q(payload.address)}` +
+				(rangeLabel ? ` — ${rangeLabel}` : "")
 		);
 		setLogOpen(true);
+		if (shouldReuseSession) {
+			pushLog(
+				tr({
+					no: "Fortsetter forrige skann. Totalt antall vises først når hele perioden er skannet.",
+					en: "Continuing previous scan. Total count is shown once the full period is scanned."
+				})
+			);
+		}
 
 		await rememberAddress(parsed.data.address);
 
@@ -868,6 +1063,8 @@ function CSVGeneratorPageInner() {
 		abortRef.current = ctrl;
 
 		setLoading(true);
+		setCreditsSpent(null);
+		setPartialResult(false);
 		let pendingErrorCta: { label: string; href: string } | null = null;
 		try {
 			pushLog(
@@ -879,7 +1076,10 @@ function CSVGeneratorPageInner() {
 			const res = await fetch("/api/kryptosekken?format=ndjson", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(parsed.data),
+				body: JSON.stringify({
+					...parsed.data,
+					scanSessionId: nextSessionId
+				}),
 				signal: ctrl.signal
 			});
 
@@ -897,6 +1097,7 @@ function CSVGeneratorPageInner() {
 				} catch {
 					errMsg = text?.trim()?.slice(0, 300) || errMsg;
 				}
+				errMsg = normalizeCreditError(errMsg);
 				pushLog(tr({ no: "❌ API-feil:", en: "❌ API error:" }) + ` ${errMsg}`);
 				throw new Error(errMsg);
 			}
@@ -918,14 +1119,18 @@ function CSVGeneratorPageInner() {
 						if (evt.type === "log") {
 							pushLog(localizeStreamLog(evt.message));
 						} else if (evt.type === "error") {
-							const msg =
+							const msgRaw =
 								typeof evt.error === "string" && evt.error
 									? evt.error
 									: "Something went wrong";
+							const msg = normalizeCreditError(msgRaw);
 							setError(msg);
 							setErrorCta(
 								evt?.cta && typeof evt.cta?.href === "string" ? evt.cta : null
 							);
+							if (msgRaw.toLowerCase().includes("not enough tx credits")) {
+								window.dispatchEvent(new Event("sol2ks:billing:update"));
+							}
 							pushLog(tr({ no: "❌ Feil:", en: "❌ Error:" }) + ` ${msg}`);
 						} else if (evt.type === "page") {
 							const prefix =
@@ -952,6 +1157,13 @@ function CSVGeneratorPageInner() {
 								rowsPreview: KSPreviewRow[];
 								count: number;
 								rawCount: number;
+								totalRaw?: number;
+								totalLogged?: number;
+								newRaw?: number;
+								newLogged?: number;
+								partial?: boolean;
+								fromCache?: boolean;
+								chargedCredits?: number;
 							};
 							setRows(j.rowsPreview || []);
 							lastPayloadRef.current = parsed.data;
@@ -962,21 +1174,36 @@ function CSVGeneratorPageInner() {
 							setErrorCta(null);
 							if (j.rowsPreview?.length) {
 								const csvAuto = buildCsvFromRows(j.rowsPreview, overrides);
-								await saveGeneratedCsv(csvAuto);
+								await saveGeneratedCsv(csvAuto, Boolean(j.partial),
+									j.partial ? nextSessionId : null
+								);
 							}
 							setOk(true);
-							if (dustMode !== "off" && j.rawCount !== j.count) {
+							setCreditsSpent(
+								j.fromCache ? null : j.chargedCredits ?? null
+							);
+							setPartialResult(Boolean(j.partial));
+							if (!j.partial) {
+								setScanSessionId(null);
+								lastPayloadKeyRef.current = null;
+							}
+							window.dispatchEvent(new Event("sol2ks:billing:update"));
+							const totalRaw = j.totalRaw ?? j.rawCount;
+							const totalLogged = j.totalLogged ?? j.count;
+							const newRaw = j.newRaw ?? totalRaw;
+							const newLogged = j.newLogged ?? totalLogged;
+							if (totalRaw !== totalLogged || newRaw !== totalRaw) {
 								pushLog(
 									tr({
-										no: `Transaksjoner funnet (rå): ${j.rawCount}. Etter støvbehandling: ${j.count}.`,
-										en: `Transactions found (raw): ${j.rawCount}. After dust processing: ${j.count}.`
+										no: `Nye rå: ${newRaw}. Total rå: ${totalRaw}. Nye loggført: ${newLogged}. Total loggført: ${totalLogged}.`,
+										en: `New raw: ${newRaw}. Total raw: ${totalRaw}. New logged: ${newLogged}. Total logged: ${totalLogged}.`
 									})
 								);
 							} else {
 								pushLog(
 									tr({
-										no: `Transaksjoner funnet: ${j.count}.`,
-										en: `Transactions found: ${j.count}.`
+										no: `Transaksjoner funnet: ${totalLogged}.`,
+										en: `Transactions found: ${totalLogged}.`
 									})
 								);
 							}
@@ -986,6 +1213,14 @@ function CSVGeneratorPageInner() {
 									en: `✅ ${j.count} transactions logged.`
 								})
 							);
+							if (!j.partial) {
+								pushLog(
+									tr({
+										no: "Alle transaksjoner i perioden er funnet. Full rapport er generert.",
+										en: "All transactions in the period have been found. A full report has been generated."
+									})
+								);
+							}
 						}
 					} catch {
 						// ignore bad chunk
@@ -998,14 +1233,17 @@ function CSVGeneratorPageInner() {
 					tr({ no: "⏹️ Avbrutt av bruker.", en: "⏹️ Cancelled by user." })
 				);
 			} else {
-				const message =
+				const messageRaw =
 					err instanceof Error
 						? err.message
 						: typeof err === "string"
 							? err
 							: "Something went wrong";
+				const message = normalizeCreditError(messageRaw);
 				setError(message);
 				setErrorCta(pendingErrorCta);
+				setCreditsSpent(null);
+				setPartialResult(false);
 			}
 		} finally {
 			setLoading(false);
@@ -1018,6 +1256,8 @@ function CSVGeneratorPageInner() {
 		abortRef.current.abort();
 		abortRef.current = null;
 		setLoading(false);
+		setCreditsSpent(null);
+		setPartialResult(false);
 	}
 
 	async function downloadCSV(currentOverrides: OverrideMaps) {
@@ -1099,6 +1339,8 @@ function CSVGeneratorPageInner() {
 		setRows(null);
 		setError(null);
 		setErrorCta(null);
+		setCreditsSpent(null);
+		setPartialResult(false);
 		setOk(false);
 		setAddress("");
 		setWalletName("");
@@ -1186,6 +1428,7 @@ function CSVGeneratorPageInner() {
 											})}
 											value={address}
 											onChange={(e) => {
+												resetPreview();
 												setAddress(e.target.value);
 												setAddrMenuOpen(true);
 											}}
@@ -1206,6 +1449,7 @@ function CSVGeneratorPageInner() {
 													onMouseDown={(e) => e.preventDefault()}
 													onClick={() => {
 														setAddress("");
+														resetPreview();
 														setAddrMenuOpen(false);
 														setTimeout(() => addrInputRef.current?.focus(), 0);
 													}}
@@ -1930,7 +2174,7 @@ function CSVGeneratorPageInner() {
 									{tr({ no: "Nullstill", en: "Reset" })}
 								</button>
 
-								{error && (
+								{error && !isCreditError && (
 									<div
 										role="status"
 										aria-live="polite"
@@ -1942,7 +2186,7 @@ function CSVGeneratorPageInner() {
 												href={errorCta.href}
 												className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200 px-3 py-1 text-[11px] font-semibold hover:bg-amber-200/70 dark:hover:bg-amber-500/25"
 											>
-												{errorCta.label || tr({ no: "Kjøp flere", en: "Top up" })}
+												{tr({ no: "Topp opp", en: "Top up" })}
 											</Link>
 										)}
 									</div>
@@ -1961,14 +2205,26 @@ function CSVGeneratorPageInner() {
 									</div>
 								)}
 								{!error && effectiveRows && effectiveRows.length > 0 && (
-									<span className="sm:ml-2 text-sm text-emerald-700 dark:text-emerald-400">
+									<span className="sm:ml-2 text-sm text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-2">
 										{tr({
 											no: `${effectiveRows.length} transaksjoner loggført ✅`,
 											en: `${effectiveRows.length} transactions logged ✅`
 										})}
+										{typeof creditsSpent === "number" && (
+											<span className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-200">
+												<span className="opacity-60">•</span>
+												<BsXDiamondFill className="h-3.5 w-3.5 text-amber-500" />
+												<span className="tabular-nums">{creditsSpent}</span>
+												<span>
+													{tr({
+														no: "TX Credits brukt",
+														en: "TX Credits spent"
+													})}
+												</span>
+											</span>
+										)}
 									</span>
 								)}
-
 								{/* Live log toggle */}
 								<div className="sm:ml-auto">
 									<button
@@ -1984,6 +2240,56 @@ function CSVGeneratorPageInner() {
 									</button>
 								</div>
 							</div>
+
+							{isCreditError && (
+								<div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+									<div className="flex flex-wrap items-center gap-2">
+										<span className="inline-flex items-center gap-1">
+											<FiAlertTriangle className="h-3.5 w-3.5" />
+											{error}
+										</span>
+										{errorCta && (
+											<Link
+												href={errorCta.href}
+												className="inline-flex items-center rounded-full bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200 px-3 py-1 text-[11px] font-semibold hover:bg-rose-200/70 dark:hover:bg-rose-500/25"
+											>
+												{tr({ no: "Topp opp", en: "Top up" })}
+											</Link>
+										)}
+									</div>
+								</div>
+							)}
+
+							{!error && partialResult && (
+								<div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+									<div className="flex flex-wrap items-center gap-2">
+										<span className="inline-flex items-center gap-1">
+											<FiAlertTriangle className="h-3.5 w-3.5" />
+											{(billingStatus?.freeRemaining ?? 0) +
+												(billingStatus?.creditsRemaining ?? 0) >
+											0
+												? tr({
+														no: "Ufullstendig skann. Klikk «Sjekk lommebok» for å fortsette skannet.",
+														en: "Incomplete scan. Click “Check wallet” to continue the scan."
+													})
+												: tr({
+														no: "Ufullstendig skann pga. ikke nok TX Credits. Topp opp for å fullføre.",
+														en: "Incomplete scan due to insufficient TX Credits. Top up to complete the scan."
+													})}
+										</span>
+										{(billingStatus?.freeRemaining ?? 0) +
+											(billingStatus?.creditsRemaining ?? 0) ===
+											0 && (
+											<Link
+												href="/pricing"
+												className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200 px-3 py-1 text-[11px] font-semibold hover:bg-amber-200/70 dark:hover:bg-amber-500/25"
+											>
+												{tr({ no: "Topp opp", en: "Top up" })}
+											</Link>
+										)}
+									</div>
+								</div>
+							)}
 
 							{/* Live log panel */}
 							{logOpen && (

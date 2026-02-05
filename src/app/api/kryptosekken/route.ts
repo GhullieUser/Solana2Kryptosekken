@@ -29,12 +29,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /* ================= In-memory cache ================= */
+type ScanResume = {
+	nextAddressIndex: number;
+	beforeByAddress: Record<string, string>;
+};
+
 type CacheVal = {
 	rowsProcessed: KSRow[];
 	rawCount: number;
 	count: number;
 	createdAt: number;
 	partial?: boolean;
+	sigMap?: Record<string, HeliusTx>;
+	resume?: ScanResume;
+	scanSessionId?: string;
 	sigToSigner?: Record<string, string>;
 	recipients?: Record<string, string>;
 	programIds?: Record<string, string>;
@@ -88,9 +96,22 @@ async function getAvailableRawTx(
 ) {
 	const rawUsed = await ensureUsageRow(supabase, userId);
 	const creditsRemaining = await ensureCreditsRow(supabase, userId);
-	const freeRemaining = Math.max(0, FREE_RAW_TX - rawUsed);
+	const { data: usageEvents } = await supabase
+		.from("billing_usage_events")
+		.select("raw_count")
+		.eq("user_id", userId);
+	const totalBilled = Array.isArray(usageEvents)
+		? usageEvents.reduce((sum, row) => sum + (row.raw_count ?? 0), 0)
+		: 0;
+	const effectiveRawUsed = Math.max(rawUsed, totalBilled);
+	const freeRemaining = Math.max(0, FREE_RAW_TX - effectiveRawUsed);
 	const availableRawTx = freeRemaining + creditsRemaining;
-	return { rawUsed, freeRemaining, creditsRemaining, availableRawTx };
+	return {
+		rawUsed: effectiveRawUsed,
+		freeRemaining,
+		creditsRemaining,
+		availableRawTx
+	};
 }
 
 async function consumeRawUsage(
@@ -110,14 +131,37 @@ async function consumeRawUsage(
 		.eq("cache_key", cacheKey)
 		.maybeSingle();
 	const alreadyBilled = existing?.raw_count ?? 0;
-	const deltaRaw = Math.max(0, rawCount - alreadyBilled);
-	if (deltaRaw <= 0) {
-		return { ok: true, charged: 0, freeRemaining: 0, creditsRemaining: 0 };
-	}
-
 	const rawUsed = await ensureUsageRow(supabase, userId);
 	const creditsRemaining = await ensureCreditsRow(supabase, userId);
-	const freeRemaining = Math.max(0, FREE_RAW_TX - rawUsed);
+	const { data: usageEvents } = await supabase
+		.from("billing_usage_events")
+		.select("raw_count")
+		.eq("user_id", userId);
+	const totalBilled = Array.isArray(usageEvents)
+		? usageEvents.reduce((sum, row) => sum + (row.raw_count ?? 0), 0)
+		: 0;
+	const effectiveRawUsed = Math.max(rawUsed, alreadyBilled, totalBilled);
+	const freeRemaining = Math.max(0, FREE_RAW_TX - effectiveRawUsed);
+	const deltaRaw = Math.max(0, rawCount - alreadyBilled);
+	if (deltaRaw <= 0) {
+		if (effectiveRawUsed > rawUsed) {
+			const now = new Date().toISOString();
+			const { error: usageErr } = await supabase
+				.from("billing_user_usage")
+				.update({ raw_tx_used: effectiveRawUsed, updated_at: now })
+				.eq("user_id", userId);
+			if (usageErr) {
+				return {
+					ok: false,
+					error: usageErr.message,
+					freeRemaining,
+					creditsRemaining
+				};
+			}
+		}
+		return { ok: true, charged: 0, freeRemaining, creditsRemaining };
+	}
+
 	const requiredCredits = Math.max(0, deltaRaw - freeRemaining);
 
 	if (requiredCredits > creditsRemaining) {
@@ -130,30 +174,96 @@ async function consumeRawUsage(
 	}
 
 	const now = new Date().toISOString();
-	await supabase
+	const targetRawUsed = effectiveRawUsed + deltaRaw;
+	const targetCredits = creditsRemaining - requiredCredits;
+	const { error: usageErr } = await supabase
 		.from("billing_user_usage")
-		.update({ raw_tx_used: rawUsed + deltaRaw, updated_at: now })
+		.update({ raw_tx_used: targetRawUsed, updated_at: now })
 		.eq("user_id", userId);
+	if (usageErr) {
+		return {
+			ok: false,
+			error: usageErr.message,
+			freeRemaining,
+			creditsRemaining
+		};
+	}
 
 	if (requiredCredits > 0) {
-		await supabase
+		const { error: creditsErr } = await supabase
 			.from("billing_user_credits")
-			.update({ credits_remaining: creditsRemaining - requiredCredits, updated_at: now })
+			.update({
+				credits_remaining: targetCredits,
+				updated_at: now
+			})
 			.eq("user_id", userId);
+		if (creditsErr) {
+			// rollback usage update if credits update fails
+			await supabase
+				.from("billing_user_usage")
+				.update({ raw_tx_used: effectiveRawUsed, updated_at: now })
+				.eq("user_id", userId);
+			return {
+				ok: false,
+				error: creditsErr.message,
+				freeRemaining,
+				creditsRemaining
+			};
+		}
 	}
 
 	if (existing) {
-		await supabase
+		const { error: eventErr } = await supabase
 			.from("billing_usage_events")
 			.update({ raw_count: rawCount, created_at: now })
 			.eq("user_id", userId)
 			.eq("cache_key", cacheKey);
+		if (eventErr) {
+			// rollback usage/credits if event update fails
+			await supabase
+				.from("billing_user_usage")
+				.update({ raw_tx_used: effectiveRawUsed, updated_at: now })
+				.eq("user_id", userId);
+			if (requiredCredits > 0) {
+				await supabase
+					.from("billing_user_credits")
+					.update({ credits_remaining: creditsRemaining, updated_at: now })
+					.eq("user_id", userId);
+			}
+			return {
+				ok: false,
+				error: eventErr.message,
+				freeRemaining,
+				creditsRemaining
+			};
+		}
 	} else {
-		await supabase.from("billing_usage_events").insert({
-			user_id: userId,
-			cache_key: cacheKey,
-			raw_count: rawCount
-		});
+		const { error: eventErr } = await supabase
+			.from("billing_usage_events")
+			.insert({
+				user_id: userId,
+				cache_key: cacheKey,
+				raw_count: rawCount
+			});
+		if (eventErr) {
+			// rollback usage/credits if event insert fails
+			await supabase
+				.from("billing_user_usage")
+				.update({ raw_tx_used: effectiveRawUsed, updated_at: now })
+				.eq("user_id", userId);
+			if (requiredCredits > 0) {
+				await supabase
+					.from("billing_user_credits")
+					.update({ credits_remaining: creditsRemaining, updated_at: now })
+					.eq("user_id", userId);
+			}
+			return {
+				ok: false,
+				error: eventErr.message,
+				freeRemaining,
+				creditsRemaining
+			};
+		}
 	}
 
 	return {
@@ -190,6 +300,10 @@ function getCache(key: string): CacheVal | null {
 
 function setCache(key: string, val: CacheVal) {
 	CACHE.set(key, val);
+}
+
+function mapFromRecord<T>(rec?: Record<string, T>): Map<string, T> {
+	return new Map(Object.entries(rec ?? {}));
 }
 
 /* ================= Numbers & helpers ================= */
@@ -402,15 +516,17 @@ function makeSymDecResolver(
 			typeof decimals === "number"
 				? decimals
 				: typeof j?.decimals === "number"
-				? j.decimals
-				: typeof h?.decimals === "number"
-				? h.decimals
-				: hint?.decimals ?? 6;
+					? j.decimals
+					: typeof h?.decimals === "number"
+						? h.decimals
+						: (hint?.decimals ?? 6);
 
 		// Guard: only the native SOL mint should resolve to SOL.
 		if (
 			mint !== "So11111111111111111111111111111111111111112" &&
-			String(sym || "").trim().toUpperCase() === "SOL"
+			String(sym || "")
+				.trim()
+				.toUpperCase() === "SOL"
 		) {
 			sym = `TOKEN-${mint.slice(0, 6)}`;
 		}
@@ -496,14 +612,14 @@ function synthesizeTokenTransfersFromAccountData(
 				typeof rawObj?.tokenAmount === "string"
 					? rawObj.tokenAmount
 					: typeof ch?.tokenAmount === "string"
-					? ch.tokenAmount
-					: undefined;
+						? ch.tokenAmount
+						: undefined;
 			const decimals =
 				typeof rawObj?.decimals === "number"
 					? rawObj.decimals
 					: typeof ch?.decimals === "number"
-					? ch.decimals
-					: undefined;
+						? ch.decimals
+						: undefined;
 
 			if (!mint || !tokenAmountRaw) continue;
 			if (tokenAccount && existingTokenAccounts.has(tokenAccount)) continue; // already have a concrete transfer for this ATA
@@ -1828,11 +1944,11 @@ function detectLiquidityEvent(
 	const lpNftMint = nftIn.length
 		? nftIn[0]
 		: inferredNFT
-		? ({
-				amountText: inferredNFT.amountText,
-				symbol: inferredNFT.symbol
-		  } as any)
-		: null;
+			? ({
+					amountText: inferredNFT.amountText,
+					symbol: inferredNFT.symbol
+				} as any)
+			: null;
 	const lpNftBurn = nftOut.length ? nftOut[0] : null;
 	const lpMintEvidence = Boolean(lpMintToken || lpNftMint);
 	const lpBurnEvidence = Boolean(lpBurnToken || lpNftBurn);
@@ -1947,7 +2063,7 @@ function detectLiquidityEvent(
 							"LP-NFT",
 						amountText: amountFromTransfer(lpNftMint as any, resolveSymDec)
 							.amountText
-				  }
+					}
 				: undefined
 		};
 	}
@@ -1971,7 +2087,7 @@ function detectLiquidityEvent(
 							"LP-NFT",
 						amountText: amountFromTransfer(lpNftBurn as any, resolveSymDec)
 							.amountText
-				  }
+					}
 				: undefined,
 			ins
 		};
@@ -1992,8 +2108,8 @@ function ensureStringAmount(v: number | string | undefined): string {
 	return typeof v === "string"
 		? toAmountString(v)
 		: typeof v === "number"
-		? toAmountString(numberToPlain(v))
-		: "";
+			? toAmountString(numberToPlain(v))
+			: "";
 }
 
 function classifyTxToRows(opts: {
@@ -2150,7 +2266,7 @@ function classifyTxToRows(opts: {
 									Ut: amt,
 									"Ut-Valuta": sym,
 									Marked: market
-							  }
+								}
 							: {
 									Type: "Handel",
 									Inn: amt,
@@ -2158,7 +2274,7 @@ function classifyTxToRows(opts: {
 									Ut: lpPer,
 									"Ut-Valuta": lpSym,
 									Marked: market
-							  },
+								},
 						liq.note
 					);
 				}
@@ -2234,16 +2350,16 @@ function classifyTxToRows(opts: {
 			const market = srcU.includes("GMGN")
 				? "GMGN"
 				: srcU.includes("JUPITER")
-				? "JUPITER"
-				: srcU.includes("RAYDIUM")
-				? "RAYDIUM"
-				: srcU.includes("ORCA")
-				? "ORCA"
-				: srcU.includes("METEORA")
-				? "METEORA"
-				: srcU.includes("PUMP")
-				? "Pump.fun"
-				: "SOLANA DEX";
+					? "JUPITER"
+					: srcU.includes("RAYDIUM")
+						? "RAYDIUM"
+						: srcU.includes("ORCA")
+							? "ORCA"
+							: srcU.includes("METEORA")
+								? "METEORA"
+								: srcU.includes("PUMP")
+									? "Pump.fun"
+									: "SOLANA DEX";
 
 			pushRow({
 				Type: "Handel",
@@ -2342,7 +2458,7 @@ function classifyTxToRows(opts: {
 					: ({
 							amount: Math.abs(lamports),
 							fromUserAccount: address
-					  } as NativeTransfer)
+						} as NativeTransfer)
 			];
 		}
 
@@ -2363,8 +2479,8 @@ function classifyTxToRows(opts: {
 			const market = srcU.includes("PUMP")
 				? "Pump.fun"
 				: srcU.includes("GMGN")
-				? "GMGN"
-				: "SOLANA DEX";
+					? "GMGN"
+					: "SOLANA DEX";
 
 			pushRow({
 				Type: "Handel",
@@ -2413,8 +2529,8 @@ function classifyTxToRows(opts: {
 			const market = srcU.includes("GMGN")
 				? "GMGN"
 				: srcU.includes("JUPITER")
-				? "JUPITER"
-				: "SOLANA DEX";
+					? "JUPITER"
+					: "SOLANA DEX";
 
 			const first = legs[0];
 			const last = legs[legs.length - 1];
@@ -2636,6 +2752,13 @@ type Ctx = {
 	cacheKey: string;
 };
 
+type ScanSeed = {
+	sigMap: Map<string, HeliusTx>;
+	sigToSigner: Map<string, string>;
+	sigToProgramId: Map<string, string>;
+	sigToProgramName: Map<string, string>;
+};
+
 type ScanResult = {
 	myATAs: Set<string>;
 	sigMap: Map<string, HeliusTx>;
@@ -2644,6 +2767,7 @@ type ScanResult = {
 	sigToProgramName: Map<string, string>;
 	rawTxCount: number;
 	partial: boolean;
+	resume?: ScanResume;
 };
 
 type MetaResult = {
@@ -2812,7 +2936,7 @@ const getOrNull = (key: string) => {
 				recipients: v.recipients ?? {},
 				programIds: v.programIds ?? {},
 				programNames: v.programNames ?? {}
-		  }
+			}
 		: null;
 };
 
@@ -2955,13 +3079,28 @@ async function scanAddresses(
 	fromISO: string | undefined,
 	toISO: string | undefined,
 	onProgress?: (p: Progress) => void,
-	maxRawTx?: number
+	maxRawTx?: number,
+	resume?: ScanResume,
+	seed?: ScanSeed
 ): Promise<ScanResult> {
 	const rawTxLimit =
 		typeof maxRawTx === "number" && Number.isFinite(maxRawTx)
 			? Math.max(0, Math.floor(maxRawTx))
 			: undefined;
 	let hitLimit = false;
+	let resumeOut: ScanResume | undefined;
+	const fromMs = fromISO ? new Date(fromISO).getTime() : undefined;
+	const toMs = toISO ? new Date(toISO).getTime() : undefined;
+	const inRange = (tx: HeliusTx) => {
+		const ts = typeof tx.timestamp === "number" ? tx.timestamp * 1000 : undefined;
+		if (typeof ts !== "number") return false;
+		if (fromMs !== undefined && ts < fromMs) return false;
+		if (toMs !== undefined && ts > toMs) return false;
+		return true;
+	};
+	const beforeByAddress: Record<string, string> = {
+		...(resume?.beforeByAddress ?? {})
+	};
 
 	onProgress?.({ type: "log", message: "Henter token-kontoer (ATAer) …" });
 	const tokenAccounts = await getTokenAccountsByOwner(
@@ -2977,10 +3116,10 @@ async function scanAddresses(
 	});
 
 	const addressesToQuery = [address, ...tokenAccounts];
-	const sigMap = new Map<string, HeliusTx>();
-	const sigToSigner = new Map<string, string>();
-	const sigToProgramId = new Map<string, string>();
-	const sigToProgramName = new Map<string, string>();
+	const sigMap = seed?.sigMap ?? new Map<string, HeliusTx>();
+	const sigToSigner = seed?.sigToSigner ?? new Map<string, string>();
+	const sigToProgramId = seed?.sigToProgramId ?? new Map<string, string>();
+	const sigToProgramName = seed?.sigToProgramName ?? new Map<string, string>();
 	const missing = new Set<string>();
 
 	const humanizeIdlName = (name: string): string =>
@@ -2990,14 +3129,17 @@ async function scanAddresses(
 			.trim()
 			.replace(/\b\w/g, (c) => c.toUpperCase());
 
-	for (let ai = 0; ai < addressesToQuery.length; ai++) {
+	const startIndex = resume?.nextAddressIndex ?? 0;
+	for (let ai = startIndex; ai < addressesToQuery.length; ai++) {
 		if (rawTxLimit !== undefined && sigMap.size >= rawTxLimit) {
 			hitLimit = true;
+			resumeOut = { nextAddressIndex: ai, beforeByAddress };
 			break;
 		}
 		const who = addressesToQuery[ai];
 		const isMain = ai === 0;
 		let pages = 0;
+		const before = beforeByAddress[who];
 
 		if (isMain)
 			onProgress?.({ type: "log", message: "Skanner hovedadresse …" });
@@ -3010,15 +3152,19 @@ async function scanAddresses(
 			toISO,
 			apiKey: process.env.HELIUS_API_KEY,
 			limit: 100,
-			maxPages: MAX_PAGES
+			maxPages: MAX_PAGES,
+			before
 		})) {
 			pages++;
+			const lastSig = txPage[txPage.length - 1]?.signature;
+			if (lastSig) beforeByAddress[who] = lastSig;
 			for (const tx of txPage) {
 				if (rawTxLimit !== undefined && sigMap.size >= rawTxLimit) {
 					hitLimit = true;
 					break;
 				}
-				if (!tx?.signature) continue;
+				if (!tx || !tx.signature) continue;
+				if (!inRange(tx)) continue;
 				const isNew = !sigMap.has(tx.signature);
 				sigMap.set(tx.signature, tx);
 
@@ -3104,7 +3250,11 @@ async function scanAddresses(
 			});
 			if (pages >= MAX_PAGES) break;
 		}
-		if (hitLimit) break;
+		if (hitLimit) {
+			resumeOut = { nextAddressIndex: ai, beforeByAddress };
+			break;
+		}
+		delete beforeByAddress[who];
 
 		onProgress?.({
 			type: "addrDone",
@@ -3160,7 +3310,8 @@ async function scanAddresses(
 		sigToProgramId,
 		sigToProgramName,
 		rawTxCount: sigMap.size,
-		partial: hitLimit
+		partial: hitLimit,
+		resume: hitLimit ? resumeOut : undefined
 	};
 }
 
@@ -3247,7 +3398,12 @@ function postProcessAndCache(
 	precomputedProgramIds?: Map<string, string>,
 	precomputedProgramNames?: Map<string, string>,
 	rawTxCount?: number,
-	partial = false
+	partial = false,
+	cacheExtras?: {
+		sigMap?: Map<string, HeliusTx>;
+		resume?: ScanResume;
+		scanSessionId?: string;
+	}
 ) {
 	const getSigner = selfSignerMap
 		? (s: string) => (s ? selfSignerMap.get(s) : undefined)
@@ -3257,7 +3413,7 @@ function postProcessAndCache(
 					: undefined;
 				const fp = (tx as any)?.feePayer;
 				return typeof fp === "string" && fp ? fp : undefined;
-		  };
+			};
 
 	const processedAfterDust = processDust(rows, {
 		mode: ctx.dustMode,
@@ -3291,15 +3447,24 @@ function postProcessAndCache(
 		rowsRaw: rows,
 		rowsProcessed: consolidated,
 		count: consolidated.length,
-		rawCount: Number.isFinite(rawTxCount) ? (rawTxCount as number) : rows.length,
+		rawCount: Number.isFinite(rawTxCount)
+			? (rawTxCount as number)
+			: rows.length,
 		partial
 	};
 
+	const sigMapCache =
+		partial && cacheExtras?.sigMap
+			? Object.fromEntries(cacheExtras.sigMap.entries())
+			: undefined;
 	putCache(ctx.cacheKey, {
 		rowsProcessed: consolidated,
 		count: res.count,
 		rawCount: res.rawCount,
 		partial: res.partial,
+		sigMap: sigMapCache,
+		resume: partial ? cacheExtras?.resume : undefined,
+		scanSessionId: partial ? cacheExtras?.scanSessionId : undefined,
 		sigToSigner: selfSignerMap
 			? Object.fromEntries(selfSignerMap.entries())
 			: undefined,
@@ -3329,6 +3494,7 @@ interface Body {
 	dustThreshold?: string | number;
 	dustInterval?: DustInterval;
 	useOslo?: boolean;
+	scanSessionId?: string;
 	overrides?: OverridesPayload;
 	/** map of rowId -> partial KSRow patches coming from client edits */
 	clientEdits?: Record<string, Partial<KSRow>>;
@@ -3383,6 +3549,11 @@ export async function POST(req: NextRequest) {
 			dustInterval,
 			useOslo
 		});
+		const scanSessionId =
+			typeof body.scanSessionId === "string" && body.scanSessionId.length > 0
+				? body.scanSessionId
+				: undefined;
+		const chargeKey = scanSessionId ? `${ckey}:${scanSessionId}` : ckey;
 
 		/* ---------- Clear cache for this request key ---------- */
 		const clearCache = req.nextUrl?.searchParams.get("clearCache") === "1";
@@ -3407,8 +3578,9 @@ export async function POST(req: NextRequest) {
 
 		const creditState = await getAvailableRawTx(supabase, userId);
 		const availableRawTx = creditState.availableRawTx;
-		const noCreditsError = "not enough TX Credits to perform a search";
+		const noCreditsError = "Not enough TX Credits to perform a search";
 		const topUpCta = { label: "Top up", href: "/pricing" };
+		const topUpLog = "⚠️ Ikke nok TX Credits. Topp opp for å fortsette.";
 
 		/* ---------- NDJSON streaming (preview with progress) ---------- */
 		if (wantNDJSON) {
@@ -3419,25 +3591,57 @@ export async function POST(req: NextRequest) {
 						controller.enqueue(enc.encode(JSON.stringify(obj) + "\n"));
 
 					const cached = getOrNull(ckey);
+					if (cached?.partial && availableRawTx <= 0) {
+						await send({
+							type: "error",
+							error: noCreditsError,
+							cta: topUpCta,
+							freeRemaining: creditState.freeRemaining,
+							creditsRemaining: creditState.creditsRemaining,
+							availableRawTx
+						});
+						await send({
+							type: "log",
+							message: topUpLog
+						});
+						controller.close();
+						return;
+					}
+					const shouldResume =
+						cached &&
+						cached.partial &&
+						availableRawTx > 0 &&
+						cached.sigMap &&
+						cached.resume &&
+						scanSessionId &&
+						cached.scanSessionId === scanSessionId;
 					const canUseCached =
 						cached &&
-						(!cached.partial || availableRawTx <= cached.rawCount);
+						!shouldResume &&
+						(!cached.partial || availableRawTx <= cached.rawCount) &&
+						(!cached.partial || !scanSessionId || cached.scanSessionId === scanSessionId);
 					if (cached && canUseCached) {
+						const billedRawCount = cached.partial
+							? Math.min(cached.rawCount ?? 0, availableRawTx)
+							: cached.rawCount;
 						const billing = await consumeRawUsage(
 							supabase,
 							userId,
-							cached.rawCount,
-							ckey
+							billedRawCount,
+							chargeKey
 						);
 						if (!billing.ok) {
 							await send({
 								type: "error",
-								error: "Payment required"
+								error: noCreditsError,
+								cta: topUpCta,
+								freeRemaining: creditState.freeRemaining,
+								creditsRemaining: creditState.creditsRemaining,
+								availableRawTx
 							});
 							await send({
 								type: "log",
-								message:
-									"⚠️ Ikke nok kreditter. Kjøp flere TX for å fortsette."
+								message: topUpLog
 							});
 							controller.close();
 							return;
@@ -3462,8 +3666,14 @@ export async function POST(req: NextRequest) {
 								rowsPreview,
 								count: cached.count,
 								rawCount: cached.rawCount,
+								totalRaw: cached.rawCount,
+								totalLogged: cached.count,
+								newRaw: 0,
+								newLogged: 0,
 								cacheKey: ckey,
-								partial: cached.partial ?? false
+								partial: cached.partial ?? false,
+								fromCache: true,
+								chargedCredits: 0
 							}
 						});
 						controller.close();
@@ -3474,24 +3684,39 @@ export async function POST(req: NextRequest) {
 						await send({
 							type: "error",
 							error: noCreditsError,
-							cta: topUpCta
+							cta: topUpCta,
+							freeRemaining: creditState.freeRemaining,
+							creditsRemaining: creditState.creditsRemaining,
+							availableRawTx
 						});
 						await send({
 							type: "log",
-							message:
-								"⚠️ Ikke nok TX Credits. Kjøp flere for å fortsette."
+							message: topUpLog
 						});
 						controller.close();
 						return;
 					}
 
 					try {
+						const seed = shouldResume
+							? {
+									sigMap: mapFromRecord(cached?.sigMap),
+									sigToSigner: mapFromRecord(cached?.sigToSigner),
+									sigToProgramId: mapFromRecord(cached?.programIds),
+									sigToProgramName: mapFromRecord(cached?.programNames)
+								}
+							: undefined;
+						const maxRawTx = shouldResume
+							? (cached?.rawCount ?? 0) + availableRawTx
+							: availableRawTx;
 						const scan = await scanAddresses(
 							address,
 							fromISO,
 							toISO,
 							(p) => send(p),
-							availableRawTx
+							maxRawTx,
+							shouldResume ? cached?.resume : undefined,
+							seed
 						);
 						const allTxs = [...scan.sigMap.values()].sort(
 							(a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
@@ -3529,7 +3754,8 @@ export async function POST(req: NextRequest) {
 							scan.sigToProgramId,
 							scan.sigToProgramName,
 							scan.rawTxCount,
-							scan.partial
+							scan.partial,
+							{ sigMap: scan.sigMap, resume: scan.resume, scanSessionId }
 						);
 						const rowsPreview = attachSigAndSigner(
 							result.rowsProcessed,
@@ -3542,31 +3768,78 @@ export async function POST(req: NextRequest) {
 							scan.sigMap
 						);
 
+						if (shouldResume && cached?.rawCount !== undefined) {
+							await supabase
+								.from("billing_usage_events")
+								.upsert(
+									{
+										user_id: userId,
+										cache_key: chargeKey,
+										raw_count: cached.rawCount,
+										created_at: new Date().toISOString()
+									},
+									{ onConflict: "user_id,cache_key" }
+								)
+								.eq("user_id", userId)
+								.eq("cache_key", chargeKey);
+						}
+						const billedRawCountRaw =
+							scan.partial && scan.sigMap?.size
+								? scan.sigMap.size
+								: result.rawCount;
+						const { data: billedEvent } = await supabase
+							.from("billing_usage_events")
+							.select("raw_count")
+							.eq("user_id", userId)
+							.eq("cache_key", chargeKey)
+							.maybeSingle();
+						const alreadyBilled = billedEvent?.raw_count ?? 0;
+						const billedRawCount = Math.min(
+							billedRawCountRaw,
+							alreadyBilled + availableRawTx
+						);
 						const billing = await consumeRawUsage(
 							supabase,
 							userId,
-							result.rawCount,
-							ckey
+							billedRawCount,
+							chargeKey
 						);
 						if (!billing.ok) {
-							await send({ type: "error", error: "Payment required" });
+							await send({
+								type: "error",
+								error: noCreditsError,
+								cta: topUpCta,
+								freeRemaining: creditState.freeRemaining,
+								creditsRemaining: creditState.creditsRemaining,
+								availableRawTx
+							});
 							await send({
 								type: "log",
-								message:
-									"⚠️ Ikke nok kreditter. Kjøp flere TX for å fortsette."
+								message: topUpLog
 							});
 							controller.close();
 							return;
 						}
 
+						const prevRaw = shouldResume ? cached?.rawCount ?? 0 : 0;
+						const prevLogged = shouldResume ? cached?.count ?? 0 : 0;
+						const totalRaw = result.rawCount;
+						const totalLogged = result.count;
+						const newRaw = Math.max(0, totalRaw - prevRaw);
+						const newLogged = Math.max(0, totalLogged - prevLogged);
 						await send({
 							type: "done",
 							data: {
 								rowsPreview,
 								count: result.count,
 								rawCount: result.rawCount,
+								totalRaw,
+								totalLogged,
+								newRaw,
+								newLogged,
 								cacheKey: ckey,
-								partial: result.partial
+								partial: result.partial,
+								chargedCredits: newRaw
 							}
 						});
 					} catch (err: any) {
@@ -3574,8 +3847,8 @@ export async function POST(req: NextRequest) {
 							err instanceof Error
 								? err.message
 								: typeof err === "string"
-								? err
-								: "Unknown error";
+									? err
+									: "Unknown error";
 						await send({ type: "error", error: msg });
 						await send({
 							type: "log",
@@ -3598,18 +3871,50 @@ export async function POST(req: NextRequest) {
 		/* ---------- JSON (non-stream) ---------- */
 		if (wantJSON) {
 			const cached = getOrNull(ckey);
+			if (cached?.partial && availableRawTx <= 0) {
+				return NextResponse.json(
+					{
+						error: noCreditsError,
+						cta: topUpCta,
+						freeRemaining: creditState.freeRemaining,
+						creditsRemaining: creditState.creditsRemaining,
+						availableRawTx
+					},
+					{ status: 402 }
+				);
+			}
+			const shouldResume =
+				cached &&
+				cached.partial &&
+				availableRawTx > 0 &&
+				cached.sigMap &&
+				cached.resume &&
+				scanSessionId &&
+				cached.scanSessionId === scanSessionId;
 			const canUseCached =
-				cached && (!cached.partial || availableRawTx <= cached.rawCount);
+				cached &&
+				!shouldResume &&
+				(!cached.partial || availableRawTx <= cached.rawCount) &&
+				(!cached.partial || !scanSessionId || cached.scanSessionId === scanSessionId);
 			if (cached && canUseCached) {
+				const billedRawCount = cached.partial
+					? Math.min(cached.rawCount ?? 0, availableRawTx)
+					: cached.rawCount;
 				const billing = await consumeRawUsage(
 					supabase,
 					userId,
-					cached.rawCount,
-					ckey
+					billedRawCount,
+					chargeKey
 				);
 				if (!billing.ok) {
 					return NextResponse.json(
-						{ error: "Payment required" },
+						{
+							error: noCreditsError,
+							cta: topUpCta,
+							freeRemaining: creditState.freeRemaining,
+							creditsRemaining: creditState.creditsRemaining,
+							availableRawTx
+						},
 						{ status: 402 }
 					);
 				}
@@ -3637,17 +3942,36 @@ export async function POST(req: NextRequest) {
 
 			if (availableRawTx <= 0) {
 				return NextResponse.json(
-					{ error: noCreditsError, cta: topUpCta },
+					{
+						error: noCreditsError,
+						cta: topUpCta,
+						freeRemaining: creditState.freeRemaining,
+						creditsRemaining: creditState.creditsRemaining,
+						availableRawTx
+					},
 					{ status: 402 }
 				);
 			}
 
+			const seed = shouldResume
+				? {
+						sigMap: mapFromRecord(cached?.sigMap),
+						sigToSigner: mapFromRecord(cached?.sigToSigner),
+						sigToProgramId: mapFromRecord(cached?.programIds),
+						sigToProgramName: mapFromRecord(cached?.programNames)
+					}
+				: undefined;
+			const maxRawTx = shouldResume
+				? (cached?.rawCount ?? 0) + availableRawTx
+				: availableRawTx;
 			const scan = await scanAddresses(
 				address,
 				fromISO,
 				toISO,
 				undefined,
-				availableRawTx
+				maxRawTx,
+				shouldResume ? cached?.resume : undefined,
+				seed
 			);
 			const allTxs = [...scan.sigMap.values()].sort(
 				(a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
@@ -3681,7 +4005,8 @@ export async function POST(req: NextRequest) {
 				scan.sigToProgramId, // ← pass precomputed program IDs
 				scan.sigToProgramName,
 				scan.rawTxCount,
-				scan.partial
+				scan.partial,
+				{ sigMap: scan.sigMap, resume: scan.resume, scanSessionId }
 			);
 
 			const rowsOutRaw = attachSigAndSigner(
@@ -3698,15 +4023,49 @@ export async function POST(req: NextRequest) {
 			let rowsOut = applyClientEdits(rowsOutRaw, body.clientEdits);
 			rowsOut = applyOverridesToRows(rowsOut, body.overrides);
 
+			if (shouldResume && cached?.rawCount !== undefined) {
+				await supabase
+					.from("billing_usage_events")
+					.upsert(
+						{
+							user_id: userId,
+							cache_key: chargeKey,
+							raw_count: cached.rawCount,
+							created_at: new Date().toISOString()
+						},
+						{ onConflict: "user_id,cache_key" }
+					)
+					.eq("user_id", userId)
+					.eq("cache_key", chargeKey);
+			}
+			const billedRawCountRaw =
+				scan.partial && scan.sigMap?.size ? scan.sigMap.size : result.rawCount;
+			const { data: billedEvent } = await supabase
+				.from("billing_usage_events")
+				.select("raw_count")
+				.eq("user_id", userId)
+				.eq("cache_key", chargeKey)
+				.maybeSingle();
+			const alreadyBilled = billedEvent?.raw_count ?? 0;
+			const billedRawCount = Math.min(
+				billedRawCountRaw,
+				alreadyBilled + availableRawTx
+			);
 			const billing = await consumeRawUsage(
 				supabase,
 				userId,
-				result.rawCount,
-				ckey
+				billedRawCount,
+				chargeKey
 			);
 			if (!billing.ok) {
 				return NextResponse.json(
-					{ error: "Payment required" },
+					{
+						error: noCreditsError,
+						cta: topUpCta,
+						freeRemaining: creditState.freeRemaining,
+						creditsRemaining: creditState.creditsRemaining,
+						availableRawTx
+					},
 					{ status: 402 }
 				);
 			}

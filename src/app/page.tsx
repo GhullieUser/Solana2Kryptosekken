@@ -330,6 +330,12 @@ export default function LandingPage() {
 							>
 								{tr({ no: "Vilkår", en: "Terms" })}
 							</Link>
+							<a
+								href="mailto:hello@sol2ks.no"
+								className="hover:text-slate-900 dark:hover:text-white transition"
+							>
+								{tr({ no: "Kontakt", en: "Contact" })}
+							</a>
 						</div>
 					</div>
 				</footer>

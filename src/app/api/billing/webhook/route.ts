@@ -9,7 +9,10 @@ export async function POST(req: Request) {
 	const stripeKey = process.env.STRIPE_SECRET_KEY;
 	const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 	if (!stripeKey || !webhookSecret) {
-		return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
+		return NextResponse.json(
+			{ error: "Stripe not configured" },
+			{ status: 500 }
+		);
 	}
 
 	const stripe = new Stripe(stripeKey, { apiVersion: "2024-06-20" });
@@ -20,7 +23,10 @@ export async function POST(req: Request) {
 	try {
 		event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
 	} catch (err: any) {
-		return NextResponse.json({ error: err?.message ?? "Invalid signature" }, { status: 400 });
+		return NextResponse.json(
+			{ error: err?.message ?? "Invalid signature" },
+			{ status: 400 }
+		);
 	}
 
 	const admin = createSupabaseAdminClient();
