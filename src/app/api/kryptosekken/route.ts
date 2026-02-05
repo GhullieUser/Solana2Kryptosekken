@@ -3859,6 +3859,14 @@ export async function POST(req: NextRequest) {
 							scan.sigMap
 						);
 
+						const prevRaw = shouldResume ? (cached?.rawCount ?? 0) : 0;
+						const totalRaw = result.rawCount;
+						const newRaw = shouldResume
+							? totalRaw < prevRaw
+								? totalRaw
+								: Math.max(0, totalRaw - prevRaw)
+							: totalRaw;
+
 						if (shouldResume && cached?.rawCount !== undefined) {
 							await supabase
 								.from("billing_usage_events")
@@ -3885,10 +3893,9 @@ export async function POST(req: NextRequest) {
 							.eq("cache_key", chargeKey)
 							.maybeSingle();
 						const alreadyBilled = billedEvent?.raw_count ?? 0;
-						const billedRawCount = Math.min(
-							billedRawCountRaw,
-							alreadyBilled + availableRawTx
-						);
+						const billedRawCount = shouldResume
+							? alreadyBilled + newRaw
+							: Math.min(billedRawCountRaw, alreadyBilled + availableRawTx);
 						const billing = await consumeRawUsage(
 							supabase,
 							admin,
@@ -3916,11 +3923,8 @@ export async function POST(req: NextRequest) {
 							return;
 						}
 
-						const prevRaw = shouldResume ? (cached?.rawCount ?? 0) : 0;
 						const prevLogged = shouldResume ? (cached?.count ?? 0) : 0;
-						const totalRaw = result.rawCount;
 						const totalLogged = result.count;
-						const newRaw = Math.max(0, totalRaw - prevRaw);
 						const newLogged = Math.max(0, totalLogged - prevLogged);
 						await send({
 							type: "done",
@@ -4139,6 +4143,13 @@ export async function POST(req: NextRequest) {
 					.eq("user_id", userId)
 					.eq("cache_key", chargeKey);
 			}
+			const prevRaw = shouldResume ? (cached?.rawCount ?? 0) : 0;
+			const totalRaw = result.rawCount;
+			const newRaw = shouldResume
+				? totalRaw < prevRaw
+					? totalRaw
+					: Math.max(0, totalRaw - prevRaw)
+				: totalRaw;
 			const billedRawCountRaw =
 				scan.partial && scan.sigMap?.size ? scan.sigMap.size : result.rawCount;
 			const { data: billedEvent } = await supabase
@@ -4148,10 +4159,9 @@ export async function POST(req: NextRequest) {
 				.eq("cache_key", chargeKey)
 				.maybeSingle();
 			const alreadyBilled = billedEvent?.raw_count ?? 0;
-			const billedRawCount = Math.min(
-				billedRawCountRaw,
-				alreadyBilled + availableRawTx
-			);
+			const billedRawCount = shouldResume
+				? alreadyBilled + newRaw
+				: Math.min(billedRawCountRaw, alreadyBilled + availableRawTx);
 			const billing = await consumeRawUsage(
 				supabase,
 				admin,

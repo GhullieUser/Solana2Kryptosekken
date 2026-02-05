@@ -184,6 +184,13 @@ type CsvVersion = {
 	id: string;
 	address: string;
 	label?: string | null;
+	partial?: boolean | null;
+	scan_session_id?: string | null;
+	include_nft?: boolean | null;
+	use_oslo?: boolean | null;
+	dust_mode?: string | null;
+	dust_threshold?: string | number | null;
+	dust_interval?: string | null;
 	from_iso?: string | null;
 	to_iso?: string | null;
 	updated_at?: string | null;
@@ -212,6 +219,7 @@ function CSVGeneratorPageInner() {
 	const [creditsSpent, setCreditsSpent] = useState<number | null>(null);
 	const [partialResult, setPartialResult] = useState(false);
 	const [scanSessionId, setScanSessionId] = useState<string | null>(null);
+	const scanSessionIdRef = useRef<string | null>(null);
 	const lastPayloadKeyRef = useRef<string | null>(null);
 	const [billingStatus, setBillingStatus] = useState<{
 		freeRemaining: number;
@@ -237,13 +245,16 @@ function CSVGeneratorPageInner() {
 				freeRemaining?: number;
 				creditsRemaining?: number;
 			};
-			setBillingStatus({
+			const nextStatus = {
 				freeRemaining: data.freeRemaining ?? 0,
 				creditsRemaining: data.creditsRemaining ?? 0
-			});
+			};
+			setBillingStatus(nextStatus);
+			return nextStatus;
 		} catch {
 			// ignore
 		}
+		return null;
 	}, []);
 
 	useEffect(() => {
@@ -283,6 +294,8 @@ function CSVGeneratorPageInner() {
 	const [addrMenuOpen, setAddrMenuOpen] = useState(false);
 	const [csvVersions, setCsvVersions] = useState<CsvVersion[]>([]);
 	const [csvVersionId, setCsvVersionId] = useState<string | null>(null);
+	const [csvNotice, setCsvNotice] = useState<string | null>(null);
+	const prevCsvVersionsRef = useRef<CsvVersion[]>([]);
 
 	// Live log
 	const [logOpen, setLogOpen] = useState(false);
@@ -316,6 +329,11 @@ function CSVGeneratorPageInner() {
 		[tr]
 	);
 
+		const setScanSessionIdSafe = useCallback((next: string | null) => {
+			scanSessionIdRef.current = next;
+			setScanSessionId(next);
+		}, []);
+
 	const resetPreview = useCallback(() => {
 		setRows(null);
 		setOk(false);
@@ -323,7 +341,7 @@ function CSVGeneratorPageInner() {
 		setErrorCta(null);
 		setCreditsSpent(null);
 		setPartialResult(false);
-		setScanSessionId(null);
+		setScanSessionIdSafe(null);
 		lastPayloadKeyRef.current = null;
 		setLogOpen(false);
 		setLogLines([]);
@@ -429,7 +447,7 @@ function CSVGeneratorPageInner() {
 	}, []);
 
 	const loadCsvPreview = useCallback(
-		async (query: string) => {
+		async (query: string, opts?: { skipDebug?: boolean }) => {
 			const res = await fetch(`/api/csvs?${query}&format=json`);
 			if (!res.ok) return;
 			const j = await res.json();
@@ -439,6 +457,17 @@ function CSVGeneratorPageInner() {
 			const parsedRows = parseCsvToRows(j.csv);
 			setRows(parsedRows);
 			setOk(true);
+			const dustModeRaw = (j.meta?.dust_mode ?? "off") as
+				| DustMode
+				| "aggregate";
+			const normalizedDustMode: DustMode =
+				dustModeRaw === "aggregate" ? "aggregate-period" : dustModeRaw;
+			const normalizedDustThreshold =
+				j.meta?.dust_threshold !== undefined &&
+				j.meta?.dust_threshold !== null
+					? String(j.meta.dust_threshold)
+					: undefined;
+			const normalizedDustInterval = j.meta?.dust_interval ?? undefined;
 			const metaPayload: Payload = {
 				address: j.meta?.address ?? address.trim(),
 				walletName: j.meta?.label ?? undefined,
@@ -446,14 +475,14 @@ function CSVGeneratorPageInner() {
 				toISO: j.meta?.to_iso ?? undefined,
 				includeNFT: j.meta?.include_nft ?? false,
 				useOslo: j.meta?.use_oslo ?? false,
-				dustMode: j.meta?.dust_mode ?? undefined,
-				dustThreshold: j.meta?.dust_threshold ?? undefined,
-				dustInterval: j.meta?.dust_interval ?? undefined
+				dustMode: normalizedDustMode,
+				dustThreshold: normalizedDustThreshold,
+				dustInterval: normalizedDustInterval
 			};
 			lastPayloadRef.current = metaPayload;
 			const metaKey = payloadKeyFromPayload(metaPayload);
 			lastPayloadKeyRef.current = metaKey;
-			setScanSessionId(j.meta?.scan_session_id ?? null);
+			setScanSessionIdSafe(j.meta?.scan_session_id ?? null);
 			lastCountsRef.current = {
 				rawCount: j.meta?.raw_count ?? parsedRows.length,
 				processedCount: j.meta?.processed_count ?? parsedRows.length
@@ -462,29 +491,21 @@ function CSVGeneratorPageInner() {
 			setCreditsSpent(null);
 			if (j.meta?.partial && !j.meta?.scan_session_id) {
 				const newSessionId = getScanSessionId();
-				setScanSessionId(newSessionId);
+				setScanSessionIdSafe(newSessionId);
 				await saveGeneratedCsv(j.csv, true, newSessionId);
 			} else {
-				setScanSessionId(j.meta?.scan_session_id ?? null);
+				setScanSessionIdSafe(j.meta?.scan_session_id ?? null);
 			}
 			setWalletName(j.meta?.label ?? "");
 			setAddress(j.meta?.address ?? address.trim());
 			setIncludeNFT(Boolean(j.meta?.include_nft ?? false));
 			setUseOslo(Boolean(j.meta?.use_oslo ?? false));
-			const dustModeRaw = (j.meta?.dust_mode ?? "off") as
-				| DustMode
-				| "aggregate";
-			setDustMode(
-				dustModeRaw === "aggregate" ? "aggregate-period" : dustModeRaw
-			);
-			if (
-				j.meta?.dust_threshold !== undefined &&
-				j.meta?.dust_threshold !== null
-			) {
-				setDustThreshold(String(j.meta.dust_threshold));
+			setDustMode(normalizedDustMode);
+			if (normalizedDustThreshold !== undefined) {
+				setDustThreshold(normalizedDustThreshold);
 			}
-			if (j.meta?.dust_interval) {
-				setDustInterval(j.meta.dust_interval as DustInterval);
+			if (normalizedDustInterval) {
+				setDustInterval(normalizedDustInterval as DustInterval);
 			}
 			const fromISO = j.meta?.from_iso ? new Date(j.meta.from_iso) : undefined;
 			const toISO = j.meta?.to_iso ? new Date(j.meta.to_iso) : undefined;
@@ -501,6 +522,7 @@ function CSVGeneratorPageInner() {
 
 			// Rehydrate debug info for reopened CSVs.
 			try {
+				if (opts?.skipDebug) return;
 				const debugPayload = {
 					address: j.meta?.address ?? address.trim(),
 					walletName: j.meta?.label ?? undefined,
@@ -649,6 +671,109 @@ function CSVGeneratorPageInner() {
 		[]
 	);
 
+	function payloadKeyFromPayload(payload: Payload) {
+		return JSON.stringify({
+			address: payload.address,
+			fromISO: payload.fromISO ?? null,
+			toISO: payload.toISO ?? null,
+			includeNFT: payload.includeNFT ?? false,
+			useOslo: payload.useOslo ?? false,
+			dustMode: payload.dustMode ?? "off",
+			dustThreshold: payload.dustThreshold ?? null,
+			dustInterval: payload.dustInterval ?? "day"
+		});
+	}
+	function payloadKeyFromVersion(v: CsvVersion) {
+		return JSON.stringify({
+			address: v.address,
+			fromISO: v.from_iso ?? null,
+			toISO: v.to_iso ?? null,
+			includeNFT: v.include_nft ?? false,
+			useOslo: v.use_oslo ?? false,
+			dustMode: v.dust_mode ?? "off",
+			dustThreshold:
+				v.dust_threshold !== undefined && v.dust_threshold !== null
+					? String(v.dust_threshold)
+					: null,
+			dustInterval: v.dust_interval ?? "day"
+		});
+	}
+
+	const fetchCsvVersionsForAddress = useCallback(
+		async (
+			addr: string,
+			opts?: {
+				payload?: Payload;
+			}
+		) => {
+			if (!isAuthed || !isProbablySolanaAddress(addr)) {
+				setCsvVersions([]);
+				setCsvVersionId(null);
+				setCsvNotice(null);
+				prevCsvVersionsRef.current = [];
+				return;
+			}
+			const res = await fetch(
+				`/api/csvs?address=${encodeURIComponent(addr)}&format=list`
+			);
+			if (!res.ok) return;
+			const j = await res.json();
+			const list: CsvVersion[] = Array.isArray(j?.data) ? j.data : [];
+			setCsvVersions(list);
+			setCsvVersionId(list[0]?.id ?? null);
+
+			if (opts?.payload) {
+				const key = payloadKeyFromPayload(opts.payload);
+				const prevList = prevCsvVersionsRef.current;
+				const prevMatch = prevList.find(
+					(v) => payloadKeyFromVersion(v) === key
+				);
+				const nextMatch = list.find(
+					(v) => payloadKeyFromVersion(v) === key
+				);
+				if (!prevMatch && nextMatch) {
+					setCsvNotice(
+						tr({
+							no: "Ny CSV generert for denne lommeboken.",
+							en: "New CSV generated for this wallet."
+						})
+					);
+				} else if (prevMatch?.partial && nextMatch && !nextMatch.partial) {
+					setCsvNotice(
+						tr({
+							no: "Ufullstendig skann fullført.",
+							en: "Incomplete scan completed."
+						})
+					);
+				} else if (nextMatch) {
+					setCsvNotice(
+						tr({
+							no: "CSV oppdatert for denne lommeboken.",
+							en: "CSV updated for this wallet."
+						})
+					);
+				}
+			} else {
+				setCsvNotice(null);
+			}
+
+			prevCsvVersionsRef.current = list;
+		},
+		[isAuthed, tr]
+	);
+
+	useEffect(() => {
+		let active = true;
+		(async () => {
+			const addr = address.trim();
+			if (!active) return;
+			await fetchCsvVersionsForAddress(addr);
+		})().catch(() => undefined);
+		return () => {
+			active = false;
+		};
+	}, [address, isAuthed, fetchCsvVersionsForAddress]);
+
 	const saveGeneratedCsv = useCallback(
 		async (
 			csvText: string,
@@ -686,8 +811,9 @@ function CSVGeneratorPageInner() {
 					dustInterval: payload.dustInterval ?? null
 				})
 			}).catch(() => undefined);
+			await fetchCsvVersionsForAddress(payload.address, { payload });
 		},
-		[isAuthed, partialResult, rows, scanSessionId]
+		[isAuthed, partialResult, rows, scanSessionId, fetchCsvVersionsForAddress]
 	);
 
 	const previewContainerRef = useRef<HTMLDivElement | null>(null);
@@ -842,29 +968,6 @@ function CSVGeneratorPageInner() {
 	useEffect(() => {
 		let active = true;
 		(async () => {
-			const addr = address.trim();
-			if (!isAuthed || !isProbablySolanaAddress(addr)) {
-				setCsvVersions([]);
-				setCsvVersionId(null);
-				return;
-			}
-			const res = await fetch(
-				`/api/csvs?address=${encodeURIComponent(addr)}&format=list`
-			);
-			if (!active || !res.ok) return;
-			const j = await res.json();
-			const list: CsvVersion[] = Array.isArray(j?.data) ? j.data : [];
-			setCsvVersions(list);
-			setCsvVersionId(list[0]?.id ?? null);
-		})().catch(() => undefined);
-		return () => {
-			active = false;
-		};
-	}, [address, isAuthed]);
-
-	useEffect(() => {
-		let active = true;
-		(async () => {
 			const csvId = searchParams.get("csvId")?.trim();
 			const addr = searchParams.get("address")?.trim();
 			if (!isAuthed) return;
@@ -985,18 +1088,6 @@ function CSVGeneratorPageInner() {
 			useOslo
 		};
 	}
-	function payloadKeyFromPayload(payload: Payload) {
-		return JSON.stringify({
-			address: payload.address,
-			fromISO: payload.fromISO ?? null,
-			toISO: payload.toISO ?? null,
-			includeNFT: payload.includeNFT ?? false,
-			useOslo: payload.useOslo ?? false,
-			dustMode: payload.dustMode ?? "off",
-			dustThreshold: payload.dustThreshold ?? null,
-			dustInterval: payload.dustInterval ?? "day"
-		});
-	}
 	function getScanSessionId() {
 		if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
 			return crypto.randomUUID();
@@ -1007,9 +1098,7 @@ function CSVGeneratorPageInner() {
 		return `"${String(s ?? "").replace(/"/g, '\\"')}"`;
 	}
 
-	/* ========== Streamed preview with progress + cancel ========== */
-	async function onCheckWallet(e: React.FormEvent<HTMLFormElement>) {
-		e.preventDefault();
+	async function startScan(payload: Payload) {
 		if (!isAuthed) {
 			setError(
 				tr({
@@ -1025,7 +1114,6 @@ function CSVGeneratorPageInner() {
 
 		clearLog();
 
-		const payload = buildPayload();
 		const parsed = schema.safeParse(payload);
 		if (!parsed.success) {
 			setError(parsed.error.issues[0]?.message ?? "Invalid input");
@@ -1039,12 +1127,37 @@ function CSVGeneratorPageInner() {
 
 		const payloadKey = payloadKeyFromPayload(parsed.data);
 		const shouldReuseSession =
-			lastPayloadKeyRef.current === payloadKey && !!scanSessionId;
+			lastPayloadKeyRef.current === payloadKey && !!scanSessionIdRef.current;
 		const nextSessionId = shouldReuseSession
-			? scanSessionId
+			? scanSessionIdRef.current
 			: getScanSessionId();
-		setScanSessionId(nextSessionId);
+		setScanSessionIdSafe(nextSessionId);
 		lastPayloadKeyRef.current = payloadKey;
+
+		const freshStatus = shouldReuseSession ? await refreshBilling() : null;
+		const status = freshStatus ?? billingStatus;
+		const availableCredits =
+			(status?.freeRemaining ?? 0) + (status?.creditsRemaining ?? 0);
+		const hasKnownCredits =
+			status !== null &&
+			status.freeRemaining !== undefined &&
+			status.creditsRemaining !== undefined;
+		if (shouldReuseSession && hasKnownCredits && availableCredits <= 0) {
+			const msg = tr({
+				no: "Ikke nok TX Credits til å fortsette skannet.",
+				en: "Not enough TX Credits to continue the scan."
+			});
+			setError(msg);
+			setErrorCta({
+				label: tr({ no: "Topp opp", en: "Top up" }),
+				href: "/pricing"
+			});
+			setCreditsSpent(null);
+			setPartialResult(true);
+			pushLog(tr({ no: "⚠️ Ikke nok TX Credits. Topp opp for å fortsette.", en: "⚠️ Not enough TX Credits. Top up to continue." }));
+			setLogOpen(true);
+			return;
+		}
 
 		setError(null);
 		setErrorCta(null);
@@ -1198,7 +1311,7 @@ function CSVGeneratorPageInner() {
 							setCreditsSpent(j.fromCache ? null : (j.chargedCredits ?? null));
 							setPartialResult(Boolean(j.partial));
 							if (!j.partial) {
-								setScanSessionId(null);
+								setScanSessionIdSafe(null);
 								lastPayloadKeyRef.current = null;
 							}
 							window.dispatchEvent(new Event("sol2ks:billing:update"));
@@ -1245,19 +1358,19 @@ function CSVGeneratorPageInner() {
 									en: `✅ ${j.count} transactions logged.`
 								})
 							);
-							if (!j.fromCache && typeof j.chargedCredits === "number") {
-								pushLog(
-									tr({
-										no: `💎 TX Credits brukt: ${j.chargedCredits}.`,
-										en: `💎 TX Credits spent: ${j.chargedCredits}.`
-									})
-								);
-							}
 							if (!j.partial) {
 								pushLog(
 									tr({
 										no: "Alle transaksjoner i perioden er funnet. Full rapport er generert.",
 										en: "All transactions in the period have been found. A full report has been generated."
+									})
+								);
+							}
+							if (!j.fromCache && typeof j.chargedCredits === "number") {
+								pushLog(
+									tr({
+										no: `TX Credits brukt ${j.chargedCredits}.`,
+										en: `TX Credits spent ${j.chargedCredits}.`
 									})
 								);
 							}
@@ -1289,6 +1402,12 @@ function CSVGeneratorPageInner() {
 			setLoading(false);
 			abortRef.current = null;
 		}
+	}
+
+	/* ========== Streamed preview with progress + cancel ========== */
+	async function onCheckWallet(e: React.FormEvent<HTMLFormElement>) {
+		e.preventDefault();
+		await startScan(buildPayload());
 	}
 
 	function onCancel() {
@@ -1405,14 +1524,39 @@ function CSVGeneratorPageInner() {
 	const hasRows = rows !== null;
 	const csvOptions = useMemo(
 		() =>
-			csvVersions.map((v) => ({
-				value: v.id,
-				label:
+			csvVersions.map((v) => {
+				const baseLabel =
 					formatDateRange(v.from_iso, v.to_iso) ||
-					tr({ no: "Uten tidsrom", en: "No range" })
-			})),
+					tr({ no: "Uten tidsrom", en: "No range" });
+				const suffix = v.partial
+					? tr({ no: " (Ufullstendig)", en: " (Incomplete)" })
+					: "";
+				return {
+					value: v.id,
+					label: `${baseLabel}${suffix}`
+				};
+			}),
 		[csvVersions, formatDateRange, tr]
 	);
+	const selectedCsv = useMemo(
+		() => csvVersions.find((v) => v.id === csvVersionId) ?? null,
+		[csvVersions, csvVersionId]
+	);
+
+	const openSelectedCsv = useCallback(async () => {
+		if (!csvVersionId) return;
+		await loadCsvPreview(`id=${encodeURIComponent(csvVersionId)}`);
+	}, [csvVersionId, loadCsvPreview]);
+
+	const continueSelectedCsv = useCallback(async () => {
+		if (!csvVersionId) return;
+		await loadCsvPreview(`id=${encodeURIComponent(csvVersionId)}`, {
+			skipDebug: true
+		});
+		if (lastPayloadRef.current) {
+			await startScan(lastPayloadRef.current);
+		}
+	}, [csvVersionId, loadCsvPreview, startScan]);
 
 	// Shared card class (proper light/dark)
 	const cardCn =
@@ -1448,7 +1592,7 @@ function CSVGeneratorPageInner() {
 						>
 							{/* Address + Name with history */}
 							<label className="block mb-2 text-sm font-medium text-slate-800 dark:text-slate-200">
-								{tr({ no: "Lommebok", en: "Wallet" })}
+								{tr({ no: "Lommebok addresse", en: "Wallet" })}
 							</label>
 							<div className="grid gap-3 sm:grid-cols-[1fr_280px]">
 								{/* Address */}
@@ -1461,8 +1605,8 @@ function CSVGeneratorPageInner() {
 											required
 											autoComplete="off"
 											placeholder={tr({
-												no: "F.eks. 7xKX3yF1Z5g6n7m8p9q2r3s4t5u6v7w8x9yZ1a2b3C4d",
-												en: "e.g. 7xKX3yF1Z5g6n7m8p9q2r3s4t5u6v7w8x9yZ1a2b3C4d"
+												no: "F.eks. 7xKX3yF1Z5g6n7m8p9q2…",
+												en: "e.g. 7xKX3yF1Z5g6n7m8p9q2…"
 											})}
 											value={address}
 											onChange={(e) => {
@@ -1540,19 +1684,28 @@ function CSVGeneratorPageInner() {
 														tr({ no: "Uten tidsrom", en: "No range" })
 													}
 												/>
-												<button
-													type="button"
-													onClick={() =>
-														loadCsvPreview(
-															`id=${encodeURIComponent(csvVersionId)}`
-														)
-													}
-													className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-white/5 dark:text-indigo-200 dark:hover:bg-white/10"
-													title={tr({ no: "Åpne", en: "Open" })}
-													aria-label={tr({ no: "Åpne", en: "Open" })}
-												>
-													<FiEye className="h-5 w-5" />
-												</button>
+												{selectedCsv?.partial ? (
+													<button
+														type="button"
+														onClick={continueSelectedCsv}
+														className="inline-flex items-center gap-2 rounded-lg px-2 py-1 text-xs font-semibold transition bg-indigo-600 text-white hover:bg-indigo-500"
+														title={tr({ no: "Fortsett skann", en: "Continue scan" })}
+														aria-label={tr({ no: "Fortsett skann", en: "Continue scan" })}
+													>
+														<FiEye className="h-3.5 w-3.5" />
+														{tr({ no: "Fortsett skann", en: "Continue scan" })}
+													</button>
+												) : (
+													<button
+														type="button"
+														onClick={openSelectedCsv}
+														className="inline-flex items-center justify-center rounded-lg border border-indigo-200 bg-white px-2 py-1 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-white/5 dark:text-indigo-200 dark:hover:bg-white/10"
+														title={tr({ no: "Åpne", en: "Open" })}
+														aria-label={tr({ no: "Åpne", en: "Open" })}
+													>
+														<FiEye className="h-4 w-4" />
+													</button>
+												)}
 											</div>
 										</div>
 									)}
@@ -2387,7 +2540,7 @@ function CSVGeneratorPageInner() {
 									ref={logRef}
 									className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-white/5 p-3 text-xs text-slate-700 dark:text-slate-200 max-h-40 overflow-auto"
 								>
-									{logLines.length === 0 && typeof creditsSpent !== "number" ? (
+									{logLines.length === 0 ? (
 										<div className="text-slate-500 dark:text-slate-400">
 											{tr({
 												no: "Ingen hendelser ennå.",
@@ -2396,23 +2549,32 @@ function CSVGeneratorPageInner() {
 										</div>
 									) : (
 										<div className="space-y-2">
-											{typeof creditsSpent === "number" && (
-												<div className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-200">
-													<BsXDiamondFill className="h-3.5 w-3.5 text-amber-500" />
-													<span className="tabular-nums">{creditsSpent}</span>
-													<span>
-														{tr({
-															no: "TX Credits brukt",
-															en: "TX Credits spent"
-														})}
-													</span>
-												</div>
-											)}
 											{logLines.length > 0 && (
 												<ul className="space-y-1 font-mono">
-													{logLines.map((ln, i) => (
-														<li key={i}>{ln}</li>
-													))}
+													{logLines.map((ln, i) => {
+														const creditMatch = ln.match(
+															/(TX Credits (brukt|spent):)\s*(\d+)(.*)$/
+														);
+														if (creditMatch) {
+															const label = creditMatch[1];
+															const value = creditMatch[3];
+															const tail = creditMatch[4] ?? "";
+															const prefix = ln.slice(0, creditMatch.index ?? 0).trim();
+															return (
+																<li key={i} className="flex items-center gap-1">
+																	{prefix ? <span>{prefix}</span> : null}
+																	<BsXDiamondFill className="h-3.5 w-3.5 text-amber-500 ml-1" />
+																	<span className="tabular-nums">{value}</span>
+																	<span>{` ${label}${tail}`}</span>
+																</li>
+															);
+														}
+														return (
+															<li key={i} className="flex items-center gap-1">
+																<span>{ln}</span>
+															</li>
+														);
+													})}
 												</ul>
 											)}
 										</div>

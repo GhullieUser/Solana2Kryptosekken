@@ -122,6 +122,7 @@ export default function AppHeader() {
 	const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 	const [isAuthed, setIsAuthed] = useState(false);
 	const [userEmail, setUserEmail] = useState<string | null>(null);
+	const [userId, setUserId] = useState<string | null>(null);
 	const [userMenuOpen, setUserMenuOpen] = useState(false);
 	const userMenuRef = useRef<HTMLDivElement | null>(null);
 	const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
@@ -131,6 +132,8 @@ export default function AppHeader() {
 	const [scrolled, setScrolled] = useState(false);
 	const [creditsRemaining, setCreditsRemaining] = useState<number | null>(null);
 	const [freeRemaining, setFreeRemaining] = useState<number | null>(null);
+	const [animatedCredits, setAnimatedCredits] = useState<number | null>(null);
+	const creditsAnimRef = useRef<number | null>(null);
 
 	const refreshCredits = async (signal?: AbortSignal) => {
 		try {
@@ -162,6 +165,7 @@ export default function AppHeader() {
 			if (!active) return;
 			setIsAuthed(!!data?.user);
 			setUserEmail(data?.user?.email ?? null);
+			setUserId(data?.user?.id ?? null);
 		})();
 		return () => {
 			active = false;
@@ -178,6 +182,33 @@ export default function AppHeader() {
 		refreshCredits(controller.signal);
 		return () => controller.abort();
 	}, [isAuthed]);
+
+	useEffect(() => {
+		if (!isAuthed || !userId) return;
+		const channel = supabase
+			.channel(`billing-credits-${userId}`)
+			.on(
+				"postgres_changes",
+				{
+					event: "*",
+					schema: "public",
+					table: "billing_user_credits",
+					filter: `user_id=eq.${userId}`
+				},
+				(payload) => {
+					const next = (payload as { new?: { credits_remaining?: number } })
+						.new?.credits_remaining;
+					if (typeof next === "number") {
+						setCreditsRemaining(next);
+					}
+				}
+			)
+			.subscribe();
+
+		return () => {
+			supabase.removeChannel(channel);
+		};
+	}, [isAuthed, supabase, userId]);
 
 	useEffect(() => {
 		if (!isAuthed) return;
@@ -215,6 +246,46 @@ export default function AppHeader() {
 		window.addEventListener("scroll", onScroll, { passive: true });
 		return () => window.removeEventListener("scroll", onScroll);
 	}, []);
+
+	useEffect(() => {
+		const total =
+			creditsRemaining === null || freeRemaining === null
+				? null
+				: creditsRemaining + freeRemaining;
+		if (total === null) {
+			setAnimatedCredits(null);
+			return;
+		}
+		const start =
+			animatedCredits === null || Number.isNaN(animatedCredits)
+				? total
+				: animatedCredits;
+		const end = total;
+		if (start === end) {
+			setAnimatedCredits(end);
+			return;
+		}
+		const duration = 500;
+		const startTime = performance.now();
+		const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+		const tick = (now: number) => {
+			const t = Math.min(1, (now - startTime) / duration);
+			const v = Math.round(start + (end - start) * easeOut(t));
+			setAnimatedCredits(v);
+			if (t < 1) {
+				creditsAnimRef.current = requestAnimationFrame(tick);
+			}
+		};
+		if (creditsAnimRef.current) {
+			cancelAnimationFrame(creditsAnimRef.current);
+		}
+		creditsAnimRef.current = requestAnimationFrame(tick);
+		return () => {
+			if (creditsAnimRef.current) {
+				cancelAnimationFrame(creditsAnimRef.current);
+			}
+		};
+	}, [creditsRemaining, freeRemaining]);
 
 	async function signOut() {
 		await supabase.auth.signOut();
@@ -290,9 +361,7 @@ export default function AppHeader() {
 						>
 							<BsXDiamondFill className="h-4 w-4 sm:h-4 sm:w-4 text-amber-500" />
 							<span className="tabular-nums">
-								{creditsRemaining === null || freeRemaining === null
-									? "—"
-									: creditsRemaining + freeRemaining}
+								{animatedCredits === null ? "—" : animatedCredits}
 							</span>
 						</Link>
 					)}
