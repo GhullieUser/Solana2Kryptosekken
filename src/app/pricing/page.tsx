@@ -154,7 +154,7 @@ export default function PricingPage() {
 				</div>
 
 				<div className="mt-8 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
-					<div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-white/5 p-4 sm:p-5 flex flex-col min-h-[300px] sm:min-h-[360px] transition hover:border-indigo-200/80 hover:bg-white/95 dark:hover:border-indigo-400/30 dark:hover:bg-indigo-500/10">
+					<div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-white/5 p-4 sm:p-5 flex flex-col min-h-[300px] sm:min-h-[360px] transition shadow-sm shadow-slate-900/5 dark:shadow-black/30 hover:border-indigo-200/80 hover:bg-white/95 dark:hover:border-indigo-400/30 dark:hover:bg-indigo-500/10">
 						<p className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
 							{tr({ no: "50 TX", en: "50 TX" })}
 						</p>
@@ -198,7 +198,7 @@ export default function PricingPage() {
 					{tiers.map((tier) => (
 						<div
 							key={tier.key}
-							className="rounded-2xl border p-4 sm:p-5 flex flex-col min-h-[300px] sm:min-h-[360px] border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-white/5 transition hover:border-indigo-200/80 hover:bg-white/95 dark:hover:border-indigo-400/30 dark:hover:bg-indigo-500/10"
+							className="rounded-2xl border p-4 sm:p-5 flex flex-col min-h-[300px] sm:min-h-[360px] border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-white/5 transition shadow-sm shadow-slate-900/5 dark:shadow-black/30 hover:border-indigo-200/80 hover:bg-white/95 dark:hover:border-indigo-400/30 dark:hover:bg-indigo-500/10"
 						>
 							<div className="flex items-center justify-between">
 								<p className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
