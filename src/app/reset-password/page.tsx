@@ -48,7 +48,7 @@ function ResetPasswordInner() {
 
 		// Even if user doesn't exist, we don't reveal that for security reasons
 		// But we still send the reset email which Supabase handles gracefully
-		const redirectTo = `${window.location.origin}/update-password`;
+		const redirectTo = `${window.location.origin}/reset-new-password?recovery=1`;
 		const { error } = await supabase.auth.resetPasswordForEmail(email, {
 			redirectTo
 		});

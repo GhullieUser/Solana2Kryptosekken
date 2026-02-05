@@ -8,6 +8,7 @@ import {
 	useState,
 	useCallback
 } from "react";
+import type { ReactNode } from "react";
 import { z } from "zod";
 import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
@@ -287,6 +288,19 @@ function CSVGeneratorPageInner() {
 	const [logOpen, setLogOpen] = useState(false);
 	const [logLines, setLogLines] = useState<string[]>([]);
 	const logRef = useRef<HTMLDivElement | null>(null);
+	const [infoModal, setInfoModal] = useState<{
+		title: string;
+		content: ReactNode;
+	} | null>(null);
+
+	const openInfoModal = useCallback((title: string, content: ReactNode) => {
+		if (
+			typeof window !== "undefined" &&
+			window.matchMedia("(max-width: 639px)").matches
+		) {
+			setInfoModal({ title, content });
+		}
+	}, []);
 
 	const normalizeCreditError = useCallback(
 		(message: string) => {
@@ -1174,14 +1188,14 @@ function CSVGeneratorPageInner() {
 							setErrorCta(null);
 							if (j.rowsPreview?.length) {
 								const csvAuto = buildCsvFromRows(j.rowsPreview, overrides);
-								await saveGeneratedCsv(csvAuto, Boolean(j.partial),
+								await saveGeneratedCsv(
+									csvAuto,
+									Boolean(j.partial),
 									j.partial ? nextSessionId : null
 								);
 							}
 							setOk(true);
-							setCreditsSpent(
-								j.fromCache ? null : j.chargedCredits ?? null
-							);
+							setCreditsSpent(j.fromCache ? null : (j.chargedCredits ?? null));
 							setPartialResult(Boolean(j.partial));
 							if (!j.partial) {
 								setScanSessionId(null);
@@ -1195,8 +1209,26 @@ function CSVGeneratorPageInner() {
 							if (totalRaw !== totalLogged || newRaw !== totalRaw) {
 								pushLog(
 									tr({
-										no: `Nye rå: ${newRaw}. Total rå: ${totalRaw}. Nye loggført: ${newLogged}. Total loggført: ${totalLogged}.`,
-										en: `New raw: ${newRaw}. Total raw: ${totalRaw}. New logged: ${newLogged}. Total logged: ${totalLogged}.`
+										no: `Nye rå: ${newRaw}.`,
+										en: `New raw: ${newRaw}.`
+									})
+								);
+								pushLog(
+									tr({
+										no: `Total rå: ${totalRaw}.`,
+										en: `Total raw: ${totalRaw}.`
+									})
+								);
+								pushLog(
+									tr({
+										no: `Nye loggført: ${newLogged}.`,
+										en: `New logged: ${newLogged}.`
+									})
+								);
+								pushLog(
+									tr({
+										no: `Total loggført: ${totalLogged}.`,
+										en: `Total logged: ${totalLogged}.`
 									})
 								);
 							} else {
@@ -1213,6 +1245,14 @@ function CSVGeneratorPageInner() {
 									en: `✅ ${j.count} transactions logged.`
 								})
 							);
+							if (!j.fromCache && typeof j.chargedCredits === "number") {
+								pushLog(
+									tr({
+										no: `💎 TX Credits brukt: ${j.chargedCredits}.`,
+										en: `💎 TX Credits spent: ${j.chargedCredits}.`
+									})
+								);
+							}
 							if (!j.partial) {
 								pushLog(
 									tr({
@@ -1382,21 +1422,19 @@ function CSVGeneratorPageInner() {
 		<main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
 			<div className="mx-auto max-w-6xl px-4 pt-20 sm:pt-24 pb-10 sm:pb-16">
 				<div className="mb-10">
-					<div className="grid grid-cols-[auto_1fr] gap-4 items-center">
-						<FiFileText className="h-8 w-8 sm:h-10 sm:w-10 text-indigo-600" />
+					<div className="flex items-center justify-between gap-4">
 						<div>
-							<h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
-								<span className="bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">
-									{tr({ no: "CSV-generator", en: "CSV Generator" })}
-								</span>
+							<h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+								{tr({ no: "CSV-generator", en: "CSV Generator" })}
 							</h1>
-							<p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+							<p className="mt-2 text-sm sm:text-base text-slate-600 dark:text-slate-300">
 								{tr({
 									no: "Lim inn en Solana addresse og velg tidsrom for å sjekke historikken.",
 									en: "Paste a Solana address and select a time range to check the history."
 								})}
 							</p>
 						</div>
+						<FiFileText className="h-8 w-8 sm:h-10 sm:w-10 text-indigo-600 dark:text-indigo-400" />
 					</div>
 				</div>
 
@@ -1423,8 +1461,8 @@ function CSVGeneratorPageInner() {
 											required
 											autoComplete="off"
 											placeholder={tr({
-												no: "F.eks. ESURTD2D…",
-												en: "e.g. ESURTD2D…"
+												no: "F.eks. 7xKX3yF1Z5g6n7m8p9q2r3s4t5u6v7w8x9yZ1a2b3C4d",
+												en: "e.g. 7xKX3yF1Z5g6n7m8p9q2r3s4t5u6v7w8x9yZ1a2b3C4d"
 											})}
 											value={address}
 											onChange={(e) => {
@@ -1891,13 +1929,83 @@ function CSVGeneratorPageInner() {
 												no: "Hvorfor får jeg så mye støv i SOL?",
 												en: "Why am I getting so much SOL dust?"
 											})}
+											onClick={() =>
+												openInfoModal(
+													tr({
+														no: "Hvorfor så mye “støv” i SOL?",
+														en: "Why so much SOL “dust”?"
+													}),
+													<div>
+														<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
+															<li>
+																<b>Spam / dusting:</b>{" "}
+																{tr({
+																	no: "små innbetalinger for å lokke klikk eller spore lommebøker.",
+																	en: "tiny deposits used to lure clicks or track wallets."
+																})}
+															</li>
+															<li>
+																<b>DEX/protocol refunds:</b>{" "}
+																{tr({
+																	no: "bitte små rest-lamports/fee-reverseringer etter swaps/tx.",
+																	en: "tiny leftover lamports/fee reversals after swaps/tx."
+																})}
+															</li>
+															<li>
+																<b>
+																	{tr({
+																		no: "Konto-livssyklus",
+																		en: "Account lifecycle"
+																	})}
+																	:
+																</b>{" "}
+																{tr({
+																	no: "opprettelse/lukking og ",
+																	en: "creation/closure and "
+																})}
+																<i>rent-exempt</i>{" "}
+																{tr({
+																	no: "topp-ups kan sende/returnere små SOL-beløp.",
+																	en: "top-ups can send/return small SOL amounts."
+																})}
+															</li>
+															<li>
+																<b>
+																	{tr({
+																		no: "Program-interaksjoner",
+																		en: "Program interactions"
+																	})}
+																	:
+																</b>{" "}
+																{tr({
+																	no: "claim/reward/airdrop-skript som sender små beløp for å trigge varsler eller dekke minutt-gebyr.",
+																	en: "claim/reward/airdrop scripts that send tiny amounts to trigger notifications or cover min-fees."
+																})}
+															</li>
+															<li>
+																<b>
+																	{tr({
+																		no: "NFT/WSOL-håndtering",
+																		en: "NFT/WSOL handling"
+																	})}
+																	:
+																</b>{" "}
+																{tr({
+																	no: "wrapping/unwrapping og ATA-endringer kan etterlate mikrobeløp.",
+																	en: "wrapping/unwrapping and ATA changes can leave micro-amounts."
+																})}
+															</li>
+														</ul>
+													</div>
+												)
+											}
 											className="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 focus:outline-none"
 										>
 											<FiInfo className="h-4 w-4" />
 										</button>
 										<div
 											role="tooltip"
-											className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl group-hover:block group-focus-within:block"
+											className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl sm:group-hover:block sm:group-focus-within:block"
 										>
 											<p className="mb-1 font-medium">
 												{tr({
@@ -2205,25 +2313,7 @@ function CSVGeneratorPageInner() {
 									</div>
 								)}
 								{!error && effectiveRows && effectiveRows.length > 0 && (
-									<span className="sm:ml-2 text-sm text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-2">
-										{tr({
-											no: `${effectiveRows.length} transaksjoner loggført ✅`,
-											en: `${effectiveRows.length} transactions logged ✅`
-										})}
-										{typeof creditsSpent === "number" && (
-											<span className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-200">
-												<span className="opacity-60">•</span>
-												<BsXDiamondFill className="h-3.5 w-3.5 text-amber-500" />
-												<span className="tabular-nums">{creditsSpent}</span>
-												<span>
-													{tr({
-														no: "TX Credits brukt",
-														en: "TX Credits spent"
-													})}
-												</span>
-											</span>
-										)}
-									</span>
+									<span className="sm:ml-2" />
 								)}
 								{/* Live log toggle */}
 								<div className="sm:ml-auto">
@@ -2297,7 +2387,7 @@ function CSVGeneratorPageInner() {
 									ref={logRef}
 									className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-white/5 p-3 text-xs text-slate-700 dark:text-slate-200 max-h-40 overflow-auto"
 								>
-									{logLines.length === 0 ? (
+									{logLines.length === 0 && typeof creditsSpent !== "number" ? (
 										<div className="text-slate-500 dark:text-slate-400">
 											{tr({
 												no: "Ingen hendelser ennå.",
@@ -2305,11 +2395,27 @@ function CSVGeneratorPageInner() {
 											})}
 										</div>
 									) : (
-										<ul className="space-y-1 font-mono">
-											{logLines.map((ln, i) => (
-												<li key={i}>{ln}</li>
-											))}
-										</ul>
+										<div className="space-y-2">
+											{typeof creditsSpent === "number" && (
+												<div className="inline-flex items-center gap-1 text-slate-700 dark:text-slate-200">
+													<BsXDiamondFill className="h-3.5 w-3.5 text-amber-500" />
+													<span className="tabular-nums">{creditsSpent}</span>
+													<span>
+														{tr({
+															no: "TX Credits brukt",
+															en: "TX Credits spent"
+														})}
+													</span>
+												</div>
+											)}
+											{logLines.length > 0 && (
+												<ul className="space-y-1 font-mono">
+													{logLines.map((ln, i) => (
+														<li key={i}>{ln}</li>
+													))}
+												</ul>
+											)}
+										</div>
 									)}
 								</div>
 							)}
@@ -2356,12 +2462,35 @@ function CSVGeneratorPageInner() {
 				)}
 
 				{/* Footer */}
-				<footer className="mt-6 text-xs text-slate-500 dark:text-slate-400">
+				<footer className="mt-6 w-full text-center sm:text-left text-xs text-slate-500 dark:text-slate-400">
 					{tr({
 						no: "Resultatet kan inneholde feil. Kontroller i lommeboken og i Kryptosekken før innlevering.",
 						en: "The result may contain errors. Verify in the wallet and in Kryptosekken before filing."
 					})}
 				</footer>
+
+				{infoModal && (
+					<div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/40 p-4">
+						<div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-2xl">
+							<div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 px-4 py-3">
+								<p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+									{infoModal.title}
+								</p>
+								<button
+									type="button"
+									onClick={() => setInfoModal(null)}
+									className="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"
+									aria-label={tr({ no: "Lukk", en: "Close" })}
+								>
+									✕
+								</button>
+							</div>
+							<div className="px-4 py-4 text-sm text-slate-700 dark:text-slate-200">
+								{infoModal.content}
+							</div>
+						</div>
+					</div>
+				)}
 			</div>
 		</main>
 	);

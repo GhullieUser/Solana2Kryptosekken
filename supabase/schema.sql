@@ -168,6 +168,25 @@ for update
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 
+-- One-time free credit grants by email hash (survives account deletion)
+create table if not exists public.billing_email_grants (
+	email_hash text primary key,
+	user_id uuid,
+	raw_used int not null default 0,
+	credits_granted int not null default 50,
+	granted_at timestamptz not null default now()
+);
+
+alter table public.billing_email_grants enable row level security;
+
+-- No RLS policies needed; service role only
+
+create index if not exists billing_email_grants_user_idx
+on public.billing_email_grants (user_id);
+
+alter table public.billing_email_grants
+add column if not exists raw_used int not null default 0;
+
 create table if not exists public.billing_usage_events (
 	id uuid primary key default gen_random_uuid(),
 	user_id uuid not null references auth.users(id) on delete cascade,

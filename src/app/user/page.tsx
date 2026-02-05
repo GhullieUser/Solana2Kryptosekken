@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
@@ -60,6 +61,10 @@ export default function UserPage() {
 		rangeLabel: string;
 	} | null>(null);
 	const [showRawTx, setShowRawTx] = useState(true);
+	const [infoModal, setInfoModal] = useState<{
+		title: string;
+		content: ReactNode;
+	} | null>(null);
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;
@@ -73,6 +78,15 @@ export default function UserPage() {
 		freeRemaining: number;
 		creditsRemaining: number;
 	} | null>(null);
+
+	const openInfoModal = (title: string, content: ReactNode) => {
+		if (
+			typeof window !== "undefined" &&
+			window.matchMedia("(max-width: 639px)").matches
+		) {
+			setInfoModal({ title, content });
+		}
+	};
 
 	useEffect(() => {
 		let active = true;
@@ -420,13 +434,43 @@ export default function UserPage() {
 													no: "Hvordan fungerer TX Credits?",
 													en: "How do TX Credits work?"
 												})}
+												onClick={() =>
+													openInfoModal(
+														tr({
+															no: "Slik fungerer TX Credits",
+															en: "How TX Credits work"
+														}),
+														<div>
+															<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
+																<li>
+																	{tr({
+																		no: "1 TX Credit brukes per 1 rå transaksjon.",
+																		en: "1 TX Credit is spent per 1 raw transaction."
+																	})}
+																</li>
+																<li>
+																	{tr({
+																		no: "Rå transaksjoner = transaksjoner som ikke er støvbehandlet.",
+																		en: "Raw transactions are transactions that are not dust-processed."
+																	})}
+																</li>
+																<li>
+																	{tr({
+																		no: "Alle brukere får 50 gratis TX Credits ved registrering.",
+																		en: "Every user gets 50 free TX Credits on sign up."
+																	})}
+																</li>
+															</ul>
+														</div>
+													)
+												}
 												className="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 focus:outline-none"
 											>
 												<FiInfo className="h-4 w-4" />
 											</button>
 											<div
 												role="tooltip"
-												className="pointer-events-none absolute left-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl group-hover:block group-focus-within:block sm:left-auto sm:right-0"
+												className="pointer-events-none absolute left-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl sm:group-hover:block sm:group-focus-within:block"
 											>
 												<p className="mb-1 font-medium">
 													{tr({
@@ -550,7 +594,8 @@ export default function UserPage() {
 													<span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-200 px-2 py-0.5 text-xs">
 														<FiActivity className="h-3 w-3" />
 														<span>
-															{tr({ no: "TX", en: "TX" })}: {selected.raw_count ?? 0}
+															{tr({ no: "TX", en: "TX" })}:{" "}
+															{selected.raw_count ?? 0}
 															{selected.processed_count !== null &&
 															selected.processed_count !== selected.raw_count
 																? ` → ${selected.processed_count}`
@@ -564,7 +609,10 @@ export default function UserPage() {
 															<FiFileText className="h-4 w-4" />
 														</div>
 														<div>
-															<div className="pr-14 md:pr-0 max-w-[55vw] sm:max-w-[320px] truncate font-medium text-slate-800 dark:text-slate-100" title={selected.label || selected.address}>
+															<div
+																className="pr-14 md:pr-0 max-w-[55vw] sm:max-w-[320px] truncate font-medium text-slate-800 dark:text-slate-100"
+																title={selected.label || selected.address}
+															>
 																{selected.label || selected.address}
 															</div>
 															<div className="mt-0.5 pr-14 md:pr-0 text-xs text-slate-500 dark:text-slate-400 md:hidden">
@@ -577,9 +625,11 @@ export default function UserPage() {
 																<span className="hidden md:inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-200 px-2 py-0.5">
 																	<FiActivity className="h-3 w-3" />
 																	<span>
-																		{tr({ no: "TX", en: "TX" })}: {selected.raw_count ?? 0}
+																		{tr({ no: "TX", en: "TX" })}:{" "}
+																		{selected.raw_count ?? 0}
 																		{selected.processed_count !== null &&
-																		selected.processed_count !== selected.raw_count
+																		selected.processed_count !==
+																			selected.raw_count
 																			? ` → ${selected.processed_count}`
 																			: ""}
 																	</span>
@@ -635,43 +685,46 @@ export default function UserPage() {
 																			) ||
 																			tr({ no: "Uten tidsrom", en: "No range" })
 																	});
-																setCsvDeleteOpen(true);
-															}}
-															className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-500/10"
-															title={tr({ no: "Slett CSV", en: "Delete CSV" })}
-															aria-label={tr({
-																no: "Slett CSV",
-																en: "Delete CSV"
-															})}
+																	setCsvDeleteOpen(true);
+																}}
+																className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+																title={tr({
+																	no: "Slett CSV",
+																	en: "Delete CSV"
+																})}
+																aria-label={tr({
+																	no: "Slett CSV",
+																	en: "Delete CSV"
+																})}
 															>
-															<FiTrash2 className="h-5 w-5" />
-														</button>
-														<Link
-															href={`/csvgenerator?csvId=${encodeURIComponent(selected.id)}`}
-															className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
-															title={tr({ no: "Åpne", en: "Open" })}
-															aria-label={tr({ no: "Åpne", en: "Open" })}
-														>
-															<FiEye className="h-5 w-5" />
-														</Link>
-														<button
-															onClick={() =>
-																downloadCsv(selected.id, selected.address)
-															}
-															className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-500"
-															title={tr({
-																no: "Last ned CSV",
-																en: "Download CSV"
-															})}
-															aria-label={tr({
-																no: "Last ned CSV",
-																en: "Download CSV"
-															})}
-														>
-															<FiDownload className="h-5 w-5" />
-														</button>
+																<FiTrash2 className="h-5 w-5" />
+															</button>
+															<Link
+																href={`/csvgenerator?csvId=${encodeURIComponent(selected.id)}`}
+																className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
+																title={tr({ no: "Åpne", en: "Open" })}
+																aria-label={tr({ no: "Åpne", en: "Open" })}
+															>
+																<FiEye className="h-5 w-5" />
+															</Link>
+															<button
+																onClick={() =>
+																	downloadCsv(selected.id, selected.address)
+																}
+																className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-500"
+																title={tr({
+																	no: "Last ned CSV",
+																	en: "Download CSV"
+																})}
+																aria-label={tr({
+																	no: "Last ned CSV",
+																	en: "Download CSV"
+																})}
+															>
+																<FiDownload className="h-5 w-5" />
+															</button>
+														</div>
 													</div>
-												</div>
 												</div>
 											</li>
 										);
@@ -830,6 +883,29 @@ export default function UserPage() {
 									? tr({ no: "Sletter...", en: "Deleting..." })
 									: tr({ no: "Slett valgt", en: "Delete selected" })}
 							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{infoModal && (
+				<div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/40 p-4">
+					<div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-2xl">
+						<div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 px-4 py-3">
+							<p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+								{infoModal.title}
+							</p>
+							<button
+								type="button"
+								onClick={() => setInfoModal(null)}
+								className="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"
+								aria-label={tr({ no: "Lukk", en: "Close" })}
+							>
+								✕
+							</button>
+						</div>
+						<div className="px-4 py-4 text-sm text-slate-700 dark:text-slate-200">
+							{infoModal.content}
 						</div>
 					</div>
 				</div>

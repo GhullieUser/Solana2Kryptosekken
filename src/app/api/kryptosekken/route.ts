@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { createSupabaseRouteClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
 	fetchEnhancedTxs,
 	fetchTokenMetadataMap,
@@ -52,7 +53,65 @@ type CacheVal = {
 const CACHE = new Map<string, CacheVal>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
-const FREE_RAW_TX = 50;
+const DEFAULT_FREE_GRANT = 50;
+
+function normalizeEmail(email: string) {
+	return email.trim().toLowerCase();
+}
+
+function sha256Hex(value: string) {
+	return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function isEmailVerified(user: any) {
+	return Boolean(user?.email_confirmed_at || user?.confirmed_at);
+}
+
+async function ensureFreeGrant(
+	admin: ReturnType<typeof createSupabaseAdminClient>,
+	user: any
+) {
+	const email = user?.email as string | undefined;
+	if (!email || !isEmailVerified(user)) {
+		return { grant: 0, rawUsed: 0, emailHash: null as string | null };
+	}
+	const emailHash = sha256Hex(normalizeEmail(email));
+	const { data: existing } = await admin
+		.from("billing_email_grants")
+		.select("credits_granted, raw_used")
+		.eq("email_hash", emailHash)
+		.maybeSingle();
+	if (existing) {
+		return {
+			grant: existing.credits_granted ?? DEFAULT_FREE_GRANT,
+			rawUsed: existing.raw_used ?? 0,
+			emailHash
+		};
+	}
+	const { error: insertError } = await admin
+		.from("billing_email_grants")
+		.insert({
+			email_hash: emailHash,
+			raw_used: 0,
+			credits_granted: DEFAULT_FREE_GRANT
+		});
+	if (insertError) {
+		if (insertError.code === "23505") {
+			const { data: retry } = await admin
+				.from("billing_email_grants")
+				.select("credits_granted, raw_used")
+				.eq("email_hash", emailHash)
+				.maybeSingle();
+			return {
+				grant: retry?.credits_granted ?? DEFAULT_FREE_GRANT,
+				rawUsed: retry?.raw_used ?? 0,
+				emailHash
+			};
+		}
+		return { grant: 0, rawUsed: 0, emailHash };
+	}
+	return { grant: DEFAULT_FREE_GRANT, rawUsed: 0, emailHash };
+}
 
 async function ensureUsageRow(
 	supabase: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
@@ -92,7 +151,9 @@ async function ensureCreditsRow(
 
 async function getAvailableRawTx(
 	supabase: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
-	userId: string
+	userId: string,
+	freeGrant: number,
+	freeUsed: number
 ) {
 	const rawUsed = await ensureUsageRow(supabase, userId);
 	const creditsRemaining = await ensureCreditsRow(supabase, userId);
@@ -104,7 +165,7 @@ async function getAvailableRawTx(
 		? usageEvents.reduce((sum, row) => sum + (row.raw_count ?? 0), 0)
 		: 0;
 	const effectiveRawUsed = Math.max(rawUsed, totalBilled);
-	const freeRemaining = Math.max(0, FREE_RAW_TX - effectiveRawUsed);
+	const freeRemaining = Math.max(0, freeGrant - freeUsed);
 	const availableRawTx = freeRemaining + creditsRemaining;
 	return {
 		rawUsed: effectiveRawUsed,
@@ -116,9 +177,13 @@ async function getAvailableRawTx(
 
 async function consumeRawUsage(
 	supabase: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
+	admin: ReturnType<typeof createSupabaseAdminClient>,
 	userId: string,
 	rawCount: number,
-	cacheKey: string
+	cacheKey: string,
+	freeGrant: number,
+	freeUsed: number,
+	emailHash: string | null
 ) {
 	if (!Number.isFinite(rawCount) || rawCount <= 0) {
 		return { ok: true, charged: 0, freeRemaining: 0, creditsRemaining: 0 };
@@ -141,7 +206,7 @@ async function consumeRawUsage(
 		? usageEvents.reduce((sum, row) => sum + (row.raw_count ?? 0), 0)
 		: 0;
 	const effectiveRawUsed = Math.max(rawUsed, alreadyBilled, totalBilled);
-	const freeRemaining = Math.max(0, FREE_RAW_TX - effectiveRawUsed);
+	const freeRemaining = Math.max(0, freeGrant - freeUsed);
 	const deltaRaw = Math.max(0, rawCount - alreadyBilled);
 	if (deltaRaw <= 0) {
 		if (effectiveRawUsed > rawUsed) {
@@ -210,6 +275,17 @@ async function consumeRawUsage(
 				creditsRemaining
 			};
 		}
+	}
+
+	if (emailHash && freeGrant > 0 && deltaRaw > 0) {
+		const consumedFree = Math.max(
+			0,
+			Math.min(deltaRaw, freeRemaining)
+		);
+		await admin
+			.from("billing_email_grants")
+			.update({ raw_used: freeUsed + consumedFree })
+			.eq("email_hash", emailHash);
 	}
 
 	if (existing) {
@@ -3092,7 +3168,8 @@ async function scanAddresses(
 	const fromMs = fromISO ? new Date(fromISO).getTime() : undefined;
 	const toMs = toISO ? new Date(toISO).getTime() : undefined;
 	const inRange = (tx: HeliusTx) => {
-		const ts = typeof tx.timestamp === "number" ? tx.timestamp * 1000 : undefined;
+		const ts =
+			typeof tx.timestamp === "number" ? tx.timestamp * 1000 : undefined;
 		if (typeof ts !== "number") return false;
 		if (fromMs !== undefined && ts < fromMs) return false;
 		if (toMs !== undefined && ts > toMs) return false;
@@ -3503,11 +3580,17 @@ interface Body {
 export async function POST(req: NextRequest) {
 	try {
 		const supabase = await createSupabaseRouteClient();
+		const admin = createSupabaseAdminClient();
 		const { data: userData, error: userError } = await supabase.auth.getUser();
 		if (userError || !userData?.user) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 		const userId = userData.user.id;
+		const {
+			grant: freeGrant,
+			rawUsed: freeUsed,
+			emailHash
+		} = await ensureFreeGrant(admin, userData.user);
 
 		const body = (await req.json()) as Body;
 
@@ -3576,7 +3659,12 @@ export async function POST(req: NextRequest) {
 			cacheKey: ckey
 		};
 
-		const creditState = await getAvailableRawTx(supabase, userId);
+		const creditState = await getAvailableRawTx(
+			supabase,
+			userId,
+			freeGrant,
+			freeUsed
+		);
 		const availableRawTx = creditState.availableRawTx;
 		const noCreditsError = "Not enough TX Credits to perform a search";
 		const topUpCta = { label: "Top up", href: "/pricing" };
@@ -3619,16 +3707,22 @@ export async function POST(req: NextRequest) {
 						cached &&
 						!shouldResume &&
 						(!cached.partial || availableRawTx <= cached.rawCount) &&
-						(!cached.partial || !scanSessionId || cached.scanSessionId === scanSessionId);
+						(!cached.partial ||
+							!scanSessionId ||
+							cached.scanSessionId === scanSessionId);
 					if (cached && canUseCached) {
 						const billedRawCount = cached.partial
 							? Math.min(cached.rawCount ?? 0, availableRawTx)
 							: cached.rawCount;
 						const billing = await consumeRawUsage(
 							supabase,
+							admin,
 							userId,
 							billedRawCount,
-							chargeKey
+							chargeKey,
+							freeGrant,
+							freeUsed,
+							emailHash
 						);
 						if (!billing.ok) {
 							await send({
@@ -3800,9 +3894,13 @@ export async function POST(req: NextRequest) {
 						);
 						const billing = await consumeRawUsage(
 							supabase,
+							admin,
 							userId,
 							billedRawCount,
-							chargeKey
+							chargeKey,
+							freeGrant,
+							freeUsed,
+							emailHash
 						);
 						if (!billing.ok) {
 							await send({
@@ -3821,8 +3919,8 @@ export async function POST(req: NextRequest) {
 							return;
 						}
 
-						const prevRaw = shouldResume ? cached?.rawCount ?? 0 : 0;
-						const prevLogged = shouldResume ? cached?.count ?? 0 : 0;
+						const prevRaw = shouldResume ? (cached?.rawCount ?? 0) : 0;
+						const prevLogged = shouldResume ? (cached?.count ?? 0) : 0;
 						const totalRaw = result.rawCount;
 						const totalLogged = result.count;
 						const newRaw = Math.max(0, totalRaw - prevRaw);
@@ -3895,16 +3993,22 @@ export async function POST(req: NextRequest) {
 				cached &&
 				!shouldResume &&
 				(!cached.partial || availableRawTx <= cached.rawCount) &&
-				(!cached.partial || !scanSessionId || cached.scanSessionId === scanSessionId);
+				(!cached.partial ||
+					!scanSessionId ||
+					cached.scanSessionId === scanSessionId);
 			if (cached && canUseCached) {
 				const billedRawCount = cached.partial
 					? Math.min(cached.rawCount ?? 0, availableRawTx)
 					: cached.rawCount;
 				const billing = await consumeRawUsage(
 					supabase,
+					admin,
 					userId,
 					billedRawCount,
-					chargeKey
+					chargeKey,
+					freeGrant,
+					freeUsed,
+					emailHash
 				);
 				if (!billing.ok) {
 					return NextResponse.json(
@@ -4053,9 +4157,13 @@ export async function POST(req: NextRequest) {
 			);
 			const billing = await consumeRawUsage(
 				supabase,
+				admin,
 				userId,
 				billedRawCount,
-				chargeKey
+				chargeKey,
+				freeGrant,
+				freeUsed,
+				emailHash
 			);
 			if (!billing.ok) {
 				return NextResponse.json(

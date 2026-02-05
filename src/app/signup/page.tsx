@@ -132,7 +132,10 @@ export default function SignUpPage() {
 						<input
 							type={showConfirmPassword ? "text" : "password"}
 							required
-							placeholder={tr({ no: "Bekreft passord", en: "Confirm password" })}
+							placeholder={tr({
+								no: "Bekreft passord",
+								en: "Confirm password"
+							})}
 							value={confirmPassword}
 							onChange={(e) => setConfirmPassword(e.target.value)}
 							className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"

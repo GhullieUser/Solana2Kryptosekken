@@ -42,7 +42,6 @@ export default function AccountCreatedPage() {
 						})}
 					</span>
 				</p>
-
 			</div>
 		</main>
 	);

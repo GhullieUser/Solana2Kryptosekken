@@ -284,11 +284,11 @@ export default function AppHeader() {
 					{isAuthed && (
 						<Link
 							href="/pricing"
-							className="inline-flex h-[28px] sm:h-[32px] items-center justify-center gap-2 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 text-[11px] sm:text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+							className="inline-flex h-[34px] sm:h-[32px] items-center justify-center gap-2 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 sm:px-4 text-[12px] sm:text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
 							aria-label={tr({ no: "TX Credits", en: "TX Credits" })}
 							title={tr({ no: "TX Credits", en: "TX Credits" })}
 						>
-							<BsXDiamondFill className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-500" />
+							<BsXDiamondFill className="h-4 w-4 sm:h-4 sm:w-4 text-amber-500" />
 							<span className="tabular-nums">
 								{creditsRemaining === null || freeRemaining === null
 									? "—"
@@ -297,20 +297,20 @@ export default function AppHeader() {
 						</Link>
 					)}
 					{isAuthed ? (
-						<div className="relative" ref={userMenuRef}>
+						<div className="relative w-max" ref={userMenuRef}>
 							<button
 								type="button"
 								onClick={() => setUserMenuOpen((v) => !v)}
-								className="inline-flex h-[28px] sm:h-[32px] items-center justify-center gap-1 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 text-[11px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+								className="inline-flex h-[34px] sm:h-[32px] items-center justify-center gap-1 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 sm:px-4 text-[12px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
 							>
-								<FiUser className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+								<FiUser className="h-4 w-4 sm:h-4 sm:w-4" />
 								<span className="hidden lg:inline-block max-w-[160px] truncate">
 									{userEmail ?? tr({ no: "Bruker", en: "User" })}
 								</span>
-								<FiChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 opacity-70" />
+								<FiChevronDown className="h-4 w-4 sm:h-4 sm:w-4 opacity-70" />
 							</button>
 							{userMenuOpen && (
-								<div className="absolute right-0 mt-2 min-w-[220px] w-max rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50">
+								<div className="absolute right-0 mt-2 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50 hidden md:block">
 									<div className="lg:hidden px-3 py-2 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 border-b border-slate-100/70 dark:border-white/10 truncate">
 										{userEmail ?? tr({ no: "Bruker", en: "User" })}
 									</div>
@@ -332,11 +332,34 @@ export default function AppHeader() {
 									</button>
 								</div>
 							)}
+							{userMenuOpen && (
+								<div className="md:hidden fixed inset-x-0 top-[60px] rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50">
+									<div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 border-b border-slate-100/70 dark:border-white/10 truncate">
+										{userEmail ?? tr({ no: "Bruker", en: "User" })}
+									</div>
+									<Link
+										href="/user"
+										className="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
+										onClick={() => setUserMenuOpen(false)}
+									>
+										<FiUser className="h-4 w-4" />
+										{tr({ no: "Vis profil", en: "View profile" })}
+									</Link>
+									<button
+										type="button"
+										onClick={signOut}
+										className="flex w-full items-center gap-2 px-4 py-3 text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+									>
+										<FiLogOut className="h-4 w-4" />
+										{tr({ no: "Logg ut", en: "Sign out" })}
+									</button>
+								</div>
+							)}
 						</div>
 					) : (
 						<Link
 							href="/signin"
-							className="inline-flex h-[28px] sm:h-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 sm:px-4 text-[11px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+							className="inline-flex h-[34px] sm:h-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 sm:px-4 text-[12px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
 						>
 							{tr({ no: "Logg inn", en: "Sign in" })}
 						</Link>
@@ -345,14 +368,14 @@ export default function AppHeader() {
 						<button
 							type="button"
 							onClick={() => setSettingsMenuOpen((v) => !v)}
-							className="inline-flex h-[28px] sm:h-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 text-[11px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+							className="inline-flex h-[34px] sm:h-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 text-[12px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
 							aria-label={tr({ no: "Innstillinger", en: "Settings" })}
 							title={tr({ no: "Innstillinger", en: "Settings" })}
 						>
-							<FiSettings className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+							<FiSettings className="h-4 w-4 sm:h-4 sm:w-4" />
 						</button>
 						{settingsMenuOpen && (
-							<div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50 p-2">
+							<div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50 p-2 hidden md:block">
 								<div className="flex items-center justify-between px-2 py-1.5 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
 									{tr({ no: "Språk", en: "Language" })}
 									<LocalePill />
@@ -363,36 +386,48 @@ export default function AppHeader() {
 								</div>
 							</div>
 						)}
+						{settingsMenuOpen && (
+							<div className="md:hidden fixed inset-x-0 top-[60px] rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50 p-3">
+								<div className="flex items-center justify-between px-2 py-2 text-sm text-slate-500 dark:text-slate-400">
+									{tr({ no: "Språk", en: "Language" })}
+									<LocalePill />
+								</div>
+								<div className="flex items-center justify-between px-2 py-2 text-sm text-slate-500 dark:text-slate-400">
+									{tr({ no: "Tema", en: "Theme" })}
+									<ThemePill />
+								</div>
+							</div>
+						)}
 					</div>
 					<div className="relative" ref={mobileMenuRef}>
 						<button
 							type="button"
 							onClick={() => setMobileMenuOpen((v) => !v)}
-							className="md:hidden inline-flex h-[28px] sm:h-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-3 text-[11px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+							className="md:hidden inline-flex h-[34px] sm:h-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 text-[12px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
 							aria-label={tr({ no: "Meny", en: "Menu" })}
 							title={tr({ no: "Meny", en: "Menu" })}
 						>
-							<FiMenu className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+							<FiMenu className="h-4 w-4 sm:h-4 sm:w-4" />
 						</button>
 						{mobileMenuOpen && (
-							<div className="md:hidden absolute right-0 top-full mt-2 w-56 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50">
+							<div className="md:hidden fixed inset-x-0 top-[60px] rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50">
 								<Link
 									href="/"
-									className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
+									className="block px-4 py-3 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
 									onClick={() => setMobileMenuOpen(false)}
 								>
 									{tr({ no: "Hjem", en: "Home" })}
 								</Link>
 								<Link
 									href="/csvgenerator"
-									className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
+									className="block px-4 py-3 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
 									onClick={() => setMobileMenuOpen(false)}
 								>
 									{tr({ no: "CSV Generator", en: "CSV Generator" })}
 								</Link>
 								<Link
 									href="/pricing"
-									className="block px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
+									className="block px-4 py-3 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
 									onClick={() => setMobileMenuOpen(false)}
 								>
 									{tr({ no: "Priser", en: "Pricing" })}

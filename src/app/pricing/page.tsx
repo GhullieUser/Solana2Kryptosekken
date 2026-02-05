@@ -136,7 +136,7 @@ export default function PricingPage() {
 						{tr({ no: "Priser", en: "Pricing" })}
 					</h1>
 				</div>
-				<div className="mt-4 rounded-2xl border border-slate-200/80 dark:border-white/10 px-4 py-3 text-[11px] sm:text-sm text-slate-500 dark:text-slate-400 mx-auto max-w-3xl">
+				<div className="mt-4 rounded-2xl border border-slate-200/80 dark:border-white/10 px-4 py-3 text-sm sm:text-base text-slate-500 dark:text-slate-400 mx-auto max-w-3xl">
 					<span>
 						{tr({
 							no: "TX Credits brukes når vi skanner lommeboken din.",
@@ -148,27 +148,25 @@ export default function PricingPage() {
 						{tr({ no: "1 TX Credit", en: "1 TX Credit" })}
 					</span>
 					{tr({
-						no: "= 1 rå transaksjon. En rå transaksjon er én enkelt post fra blokkjeden, før vi grupperer og tolker den i rapporten. Du kan fylle på med TX credits når som helst.",
-						en: "= 1 raw transaction. A raw transaction is a single on-chain record before we group and interpret it in your report. You can top up TX credits at any time."
+						no: "= 1 rå transaksjon. En rå transaksjon er én enkelt post fra blokkjeden, før vi grupperer og tolker den i rapporten.",
+						en: "= 1 raw transaction. A raw transaction is a single on-chain record before we group and interpret it in your report."
 					})}
 				</div>
 
 				<div className="mt-8 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
 					<div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-white/5 p-4 sm:p-5 flex flex-col min-h-[300px] sm:min-h-[360px] transition shadow-sm shadow-slate-900/5 dark:shadow-black/30 hover:border-indigo-200/80 hover:bg-white/95 dark:hover:border-indigo-400/30 dark:hover:bg-indigo-500/10">
-						<p className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+						<p className="text-xs sm:text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
 							{tr({ no: "50 TX", en: "50 TX" })}
 						</p>
 						<div className="mt-2 text-lg sm:text-2xl font-semibold text-slate-900 dark:text-slate-100">
 							<span>{tr({ no: "GRATIS", en: "FREE" })}</span>
 						</div>
-						<p className="mt-2 flex items-center gap-2 text-[11px] sm:text-sm text-slate-600 dark:text-slate-300">
+						<p className="mt-2 flex items-center gap-2 text-sm sm:text-sm text-slate-600 dark:text-slate-300">
 							<BsXDiamondFill className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-500" />
-							<span>
-								{tr({ no: "50 TX Credits", en: "50 TX Credits" })}
-							</span>
+							<span>{tr({ no: "50 TX Credits", en: "50 TX Credits" })}</span>
 						</p>
 						<div className="mt-auto space-y-3">
-							<p className="text-[11px] sm:text-sm text-slate-600 dark:text-slate-300">
+							<p className="text-sm sm:text-sm text-slate-600 dark:text-slate-300">
 								{tr({
 									no: "Alle brukere får nok til å teste kostnadsfritt når de oppretter konto.",
 									en: "All users get enough credits to test the app for free when signing up."
@@ -177,7 +175,7 @@ export default function PricingPage() {
 							{sessionChecked && !hasSession && (
 								<Link
 									href="/signin"
-									className="inline-flex w-full items-center justify-center rounded-xl px-4 py-2 text-[11px] sm:text-sm font-semibold transition bg-indigo-600 text-white hover:bg-indigo-500"
+									className="inline-flex w-full items-center justify-center rounded-xl px-4 py-2 text-sm sm:text-sm font-semibold transition bg-indigo-600 text-white hover:bg-indigo-500"
 								>
 									{tr({ no: "Logg Inn", en: "Log in" })}
 								</Link>
@@ -186,7 +184,7 @@ export default function PricingPage() {
 								<button
 									type="button"
 									disabled
-									className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-[11px] sm:text-sm font-semibold border border-slate-200 dark:border-white/10 bg-slate-100/70 dark:bg-white/5 text-slate-500 dark:text-slate-400 cursor-not-allowed"
+									className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm sm:text-sm font-semibold border border-slate-200 dark:border-white/10 bg-slate-100/70 dark:bg-white/5 text-slate-500 dark:text-slate-400 cursor-not-allowed"
 								>
 									<BsCheckLg className="h-4 w-4" />
 									{tr({ no: "Aktiv", en: "Active" })}
@@ -198,10 +196,14 @@ export default function PricingPage() {
 					{tiers.map((tier) => (
 						<div
 							key={tier.key}
-							className="rounded-2xl border p-4 sm:p-5 flex flex-col min-h-[300px] sm:min-h-[360px] border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-white/5 transition shadow-sm shadow-slate-900/5 dark:shadow-black/30 hover:border-indigo-200/80 hover:bg-white/95 dark:hover:border-indigo-400/30 dark:hover:bg-indigo-500/10"
+							className={`rounded-2xl border p-4 sm:p-5 flex flex-col min-h-[300px] sm:min-h-[360px] border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-white/5 transition shadow-sm shadow-slate-900/5 dark:shadow-black/30 hover:border-indigo-200/80 hover:bg-white/95 dark:hover:border-indigo-400/30 dark:hover:bg-indigo-500/10 ${
+								tier.key === "test"
+									? "lg:col-span-2 lg:col-start-2 lg:justify-self-center lg:w-[min(100%,18rem)]"
+									: ""
+							}`}
 						>
 							<div className="flex items-center justify-between">
-								<p className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+								<p className="text-xs sm:text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
 									{tr(tier.title)}
 								</p>
 								{tier.tag && (
@@ -213,7 +215,7 @@ export default function PricingPage() {
 							<p className="mt-2 text-lg sm:text-2xl font-semibold text-slate-900 dark:text-slate-100">
 								{tr(tier.price)}
 							</p>
-							<p className="mt-2 flex items-center gap-2 text-[11px] sm:text-sm text-slate-600 dark:text-slate-300">
+							<p className="mt-2 flex items-center gap-2 text-sm sm:text-sm text-slate-600 dark:text-slate-300">
 								<BsXDiamondFill className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-500" />
 								<span>
 									{tr({
@@ -223,14 +225,14 @@ export default function PricingPage() {
 								</span>
 							</p>
 							<div className="mt-auto space-y-3">
-								<p className="text-[11px] sm:text-sm text-slate-600 dark:text-slate-300">
+								<p className="text-sm sm:text-sm text-slate-600 dark:text-slate-300">
 									{tr(tier.audience)}
 								</p>
 								<button
 									type="button"
 									onClick={() => startCheckout(tier.key)}
 									disabled={loadingTier === tier.key}
-									className="w-full rounded-xl px-4 py-2 text-[11px] sm:text-sm font-semibold transition bg-indigo-600 text-white hover:bg-indigo-500"
+									className="w-full rounded-xl px-4 py-2 text-sm sm:text-sm font-semibold transition bg-indigo-600 text-white hover:bg-indigo-500"
 								>
 									{loadingTier === tier.key
 										? tr({ no: "Laster…", en: "Loading…" })

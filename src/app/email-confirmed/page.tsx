@@ -9,6 +9,7 @@ import { BsXDiamondFill } from "react-icons/bs";
 export default function EmailConfirmedPage() {
 	const { tr } = useLocale();
 	const [isAuthenticated, setIsAuthenticated] = useState(false);
+	const [showGrant, setShowGrant] = useState(false);
 
 	useEffect(() => {
 		const supabase = createSupabaseBrowserClient();
@@ -16,6 +17,19 @@ export default function EmailConfirmedPage() {
 			setIsAuthenticated(!!session);
 		});
 	}, []);
+
+	useEffect(() => {
+		if (!isAuthenticated) return;
+		fetch("/api/billing/grant-free", { method: "POST" })
+			.then(async (res) => {
+				if (!res.ok) return;
+				const data = (await res.json()) as { granted?: boolean };
+				setShowGrant(Boolean(data?.granted));
+			})
+			.catch(() => {
+				// ignore
+			});
+	}, [isAuthenticated]);
 
 	return (
 		<main className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
@@ -45,15 +59,17 @@ export default function EmailConfirmedPage() {
 						en: "Your account is now activated and ready to use."
 					})}
 				</p>
-				<div className="mt-3 inline-flex items-center justify-center gap-2 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 px-3 py-1 text-xs font-medium">
-					<BsXDiamondFill className="h-3.5 w-3.5 text-amber-500" />
-					<span>
-						{tr({
-							no: "Du har fått 50 gratis TX Credits for testing.",
-							en: "You’ve been granted 50 free TX Credits for testing."
-						})}
-					</span>
-				</div>
+				{showGrant && (
+					<div className="mt-3 inline-flex items-center justify-center gap-2 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 px-3 py-1 text-xs font-medium">
+						<BsXDiamondFill className="h-3.5 w-3.5 text-amber-500" />
+						<span>
+							{tr({
+								no: "Du har fått 50 gratis TX Credits for testing.",
+								en: "You’ve been granted 50 free TX Credits for testing."
+							})}
+						</span>
+					</div>
+				)}
 
 				<div className="mt-6 space-y-3">
 					{isAuthenticated ? (
