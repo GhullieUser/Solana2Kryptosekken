@@ -23,23 +23,23 @@ drop policy if exists "delete_own_addresses" on public.search_addresses;
 -- Users can only read their own rows
 create policy "select_own_addresses" on public.search_addresses
 for select
-using (auth.uid() = user_id);
+using ((select auth.uid()) = user_id);
 
 -- Users can only insert their own rows
 create policy "insert_own_addresses" on public.search_addresses
 for insert
-with check (auth.uid() = user_id);
+with check ((select auth.uid()) = user_id);
 
 -- Users can only update their own rows
 create policy "update_own_addresses" on public.search_addresses
 for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
 
 -- Users can only delete their own rows
 create policy "delete_own_addresses" on public.search_addresses
 for delete
-using (auth.uid() = user_id);
+using ((select auth.uid()) = user_id);
 
 -- Retention helper index
 create index if not exists search_addresses_user_last_used_idx
@@ -77,20 +77,20 @@ drop policy if exists "delete_own_csvs" on public.generated_csvs;
 
 create policy "select_own_csvs" on public.generated_csvs
 for select
-using (auth.uid() = user_id);
+using ((select auth.uid()) = user_id);
 
 create policy "insert_own_csvs" on public.generated_csvs
 for insert
-with check (auth.uid() = user_id);
+with check ((select auth.uid()) = user_id);
 
 create policy "update_own_csvs" on public.generated_csvs
 for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
 
 create policy "delete_own_csvs" on public.generated_csvs
 for delete
-using (auth.uid() = user_id);
+using ((select auth.uid()) = user_id);
 
 -- Allow multiple CSVs per address/timeframe; update when same params are re-generated
 create unique index if not exists generated_csvs_user_addr_params_unique
@@ -131,16 +131,16 @@ drop policy if exists "update_own_billing_usage" on public.billing_user_usage;
 
 create policy "select_own_billing_usage" on public.billing_user_usage
 for select
-using (auth.uid() = user_id);
+using ((select auth.uid()) = user_id);
 
 create policy "insert_own_billing_usage" on public.billing_user_usage
 for insert
-with check (auth.uid() = user_id);
+with check ((select auth.uid()) = user_id);
 
 create policy "update_own_billing_usage" on public.billing_user_usage
 for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
 
 create table if not exists public.billing_user_credits (
 	user_id uuid primary key references auth.users(id) on delete cascade,
@@ -157,16 +157,16 @@ drop policy if exists "update_own_billing_credits" on public.billing_user_credit
 
 create policy "select_own_billing_credits" on public.billing_user_credits
 for select
-using (auth.uid() = user_id);
+using ((select auth.uid()) = user_id);
 
 create policy "insert_own_billing_credits" on public.billing_user_credits
 for insert
-with check (auth.uid() = user_id);
+with check ((select auth.uid()) = user_id);
 
 create policy "update_own_billing_credits" on public.billing_user_credits
 for update
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
 
 -- One-time free credit grants by email hash (survives account deletion)
 create table if not exists public.billing_email_grants (
@@ -203,11 +203,11 @@ drop policy if exists "insert_own_billing_events" on public.billing_usage_events
 
 create policy "select_own_billing_events" on public.billing_usage_events
 for select
-using (auth.uid() = user_id);
+using ((select auth.uid()) = user_id);
 
 create policy "insert_own_billing_events" on public.billing_usage_events
 for insert
-with check (auth.uid() = user_id);
+with check ((select auth.uid()) = user_id);
 
 create table if not exists public.billing_webhook_events (
 	id text primary key,

@@ -96,8 +96,11 @@ export async function GET() {
 		: 0;
 	const effectiveRawUsed = Math.max(rawUsed, totalBilled);
 	const creditsRemaining = credits?.credits_remaining ?? 0;
-	const { grant: freeGrant, rawUsed: freeUsed, emailHash } =
-		await ensureFreeGrant(admin, userData.user);
+	const {
+		grant: freeGrant,
+		rawUsed: freeUsed,
+		emailHash
+	} = await ensureFreeGrant(admin, userData.user);
 	const syncedFreeUsed = Math.max(freeUsed, effectiveRawUsed);
 	if (emailHash && syncedFreeUsed > freeUsed) {
 		await admin

@@ -278,10 +278,7 @@ async function consumeRawUsage(
 	}
 
 	if (emailHash && freeGrant > 0 && deltaRaw > 0) {
-		const consumedFree = Math.max(
-			0,
-			Math.min(deltaRaw, freeRemaining)
-		);
+		const consumedFree = Math.max(0, Math.min(deltaRaw, freeRemaining));
 		await admin
 			.from("billing_email_grants")
 			.update({ raw_used: freeUsed + consumedFree })
