@@ -2469,7 +2469,80 @@ function CSVGeneratorPageInner() {
 									<span className="sm:ml-2" />
 								)}
 								{/* Live log toggle */}
-								<div className="sm:ml-auto">
+								<div className="sm:ml-auto flex items-center gap-2">
+									<div className="relative group">
+										<button
+											type="button"
+											aria-label={tr({
+												no: "Hvorfor skanner generatoren bakover i tid?",
+												en: "Why does the generator scan backwards in time?"
+											})}
+											onClick={() =>
+												openInfoModal(
+													tr({
+														no: "Skanning bakover i tid",
+														en: "Scanning backwards in time"
+													}),
+													<div>
+														<p className="mb-2 text-slate-700 dark:text-slate-200">
+															{tr({
+																no: "Solana-APIet leverer transaksjoner i nyeste-rekkefølge. Derfor starter vi fra de nyeste og jobber oss bakover for å finne eldre transaksjoner.",
+																en: "The Solana API returns transactions newest-first. We start from the latest and page backwards to find older transactions."
+															})}
+														</p>
+														<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
+															<li>
+																{tr({
+																	no: "Dette gir raskere forhåndsvisning av nyere aktivitet.",
+																	en: "This gives a faster preview of recent activity."
+																})}
+															</li>
+															<li>
+																{tr({
+																	no: "Ved delvis skann stopper vi når kredittgrensen nås, men kan fortsette senere fra samme punkt.",
+																	en: "On partial scans we stop when credit limits are reached, and can continue later from the same point."
+																})}
+															</li>
+														</ul>
+													</div>
+												)
+											}
+											className="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 focus:outline-none"
+										>
+											<FiInfo className="h-4 w-4" />
+										</button>
+										<div
+											role="tooltip"
+											className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl sm:group-hover:block sm:group-focus-within:block"
+										>
+											<p className="mb-1 font-medium">
+												{tr({
+													no: "Skanning bakover i tid",
+													en: "Scanning backwards in time"
+												})}
+											</p>
+											<p className="mb-2 text-slate-600 dark:text-slate-300">
+												{tr({
+													no: "Solana-APIet leverer transaksjoner i nyeste-rekkefølge, så vi starter med de nyeste og går bakover.",
+													en: "The Solana API returns transactions newest-first, so we start at the latest and page backwards."
+												})}
+											</p>
+											<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
+												<li>
+													{tr({
+														no: "Raskere forhåndsvisning av nyere aktivitet.",
+														en: "Faster preview of recent activity."
+													})}
+												</li>
+												<li>
+													{tr({
+														no: "Delvis skann stopper ved kredittgrense og kan fortsette senere.",
+														en: "Partial scans stop at the credit limit and can be resumed later."
+													})}
+												</li>
+											</ul>
+										</div>
+									</div>
 									<button
 										type="button"
 										onClick={() => setLogOpen((v) => !v)}
@@ -2553,7 +2626,7 @@ function CSVGeneratorPageInner() {
 												<ul className="space-y-1 font-mono">
 													{logLines.map((ln, i) => {
 														const creditMatch = ln.match(
-															/(TX Credits (brukt|spent):)\s*(\d+)(.*)$/
+															/(TX Credits (brukt|spent))\s*(\d+)(.*)$/
 														);
 														if (creditMatch) {
 															const label = creditMatch[1];
