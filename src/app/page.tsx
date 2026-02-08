@@ -10,10 +10,10 @@ import {
 	FiLayers,
 	FiLink,
 	FiShield,
-	FiFileText,
 	FiPlus
 } from "react-icons/fi";
 import { MdOutlineCleaningServices } from "react-icons/md";
+import { HiOutlineDocumentText, HiOutlineSearch } from "react-icons/hi";
 import { useLocale } from "@/app/components/locale-provider";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -73,8 +73,8 @@ export default function LandingPage() {
 								</h1>
 								<p className="mt-5 text-balance leading-relaxed max-w-[90ch] text-sm sm:text-base text-slate-700 dark:text-slate-300">
 									{tr({
-										no: "Hent transaksjoner fra enhver Solana-adresse til en ryddig og oversiktlig CSV-fil, klar for import i Kryptosekken.",
-										en: "Extract transactions from any Solana address into a CSV file ready for Kryptosekken."
+										no: "Hent transaksjoner fra enhver Solana-adresse til en ryddig og oversiktlig CSV-fil for skattemeldingen.",
+										en: "Extract transactions from any Solana address into a clean CSV file for your tax report."
 									})}
 								</p>
 								<div className="mt-12 sm:mt-6 flex flex-col sm:flex-row items-stretch justify-center sm:justify-start gap-3 w-full sm:w-auto">
@@ -109,14 +109,7 @@ export default function LandingPage() {
 											/>
 										</div>
 										<div className="s2ks-face face-2">
-											<Image
-												src="/logos/solana/solana-sol-logo.svg"
-												alt="Solana"
-												width={144}
-												height={144}
-												className="s2ks-face-media object-contain brightness-0 invert"
-												priority
-											/>
+											<HiOutlineDocumentText className="s2ks-face-media text-white" />
 										</div>
 										<div className="s2ks-face face-3">
 											<Image
@@ -129,7 +122,7 @@ export default function LandingPage() {
 											/>
 										</div>
 										<div className="s2ks-face face-4">
-											<FiFileText className="s2ks-face-media text-white" />
+											<HiOutlineSearch className="s2ks-face-media text-white" />
 										</div>
 									</div>
 								</div>
@@ -182,8 +175,8 @@ export default function LandingPage() {
 								</h2>
 								<p className="text-sm sm:text-base text-slate-700 dark:text-slate-300">
 									{tr({
-										no: "Lim inn en Solana-adresse, velg tidsrom, sjekk lommeboken og last ned en CSV klar for import i Kryptosekken.",
-										en: "Paste a Solana address, choose a date range, check the wallet, and download a CSV ready for import into Kryptosekken."
+										no: "Lim inn en Solana-adresse, velg tidsrom, sjekk lommeboken og eksporter CSV-filen direkte til Kryptosekken.",
+										en: "Paste a Solana address, choose a date range, check the wallet, and export your CSV directly to Kryptosekken."
 									})}
 								</p>
 							</div>

@@ -54,8 +54,8 @@ export default function SignInPage() {
 				</h1>
 				<p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
 					{tr({
-						no: "Logg inn for å bruke CSV Generator verktøyet",
-						en: "Sign in to use the CSV Generator tool."
+						no: "Logg inn for å bruke Sol2KS verktøyet",
+						en: "Sign in to use the Sol2KS tool."
 					})}
 				</p>
 

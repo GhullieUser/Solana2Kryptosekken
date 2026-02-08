@@ -8,12 +8,12 @@ export default function AppFooter() {
 	const { tr } = useLocale();
 
 	return (
-		<footer className="s2ks-footer mt-auto border-t border-slate-200/70 dark:border-white/10 bg-white/80 dark:bg-slate-900/80 backdrop-blur">
+		<footer className="s2ks-footer mt-auto border-t border-slate-200/40 dark:border-white/5 bg-white/80 dark:bg-slate-900/80 backdrop-blur">
 			<div className="mx-auto w-full max-w-6xl px-4 py-8 sm:py-12">
 				{/* Main grid: brand on left, links on right */}
-				<div className="grid gap-8 sm:gap-10 sm:grid-cols-[1fr_auto_auto]">
+				<div className="grid gap-8 sm:gap-10 grid-cols-2 sm:grid-cols-[1fr_auto_auto]">
 					{/* Brand section */}
-					<div className="text-center sm:text-left">
+					<div className="text-center sm:text-left col-span-2 sm:col-span-1">
 						<div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3 mb-3">
 							<Image
 								src="/Sol2KS_logo.svg"
@@ -50,7 +50,7 @@ export default function AppFooter() {
 								{tr({ no: "Priser", en: "Pricing" })}
 							</Link>
 							<Link href="/csvgenerator" className="hover:text-slate-900 dark:hover:text-white transition">
-								{tr({ no: "CSV-generator", en: "CSV generator" })}
+								{tr({ no: "Lommebok Skanner", en: "Wallet Scanner" })}
 							</Link>
 							<Link href="/user" className="hover:text-slate-900 dark:hover:text-white transition">
 								{tr({ no: "Min side", en: "My account" })}
@@ -64,14 +64,16 @@ export default function AppFooter() {
 							{tr({ no: "Ressurser", en: "Resources" })}
 						</p>
 						<div className="flex flex-col gap-2 text-sm text-slate-700 dark:text-slate-200">
-							<Link href="/personvern" className="hover:text-slate-900 dark:hover:text-white transition">
+						<Link href="/personvern" target="_blank" rel="noopener noreferrer" className="hover:text-slate-900 dark:hover:text-white transition">
 								{tr({ no: "Personvern", en: "Privacy" })}
 							</Link>
-							<Link href="/vilkar" className="hover:text-slate-900 dark:hover:text-white transition">
+						<Link href="/vilkar" target="_blank" rel="noopener noreferrer" className="hover:text-slate-900 dark:hover:text-white transition">
 								{tr({ no: "Vilkår", en: "Terms" })}
 							</Link>
 							<a
 								href="mailto:hello@sol2ks.no"
+								target="_blank"
+								rel="noopener noreferrer"
 								className="hover:text-slate-900 dark:hover:text-white transition"
 							>
 								{tr({ no: "Kontakt", en: "Contact" })}

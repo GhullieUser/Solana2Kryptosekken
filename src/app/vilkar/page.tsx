@@ -80,8 +80,8 @@ export default function VilkarPage() {
 					</h2>
 					<p>
 						{tr({
-							no: "Vi tilbyr omfattende søk i Solana-blokkjeden for å hjelpe kunder med å finne transaksjonshistorikken sin og spare tid på skattemeldingen. Sol2KS CSV-Generator er skreddersydd for å fungere med skatterapporteringssystemet kryptosekken.no.",
-							en: "We provide a software-as-a-service that performs extensive searches of the Solana blockchain so users can retrieve their transaction history for tax reporting. The Sol2KS CSV Generator is tailored to work with the tax reporting system kryptosekken.no."
+							no: "Vi tilbyr omfattende søk i Solana-blokkjeden for å hjelpe kunder med å finne transaksjonshistorikken sin og spare tid på skattemeldingen. Sol2KS Lommebok Skanner er skreddersydd for å fungere med skatterapporteringssystemet kryptosekken.no.",
+							en: "We provide a software-as-a-service that performs extensive searches of the Solana blockchain so users can retrieve their transaction history for tax reporting. The Sol2KS Wallet Scanner is tailored to work with the tax reporting system kryptosekken.no."
 						})}
 					</p>
 					<p>

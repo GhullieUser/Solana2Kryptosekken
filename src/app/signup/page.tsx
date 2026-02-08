@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FiEye, FiEyeOff } from "react-icons/fi";
+import { BsXDiamondFill } from "react-icons/bs";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useLocale } from "@/app/components/locale-provider";
 
@@ -70,10 +71,12 @@ export default function SignUpPage() {
 					{tr({ no: "Opprett konto", en: "Create account" })}
 				</h1>
 				<p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-					{tr({
-						no: "Opprett konto for å bruke Sol2KS.",
-						en: "Create an account to save address history."
-					})}
+					{tr({ no: "Nye kontoer får", en: "New accounts get" })}{" "}
+					<span className="font-medium text-slate-800 dark:text-slate-100">
+						<BsXDiamondFill className="inline h-3.5 w-3.5 text-amber-500 -mt-0.5 mr-1" />
+						50 TX Credits
+					</span>{" "}
+					{tr({ no: "gratis for å teste appen.", en: "for free to test the app." })}
 				</p>
 
 				<form className="mt-4 space-y-3" onSubmit={signUp}>

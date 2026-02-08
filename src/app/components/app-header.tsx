@@ -337,7 +337,7 @@ export default function AppHeader() {
 								: "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
 						}`}
 					>
-						{tr({ no: "CSV Generator", en: "CSV Generator" })}
+						{tr({ no: "Lommebok Skanner", en: "Wallet Scanner" })}
 					</Link>
 					<Link
 						href="/pricing"
@@ -492,7 +492,7 @@ export default function AppHeader() {
 									className="block px-4 py-3 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
 									onClick={() => setMobileMenuOpen(false)}
 								>
-									{tr({ no: "CSV Generator", en: "CSV Generator" })}
+									{tr({ no: "Lommebok Skanner", en: "Wallet Scanner" })}
 								</Link>
 								<Link
 									href="/pricing"

@@ -48,7 +48,8 @@ const tiers: Tier[] = [
 		audience: {
 			no: "For avanserte brukere og store porteføljer.",
 			en: "For advanced users and large portfolios."
-		}
+		},
+		tag: { no: "10% rabatt", en: "10% off" }
 	},
 	{
 		key: "test",
@@ -175,7 +176,7 @@ export default function PricingPage() {
 							{sessionChecked && !hasSession && (
 								<Link
 									href="/signin"
-									className="inline-flex w-full items-center justify-center rounded-xl px-4 py-2 text-sm sm:text-sm font-semibold transition bg-indigo-600 text-white hover:bg-indigo-500"
+									className="inline-flex w-full items-center justify-center rounded-xl px-4 py-2 text-sm sm:text-sm font-semibold transition bg-indigo-600 text-white !text-white hover:bg-indigo-500"
 								>
 									{tr({ no: "Logg Inn", en: "Log in" })}
 								</Link>

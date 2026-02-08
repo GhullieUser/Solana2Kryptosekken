@@ -24,11 +24,11 @@ import {
 	FiTag,
 	FiInfo,
 	FiActivity,
-	FiFileText,
 	FiAlertTriangle
 } from "react-icons/fi";
 import { BsXDiamondFill } from "react-icons/bs";
 import { MdOutlineCleaningServices } from "react-icons/md";
+import { HiOutlineSearch } from "react-icons/hi";
 import type { HeliusTx } from "@/lib/helius";
 import { IoWalletOutline, IoOpenOutline } from "react-icons/io5";
 
@@ -1569,7 +1569,7 @@ function CSVGeneratorPageInner() {
 					<div className="flex items-center justify-between gap-4">
 						<div>
 							<h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-								{tr({ no: "CSV-generator", en: "CSV Generator" })}
+								{tr({ no: "Lommebok Skanner", en: "Wallet Scanner" })}
 							</h1>
 							<p className="mt-2 text-sm sm:text-base text-slate-600 dark:text-slate-300">
 								{tr({
@@ -1578,7 +1578,7 @@ function CSVGeneratorPageInner() {
 								})}
 							</p>
 						</div>
-						<FiFileText className="h-8 w-8 sm:h-10 sm:w-10 text-indigo-600 dark:text-indigo-400" />
+						<HiOutlineSearch className="h-12 w-12 sm:h-16 sm:w-16 text-slate-600 dark:text-slate-300" />
 					</div>
 				</div>
 
