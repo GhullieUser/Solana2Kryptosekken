@@ -8,8 +8,41 @@ import AppFooter from "@/app/components/app-footer";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-	title: "Sol2Kryptosekken",
+	metadataBase: new URL("https://sol2ks.no"),
+	title: {
+		default: "Sol2Kryptosekken",
+		template: "%s | Sol2Kryptosekken"
+	},
 	description: "Solana-transaksjoner gjort enklere",
+	alternates: {
+		canonical: "/"
+	},
+	openGraph: {
+		title: "Sol2Kryptosekken",
+		description: "Solana-transaksjoner gjort enklere",
+		type: "website",
+		siteName: "Sol2Kryptosekken",
+		url: "/",
+		locale: "nb_NO",
+		images: [
+			{
+				url: "/Sol2KS_logo_512.png",
+				width: 512,
+				height: 512,
+				alt: "Sol2Kryptosekken"
+			}
+		]
+	},
+	twitter: {
+		card: "summary",
+		title: "Sol2Kryptosekken",
+		description: "Solana-transaksjoner gjort enklere",
+		images: ["/Sol2KS_logo_512.png"]
+	},
+	robots: {
+		index: false,
+		follow: false
+	},
 	icons: {
 		icon: [
 			{ url: "/Sol2KS_logo_512.png", type: "image/png", sizes: "512x512" },

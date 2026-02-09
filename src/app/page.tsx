@@ -26,6 +26,26 @@ export default function LandingPage() {
 		const isAuthed = Boolean(data.session?.user);
 		router.push(isAuthed ? "/csvgenerator" : "/signin");
 	}, [router, supabase]);
+	const jsonLd = {
+		"@context": "https://schema.org",
+		"@graph": [
+			{
+				"@type": "Organization",
+				"@id": "https://sol2ks.no/#organization",
+				name: "Sol2Kryptosekken",
+				url: "https://sol2ks.no/",
+				logo: "https://sol2ks.no/Sol2KS_logo_512.png"
+			},
+			{
+				"@type": "WebSite",
+				"@id": "https://sol2ks.no/#website",
+				url: "https://sol2ks.no/",
+				name: "Sol2Kryptosekken",
+				publisher: { "@id": "https://sol2ks.no/#organization" },
+				inLanguage: "nb-NO"
+			}
+		]
+	};
 	const marqueeLogos = [
 		{ src: "/logos/solana/solana-sol-logo.svg", alt: "Solana" },
 		{ src: "/logos/phantom-logo.svg", alt: "Phantom" },
@@ -39,6 +59,10 @@ export default function LandingPage() {
 
 	return (
 		<>
+			<script
+				type="application/ld+json"
+				dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+			/>
 			<div className="min-h-dvh flex flex-col bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
 				<main className="relative flex flex-1 items-center justify-center overflow-hidden pt-24 sm:pt-28 pb-16">
 					<div className="pointer-events-none absolute inset-0 -z-10">
