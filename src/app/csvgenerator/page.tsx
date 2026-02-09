@@ -632,6 +632,11 @@ function CSVGeneratorPageInner() {
 		title: string;
 		content: ReactNode;
 	} | null>(null);
+	const [partialScanModal, setPartialScanModal] = useState<{
+		payload: Payload;
+		partialVersion: CsvVersion;
+		isComplete: boolean;
+	} | null>(null);
 
 	const openInfoModal = useCallback((title: string, content: ReactNode) => {
 		if (
@@ -829,21 +834,24 @@ function CSVGeneratorPageInner() {
 
 	function payloadKeyFromPayload(payload: Payload) {
 		return JSON.stringify({
-			address: payload.address,
+			address: payload.address.trim(),
 			fromISO: payload.fromISO ?? null,
 			toISO: payload.toISO ?? null,
 			includeNFT: payload.includeNFT ?? false,
 			useOslo: payload.useOslo ?? false,
 			dustMode: payload.dustMode ?? "off",
-			dustThreshold: payload.dustThreshold ?? null,
+			dustThreshold:
+				payload.dustThreshold !== undefined && payload.dustThreshold !== null
+					? String(payload.dustThreshold)
+					: null,
 			dustInterval: payload.dustInterval ?? "day"
 		});
 	}
 	function payloadKeyFromVersion(v: CsvVersion) {
 		return JSON.stringify({
-			address: v.address,
-			fromISO: v.from_iso ?? null,
-			toISO: v.to_iso ?? null,
+			address: (v.address || "").trim(),
+			fromISO: v.from_iso ? new Date(v.from_iso).toISOString() : null,
+			toISO: v.to_iso ? new Date(v.to_iso).toISOString() : null,
 			includeNFT: v.include_nft ?? false,
 			useOslo: v.use_oslo ?? false,
 			dustMode: v.dust_mode ?? "off",
@@ -865,17 +873,17 @@ function CSVGeneratorPageInner() {
 			if (!isAuthed || !isProbablySolanaAddress(addr)) {
 				setCsvVersions([]);
 				setCsvVersionId(null);
-				return;
+				return [];
 			}
 			const res = await fetch(
 				`/api/csvs?address=${encodeURIComponent(addr)}&format=list`
 			);
-			if (!res.ok) return;
+			if (!res.ok) return [];
 			const j = await res.json();
 			const list: CsvVersion[] = Array.isArray(j?.data) ? j.data : [];
 			setCsvVersions(list);
 			setCsvVersionId(list[0]?.id ?? null);
-
+			return list;
 		},
 		[isAuthed]
 	);
@@ -891,6 +899,35 @@ function CSVGeneratorPageInner() {
 			active = false;
 		};
 	}, [address, isAuthed, fetchCsvVersionsForAddress]);
+
+	// When a CSV version is selected, populate form fields with its parameters
+	useEffect(() => {
+		if (!csvVersionId || csvVersions.length === 0) return;
+		const selectedVersion = csvVersions.find(v => v.id === csvVersionId);
+		if (!selectedVersion) return;
+
+		// Update form fields to match the selected version's parameters (except address)
+		setWalletName(selectedVersion.label || "");
+		setIncludeNFT(Boolean(selectedVersion.include_nft));
+		setUseOslo(Boolean(selectedVersion.use_oslo));
+		setDustMode((selectedVersion.dust_mode as DustMode) || "off");
+		if (selectedVersion.dust_threshold !== undefined && selectedVersion.dust_threshold !== null) {
+			setDustThreshold(String(selectedVersion.dust_threshold));
+		}
+		if (selectedVersion.dust_interval) {
+			setDustInterval(selectedVersion.dust_interval as DustInterval);
+		}
+		
+		// Set date range
+		if (selectedVersion.from_iso || selectedVersion.to_iso) {
+			setRange({
+				from: selectedVersion.from_iso ? new Date(selectedVersion.from_iso) : undefined,
+				to: selectedVersion.to_iso ? new Date(selectedVersion.to_iso) : undefined
+			});
+		} else {
+			setRange(undefined);
+		}
+	}, [csvVersionId, csvVersions]);
 
 	const saveGeneratedCsv = useCallback(
 		async (
@@ -1138,6 +1175,14 @@ function CSVGeneratorPageInner() {
 			out = out.replace("Henter token metadata", "Fetching token metadata");
 			out = out.replace("Skanner hovedadresse", "Scanning main address");
 			out = out.replace("Skanner ATAer", "Scanning ATAs");
+			out = out.replace(
+				"Henter manglende signer-adresser",
+				"Fetching missing signer addresses"
+			);
+			out = out.replace(
+				"Treff i cache – henter forhåndsvisning.",
+				"Cache hit – fetching preview."
+			);
 			out = out.replace(
 				/Fant (\d+) tilknyttede token-kontoer \(ATAer\)\. Skanner alle for å få med SPL-bevegelser\./,
 				"Found $1 associated token accounts (ATAs). Scanning all to include SPL movements."
@@ -1396,11 +1441,9 @@ function CSVGeneratorPageInner() {
 			return;
 		}
 
-		clearLog();
-
 		const parsed = schema.safeParse(payload);
 		if (!parsed.success) {
-			setError(parsed.error.issues[0]?.message ?? "Invalid input");
+			setError(parsed.error.issues[0]?.message ?? tr({ no: "Ugyldig input", en: "Invalid input" }));
 			setErrorCta(null);
 			setCreditsSpent(null);
 			setPartialResult(false);
@@ -1412,13 +1455,19 @@ function CSVGeneratorPageInner() {
 		const payloadKey = payloadKeyFromPayload(parsed.data);
 		const shouldReuseSession =
 			lastPayloadKeyRef.current === payloadKey && !!scanSessionIdRef.current;
+		
+		// Only clear log if starting a fresh scan, not when continuing
+		if (!shouldReuseSession) {
+			clearLog();
+		}
 		const nextSessionId = shouldReuseSession
 			? scanSessionIdRef.current
 			: getScanSessionId();
 		setScanSessionIdSafe(nextSessionId);
 		lastPayloadKeyRef.current = payloadKey;
 
-		const freshStatus = shouldReuseSession ? await refreshBilling() : null;
+		// Always refresh billing before starting scan to ensure we have current credit status
+		const freshStatus = await refreshBilling();
 		const status = freshStatus ?? billingStatus;
 		const availableCredits =
 			(status?.freeRemaining ?? 0) + (status?.creditsRemaining ?? 0);
@@ -1606,26 +1655,14 @@ function CSVGeneratorPageInner() {
 							if (totalRaw !== totalLogged || newRaw !== totalRaw) {
 								pushLog(
 									tr({
-										no: `Nye rå: ${newRaw}.`,
-										en: `New raw: ${newRaw}.`
+										no: `Rå transaksjoner - Nye: ${newRaw} | Totalt: ${totalRaw}`,
+										en: `Raw transactions - New: ${newRaw} | Total: ${totalRaw}`
 									})
 								);
 								pushLog(
 									tr({
-										no: `Total rå: ${totalRaw}.`,
-										en: `Total raw: ${totalRaw}.`
-									})
-								);
-								pushLog(
-									tr({
-										no: `Nye loggført: ${newLogged}.`,
-										en: `New logged: ${newLogged}.`
-									})
-								);
-								pushLog(
-									tr({
-										no: `Total loggført: ${totalLogged}.`,
-										en: `Total logged: ${totalLogged}.`
+										no: `Loggførte transaksjoner - Nye: ${newLogged} | Totalt: ${totalLogged}`,
+										en: `Logged transactions - New: ${newLogged} | Total: ${totalLogged}`
 									})
 								);
 							} else {
@@ -1717,7 +1754,182 @@ function CSVGeneratorPageInner() {
 	/* ========== Streamed preview with progress + cancel ========== */
 	async function onCheckWallet(e: React.FormEvent<HTMLFormElement>) {
 		e.preventDefault();
-		await startScan(buildPayload());
+		const payload = buildPayload();
+		
+		// Debug logging for form state
+		if (process.env.NODE_ENV === "development") {
+			console.log("onCheckWallet - Form state:", {
+				address,
+				walletName,
+				range,
+				includeNFT,
+				dustMode,
+				dustThreshold,
+				dustInterval,
+				useOslo
+			});
+			console.log("onCheckWallet - Built payload:", payload);
+		}
+		
+		// Fetch latest CSV versions to check for existing scans
+		const versions = await fetchCsvVersionsForAddress(payload.address);
+		
+		// Check if there's ANY incomplete scan for this address
+		const partialMatches = versions.filter(v => Boolean(v.partial));
+		
+		// Check if there's a complete scan with matching parameters
+		const payloadKey = payloadKeyFromPayload(payload);
+		const completeMatches = versions.filter(v => !v.partial && payloadKeyFromVersion(v) === payloadKey);
+		
+		// Debug logging
+		if (process.env.NODE_ENV === "development") {
+			console.log("Check wallet - versions:", versions);
+			console.log("Check wallet - payload key:", payloadKey);
+			console.log("Check wallet - partial versions:", partialMatches);
+			console.log("Check wallet - complete versions:", completeMatches);
+			
+			// Log each version's key for comparison
+			versions.forEach((v, idx) => {
+				const vKey = payloadKeyFromVersion(v);
+				console.log(`Version ${idx}:`, {
+					partial: v.partial,
+					versionKey: vKey,
+					matches: vKey === payloadKey,
+					version: v
+				});
+			});
+		}
+		
+		if (partialMatches.length > 0) {
+			// If there are multiple partial scans, prefer one with matching parameters
+			const exactMatch = partialMatches.find(v => payloadKeyFromVersion(v) === payloadKey);
+			const selectedPartial = exactMatch || partialMatches[0];
+			
+			// Open modal to ask user if they want to continue or start fresh
+			setPartialScanModal({ payload, partialVersion: selectedPartial, isComplete: false });
+		} else if (completeMatches.length > 0) {
+			// There's already a complete scan with these parameters
+			// Ask user if they want to start a new scan (which will replace the old one)
+			if (process.env.NODE_ENV === "development") {
+				console.log("Opening modal for complete scan:", completeMatches[0]);
+			}
+			setPartialScanModal({ payload, partialVersion: completeMatches[0], isComplete: true });
+		} else {
+			await startScan(payload);
+		}
+	}
+
+	async function continuePartialScan() {
+		if (!partialScanModal) return;
+		const { partialVersion } = partialScanModal;
+		setPartialScanModal(null);
+		
+		// Update form fields with the partial scan's parameters
+		setAddress(partialVersion.address);
+		setWalletName(partialVersion.label || "");
+		setIncludeNFT(Boolean(partialVersion.include_nft));
+		setUseOslo(Boolean(partialVersion.use_oslo));
+		setDustMode((partialVersion.dust_mode as DustMode) || "off");
+		if (partialVersion.dust_threshold !== undefined && partialVersion.dust_threshold !== null) {
+			setDustThreshold(String(partialVersion.dust_threshold));
+		}
+		if (partialVersion.dust_interval) {
+			setDustInterval(partialVersion.dust_interval as DustInterval);
+		}
+		
+		// Set date range
+		if (partialVersion.from_iso || partialVersion.to_iso) {
+			setRange({
+				from: partialVersion.from_iso ? new Date(partialVersion.from_iso) : undefined,
+				to: partialVersion.to_iso ? new Date(partialVersion.to_iso) : undefined
+			});
+		} else {
+			setRange(undefined);
+		}
+		
+		// Build payload from the partial version's parameters
+		const partialPayload: Payload = {
+			address: partialVersion.address,
+			walletName: partialVersion.label || undefined,
+			fromISO: partialVersion.from_iso || undefined,
+			toISO: partialVersion.to_iso || undefined,
+			includeNFT: Boolean(partialVersion.include_nft),
+			useOslo: Boolean(partialVersion.use_oslo),
+			dustMode: (partialVersion.dust_mode as DustMode) || "off",
+			dustThreshold: partialVersion.dust_threshold !== undefined && partialVersion.dust_threshold !== null
+				? String(partialVersion.dust_threshold)
+				: undefined,
+			dustInterval: (partialVersion.dust_interval as DustInterval) || undefined
+		};
+		
+		// Set up session to continue the partial scan
+		const payloadKey = payloadKeyFromPayload(partialPayload);
+		lastPayloadKeyRef.current = payloadKey;
+		if (partialVersion.scan_session_id) {
+			setScanSessionIdSafe(partialVersion.scan_session_id);
+		}
+		
+		await startScan(partialPayload);
+	}
+
+	async function startFreshScan() {
+		if (!partialScanModal) return;
+		const { payload, partialVersion } = partialScanModal;
+		
+		// Check credits BEFORE deleting the old scan
+		const freshStatus = await refreshBilling();
+		const status = freshStatus ?? billingStatus;
+		const availableCredits =
+			(status?.freeRemaining ?? 0) + (status?.creditsRemaining ?? 0);
+		const hasKnownCredits =
+			status !== null &&
+			status.freeRemaining !== undefined &&
+			status.creditsRemaining !== undefined;
+		
+		if (hasKnownCredits && availableCredits <= 0) {
+			setPartialScanModal(null);
+			const msg = tr({
+				no: "Ikke nok TX Credits til å starte ny skanning.",
+				en: "Not enough TX Credits to start a new scan."
+			});
+			setError(msg);
+			setErrorCta({
+				label: tr({ no: "Topp opp", en: "Top up" }),
+				href: "/pricing"
+			});
+			setCreditsSpent(null);
+			setPartialResult(true);
+			pushLog(tr({ no: "⚠️ Ikke nok TX Credits. Topp opp for å starte ny skanning.", en: "⚠️ Not enough TX Credits. Top up to start a new scan." }));
+			setLogOpen(true);
+			return;
+		}
+		
+		setPartialScanModal(null);
+		
+		// Clear backend cache for this address/parameters
+		await fetch("/api/kryptosekken?clearCache=1", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload)
+		}).catch(() => undefined);
+		
+		// Delete the partial/complete scan and start fresh
+		if (partialVersion.id) {
+			await fetch("/api/csvs", {
+				method: "DELETE",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ id: partialVersion.id })
+			}).catch(() => undefined);
+			
+			// Refresh CSV versions after deletion
+			await fetchCsvVersionsForAddress(payload.address);
+		}
+		
+		// Reset session to force new scan
+		setScanSessionIdSafe(null);
+		lastPayloadKeyRef.current = null;
+		
+		await startScan(payload);
 	}
 
 	function onCancel() {
@@ -3091,6 +3303,101 @@ function CSVGeneratorPageInner() {
 							</div>
 							<div className="px-4 py-4 text-sm text-slate-700 dark:text-slate-200">
 								{infoModal.content}
+							</div>
+						</div>
+					</div>
+				)}
+
+				{partialScanModal && (
+					<div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/40 p-4">
+						<div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-2xl">
+							<div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 px-4 py-3">
+								<p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+									{partialScanModal.isComplete
+										? tr({ no: "Skann eksisterer allerede", en: "Scan already exists" })
+										: tr({ no: "Ufullstendig skann funnet", en: "Incomplete scan found" })}
+								</p>
+								<button
+									type="button"
+									onClick={() => setPartialScanModal(null)}
+									className="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"
+									aria-label={tr({ no: "Lukk", en: "Close" })}
+								>
+									✕
+								</button>
+							</div>
+							<div className="px-4 py-4 space-y-4">
+								<div className="text-sm text-slate-700 dark:text-slate-200 space-y-2">
+									<p>
+										{partialScanModal.isComplete
+											? tr({
+												no: "Det finnes allerede et fullført skann med disse parameterene.",
+												en: "There is already a completed scan with these parameters."
+											  })
+											: tr({
+												no: "Det finnes et ufullstendig skann for denne lommeboken.",
+												en: "There is an incomplete scan for this wallet."
+											  })}
+									</p>
+									{partialScanModal && (
+										<div className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-lg px-3 py-2 space-y-1">
+											<div>
+												<strong>{tr({ no: "Tidsrom:", en: "Period:" })}</strong>{" "}
+												{formatDateRange(
+													partialScanModal.partialVersion.from_iso,
+													partialScanModal.partialVersion.to_iso
+												) || tr({ no: "Alle transaksjoner", en: "All transactions" })}
+											</div>
+											{partialScanModal.partialVersion.dust_mode && 
+												partialScanModal.partialVersion.dust_mode !== "off" && (
+												<div>
+													<strong>{tr({ no: "Støvmodus:", en: "Dust mode:" })}</strong>{" "}
+													{partialScanModal.partialVersion.dust_mode}
+												</div>
+											)}
+										</div>
+									)}
+									<p>
+										{partialScanModal.isComplete
+											? tr({
+												no: "Vil du starte et nytt skann? Dette vil erstatte det eksisterende resultatet.",
+												en: "Do you want to start a new scan? This will replace the existing result."
+											  })
+											: tr({
+												no: "Vil du fortsette det forrige skannet eller starte på nytt med nye parametere?",
+												en: "Do you want to continue the previous scan or start fresh with new parameters?"
+											  })}
+									</p>
+								</div>
+								<div className="flex flex-col sm:flex-row gap-3">
+									{!partialScanModal.isComplete && (
+										<button
+											type="button"
+											onClick={continuePartialScan}
+											className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white px-4 py-2.5 text-sm font-semibold shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:to-emerald-500 transition"
+										>
+											{tr({ no: "Fortsett forrige skann", en: "Continue previous scan" })}
+										</button>
+									)}
+									<button
+										type="button"
+										onClick={startFreshScan}
+										className={partialScanModal.isComplete
+											? "flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white px-4 py-2.5 text-sm font-semibold shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:to-emerald-500 transition"
+											: "flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition"}
+									>
+										{tr({ no: "Nytt skann", en: "New scan" })}
+									</button>
+									{partialScanModal.isComplete && (
+										<button
+											type="button"
+											onClick={() => setPartialScanModal(null)}
+											className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+										>
+											{tr({ no: "Avbryt", en: "Cancel" })}
+										</button>
+									)}
+								</div>
 							</div>
 						</div>
 					</div>

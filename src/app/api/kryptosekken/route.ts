@@ -73,6 +73,14 @@ async function ensureFreeGrant(
 ) {
 	const email = user?.email as string | undefined;
 	if (!email || !isEmailVerified(user)) {
+		if (process.env.NODE_ENV === "development") {
+			console.log("[ensureFreeGrant] No grant:", {
+				hasEmail: !!email,
+				emailVerified: isEmailVerified(user),
+				email_confirmed_at: user?.email_confirmed_at,
+				confirmed_at: user?.confirmed_at
+			});
+		}
 		return { grant: 0, rawUsed: 0, emailHash: null as string | null };
 	}
 	const emailHash = sha256Hex(normalizeEmail(email));
@@ -3230,8 +3238,6 @@ async function scanAddresses(
 			before
 		})) {
 			pages++;
-			const lastSig = txPage[txPage.length - 1]?.signature;
-			if (lastSig) beforeByAddress[who] = lastSig;
 			for (const tx of txPage) {
 				if (rawTxLimit !== undefined && sigMap.size >= rawTxLimit) {
 					hitLimit = true;
@@ -3241,6 +3247,10 @@ async function scanAddresses(
 				if (!inRange(tx)) continue;
 				const isNew = !sigMap.has(tx.signature);
 				sigMap.set(tx.signature, tx);
+				
+				// Update the resume cursor to the last PROCESSED transaction
+				// This ensures we don't skip transactions when hitting the credit limit mid-page
+				beforeByAddress[who] = tx.signature;
 
 				if (isNew) {
 					const fpRaw: unknown = (tx as any).feePayer;
@@ -3663,6 +3673,19 @@ export async function POST(req: NextRequest) {
 			freeUsed
 		);
 		const availableRawTx = creditState.availableRawTx;
+		
+		// Debug logging
+		if (process.env.NODE_ENV === "development") {
+			console.log("[kryptosekken] Credit check:", {
+				freeGrant,
+				freeUsed,
+				freeRemaining: creditState.freeRemaining,
+				creditsRemaining: creditState.creditsRemaining,
+				availableRawTx,
+				emailVerified: isEmailVerified(userData.user)
+			});
+		}
+		
 		const noCreditsError = "Not enough TX Credits to perform a search";
 		const topUpCta = { label: "Top up", href: "/pricing" };
 		const topUpLog = "⚠️ Ikke nok TX Credits. Topp opp for å fortsette.";

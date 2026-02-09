@@ -357,7 +357,7 @@ export default function AppHeader() {
 					</Link>
 				</nav>
 
-				<div className="flex items-center gap-2 ml-auto">
+				<div className="flex items-center gap-2">
 					{isAuthed && (
 						<Link
 							href="/pricing"

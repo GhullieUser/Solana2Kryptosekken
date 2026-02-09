@@ -3,8 +3,10 @@
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { useLocale } from "@/app/components/locale-provider";
 
 export default function SitePasswordPage() {
+	const { tr } = useLocale();
 	const [password, setPassword] = useState("");
 	const [error, setError] = useState("");
 	const [loading, setLoading] = useState(false);
@@ -26,10 +28,10 @@ export default function SitePasswordPage() {
 				router.push("/");
 				router.refresh();
 			} else {
-				setError("Feil passord");
+				setError(tr({ no: "Feil passord", en: "Incorrect password" }));
 			}
 		} catch {
-			setError("Noe gikk galt");
+			setError(tr({ no: "Noe gikk galt", en: "Something went wrong" }));
 		} finally {
 			setLoading(false);
 		}
@@ -54,7 +56,7 @@ export default function SitePasswordPage() {
 						</h1>
 					</div>
 					<p className="text-slate-600 dark:text-slate-400">
-						Siden er ikke offentlig ennå
+						{tr({ no: "Siden er ikke offentlig ennå", en: "Site is not public yet" })}
 					</p>
 				</div>
 
@@ -65,7 +67,7 @@ export default function SitePasswordPage() {
 								htmlFor="password"
 								className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-2"
 							>
-								Passord
+								{tr({ no: "Passord", en: "Password" })}
 							</label>
 							<input
 								id="password"
@@ -75,7 +77,7 @@ export default function SitePasswordPage() {
 								required
 								autoFocus
 								className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-slate-800 dark:text-slate-100 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
-								placeholder="Skriv inn passord"
+								placeholder={tr({ no: "Skriv inn passord", en: "Enter password" })}
 							/>
 						</div>
 
@@ -88,7 +90,7 @@ export default function SitePasswordPage() {
 							disabled={loading}
 							className="w-full inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white px-6 py-3 font-semibold shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:to-emerald-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
 						>
-							{loading ? "Sjekker..." : "Åpne"}
+							{loading ? tr({ no: "Sjekker...", en: "Checking..." }) : tr({ no: "Åpne", en: "Open" })}
 						</button>
 					</form>
 				</div>
