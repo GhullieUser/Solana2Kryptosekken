@@ -3247,7 +3247,7 @@ async function scanAddresses(
 				if (!inRange(tx)) continue;
 				const isNew = !sigMap.has(tx.signature);
 				sigMap.set(tx.signature, tx);
-				
+
 				// Update the resume cursor to the last PROCESSED transaction
 				// This ensures we don't skip transactions when hitting the credit limit mid-page
 				beforeByAddress[who] = tx.signature;
@@ -3673,7 +3673,7 @@ export async function POST(req: NextRequest) {
 			freeUsed
 		);
 		const availableRawTx = creditState.availableRawTx;
-		
+
 		// Debug logging
 		if (process.env.NODE_ENV === "development") {
 			console.log("[kryptosekken] Credit check:", {
@@ -3685,7 +3685,7 @@ export async function POST(req: NextRequest) {
 				emailVerified: isEmailVerified(userData.user)
 			});
 		}
-		
+
 		const noCreditsError = "Not enough TX Credits to perform a search";
 		const topUpCta = { label: "Top up", href: "/pricing" };
 		const topUpLog = "⚠️ Ikke nok TX Credits. Topp opp for å fortsette.";

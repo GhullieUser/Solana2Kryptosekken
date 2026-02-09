@@ -56,7 +56,10 @@ export default function SitePasswordPage() {
 						</h1>
 					</div>
 					<p className="text-slate-600 dark:text-slate-400">
-						{tr({ no: "Siden er ikke offentlig ennå", en: "Site is not public yet" })}
+						{tr({
+							no: "Siden er ikke offentlig ennå",
+							en: "Site is not public yet"
+						})}
 					</p>
 				</div>
 
@@ -77,12 +80,17 @@ export default function SitePasswordPage() {
 								required
 								autoFocus
 								className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-slate-800 dark:text-slate-100 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
-								placeholder={tr({ no: "Skriv inn passord", en: "Enter password" })}
+								placeholder={tr({
+									no: "Skriv inn passord",
+									en: "Enter password"
+								})}
 							/>
 						</div>
 
 						{error && (
-							<p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>
+							<p className="text-sm text-rose-600 dark:text-rose-400">
+								{error}
+							</p>
 						)}
 
 						<button
@@ -90,7 +98,9 @@ export default function SitePasswordPage() {
 							disabled={loading}
 							className="w-full inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white px-6 py-3 font-semibold shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:to-emerald-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
 						>
-							{loading ? tr({ no: "Sjekker...", en: "Checking..." }) : tr({ no: "Åpne", en: "Open" })}
+							{loading
+								? tr({ no: "Sjekker...", en: "Checking..." })
+								: tr({ no: "Åpne", en: "Open" })}
 						</button>
 					</form>
 				</div>

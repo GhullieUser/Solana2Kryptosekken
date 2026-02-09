@@ -76,7 +76,10 @@ export default function SignUpPage() {
 						<BsXDiamondFill className="inline h-3.5 w-3.5 text-amber-500 -mt-0.5 mr-1" />
 						50 TX Credits
 					</span>{" "}
-					{tr({ no: "gratis for å teste appen.", en: "for free to test the app." })}
+					{tr({
+						no: "gratis for å teste appen.",
+						en: "for free to test the app."
+					})}
 				</p>
 
 				<form className="mt-4 space-y-3" onSubmit={signUp}>

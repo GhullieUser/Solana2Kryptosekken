@@ -46,13 +46,22 @@ export default function AppFooter() {
 							{tr({ no: "Produkt", en: "Product" })}
 						</p>
 						<div className="flex flex-col gap-2 text-sm text-slate-700 dark:text-slate-200">
-							<Link href="/pricing" className="hover:text-slate-900 dark:hover:text-white transition">
+							<Link
+								href="/pricing"
+								className="hover:text-slate-900 dark:hover:text-white transition"
+							>
 								{tr({ no: "Priser", en: "Pricing" })}
 							</Link>
-							<Link href="/csvgenerator" className="hover:text-slate-900 dark:hover:text-white transition">
+							<Link
+								href="/csvgenerator"
+								className="hover:text-slate-900 dark:hover:text-white transition"
+							>
 								{tr({ no: "Lommebok Skanner", en: "Wallet Scanner" })}
 							</Link>
-							<Link href="/user" className="hover:text-slate-900 dark:hover:text-white transition">
+							<Link
+								href="/user"
+								className="hover:text-slate-900 dark:hover:text-white transition"
+							>
 								{tr({ no: "Min side", en: "My account" })}
 							</Link>
 						</div>
@@ -64,10 +73,20 @@ export default function AppFooter() {
 							{tr({ no: "Ressurser", en: "Resources" })}
 						</p>
 						<div className="flex flex-col gap-2 text-sm text-slate-700 dark:text-slate-200">
-						<Link href="/personvern" target="_blank" rel="noopener noreferrer" className="hover:text-slate-900 dark:hover:text-white transition">
+							<Link
+								href="/personvern"
+								target="_blank"
+								rel="noopener noreferrer"
+								className="hover:text-slate-900 dark:hover:text-white transition"
+							>
 								{tr({ no: "Personvern", en: "Privacy" })}
 							</Link>
-						<Link href="/vilkar" target="_blank" rel="noopener noreferrer" className="hover:text-slate-900 dark:hover:text-white transition">
+							<Link
+								href="/vilkar"
+								target="_blank"
+								rel="noopener noreferrer"
+								className="hover:text-slate-900 dark:hover:text-white transition"
+							>
 								{tr({ no: "Vilkår", en: "Terms" })}
 							</Link>
 							<a

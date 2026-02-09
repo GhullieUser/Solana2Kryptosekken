@@ -7,7 +7,10 @@ export async function POST(request: NextRequest) {
 		const sitePassword = process.env.SITE_PASSWORD;
 
 		if (!sitePassword) {
-			return NextResponse.json({ error: "No password configured" }, { status: 500 });
+			return NextResponse.json(
+				{ error: "No password configured" },
+				{ status: 500 }
+			);
 		}
 
 		if (password === sitePassword) {
@@ -24,6 +27,9 @@ export async function POST(request: NextRequest) {
 
 		return NextResponse.json({ error: "Invalid password" }, { status: 401 });
 	} catch {
-		return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
+		return NextResponse.json(
+			{ error: "Something went wrong" },
+			{ status: 500 }
+		);
 	}
 }

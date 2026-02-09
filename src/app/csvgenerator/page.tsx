@@ -215,7 +215,7 @@ function CustomCalendar({
 					"Oktober",
 					"November",
 					"Desember"
-			  ]
+				]
 			: [
 					"January",
 					"February",
@@ -229,7 +229,7 @@ function CustomCalendar({
 					"October",
 					"November",
 					"December"
-			  ];
+				];
 
 	const year = calMonth.getFullYear();
 	const month = calMonth.getMonth();
@@ -436,7 +436,9 @@ function CustomCalendar({
 			<div className="grid grid-cols-7 gap-px">
 				{days.map((date, idx) => {
 					if (!date) {
-						return <div key={`empty-${idx}`} className="aspect-square w-full" />;
+						return (
+							<div key={`empty-${idx}`} className="aspect-square w-full" />
+						);
 					}
 
 					const inRange = isInRange(date);
@@ -456,15 +458,15 @@ function CustomCalendar({
 								disabled
 									? "text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-40"
 									: !rangeStart && !rangeEnd
-									? "hover:bg-slate-100 dark:hover:bg-slate-800"
-									: "",
+										? "hover:bg-slate-100 dark:hover:bg-slate-800"
+										: "",
 								rangeStart
 									? "bg-indigo-600 text-white hover:brightness-110 rounded-l-full"
 									: rangeEnd
-									? "bg-emerald-600 text-white hover:brightness-110 rounded-r-full"
-									: inRange
-									? "bg-indigo-50 text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-200"
-									: "text-slate-700 dark:text-slate-300"
+										? "bg-emerald-600 text-white hover:brightness-110 rounded-r-full"
+										: inRange
+											? "bg-indigo-50 text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-200"
+											: "text-slate-700 dark:text-slate-300"
 							].join(" ")}
 						>
 							{date.getDate()}
@@ -661,10 +663,10 @@ function CSVGeneratorPageInner() {
 		[tr]
 	);
 
-		const setScanSessionIdSafe = useCallback((next: string | null) => {
-			scanSessionIdRef.current = next;
-			setScanSessionId(next);
-		}, []);
+	const setScanSessionIdSafe = useCallback((next: string | null) => {
+		scanSessionIdRef.current = next;
+		setScanSessionId(next);
+	}, []);
 
 	const resetPreview = useCallback(() => {
 		setRows(null);
@@ -903,7 +905,7 @@ function CSVGeneratorPageInner() {
 	// When a CSV version is selected, populate form fields with its parameters
 	useEffect(() => {
 		if (!csvVersionId || csvVersions.length === 0) return;
-		const selectedVersion = csvVersions.find(v => v.id === csvVersionId);
+		const selectedVersion = csvVersions.find((v) => v.id === csvVersionId);
 		if (!selectedVersion) return;
 
 		// Update form fields to match the selected version's parameters (except address)
@@ -911,18 +913,25 @@ function CSVGeneratorPageInner() {
 		setIncludeNFT(Boolean(selectedVersion.include_nft));
 		setUseOslo(Boolean(selectedVersion.use_oslo));
 		setDustMode((selectedVersion.dust_mode as DustMode) || "off");
-		if (selectedVersion.dust_threshold !== undefined && selectedVersion.dust_threshold !== null) {
+		if (
+			selectedVersion.dust_threshold !== undefined &&
+			selectedVersion.dust_threshold !== null
+		) {
 			setDustThreshold(String(selectedVersion.dust_threshold));
 		}
 		if (selectedVersion.dust_interval) {
 			setDustInterval(selectedVersion.dust_interval as DustInterval);
 		}
-		
+
 		// Set date range
 		if (selectedVersion.from_iso || selectedVersion.to_iso) {
 			setRange({
-				from: selectedVersion.from_iso ? new Date(selectedVersion.from_iso) : undefined,
-				to: selectedVersion.to_iso ? new Date(selectedVersion.to_iso) : undefined
+				from: selectedVersion.from_iso
+					? new Date(selectedVersion.from_iso)
+					: undefined,
+				to: selectedVersion.to_iso
+					? new Date(selectedVersion.to_iso)
+					: undefined
 			});
 		} else {
 			setRange(undefined);
@@ -988,8 +997,7 @@ function CSVGeneratorPageInner() {
 			const normalizedDustMode: DustMode =
 				dustModeRaw === "aggregate" ? "aggregate-period" : dustModeRaw;
 			const normalizedDustThreshold =
-				j.meta?.dust_threshold !== undefined &&
-				j.meta?.dust_threshold !== null
+				j.meta?.dust_threshold !== undefined && j.meta?.dust_threshold !== null
 					? String(j.meta.dust_threshold)
 					: undefined;
 			const normalizedDustInterval = j.meta?.dust_interval ?? undefined;
@@ -1099,9 +1107,7 @@ function CSVGeneratorPageInner() {
 							rowAny.Program;
 						if (programId) meta.programId = programId;
 						const programName =
-							rowAny.programName ??
-							rowAny.program_name ??
-							rowAny.ProgramName;
+							rowAny.programName ?? rowAny.program_name ?? rowAny.ProgramName;
 						if (programName) meta.programName = programName;
 						if (row.signature) meta.signature = row.signature;
 						if (Object.keys(meta).length > 0) metaMap.set(sig, meta);
@@ -1427,335 +1433,350 @@ function CSVGeneratorPageInner() {
 		return `"${String(s ?? "").replace(/"/g, '\\"')}"`;
 	}
 
-	const startScan = useCallback(async (payload: Payload) => {
-		if (!isAuthed) {
-			setError(
-				tr({
-					no: "Du må være innlogget for å generere CSV-er.",
-					en: "You must be signed in to generate CSVs."
-				})
-			);
-			setErrorCta(null);
-			setCreditsSpent(null);
-			setPartialResult(false);
-			return;
-		}
-
-		const parsed = schema.safeParse(payload);
-		if (!parsed.success) {
-			setError(parsed.error.issues[0]?.message ?? tr({ no: "Ugyldig input", en: "Invalid input" }));
-			setErrorCta(null);
-			setCreditsSpent(null);
-			setPartialResult(false);
-			pushLog(tr({ no: "❌ Ugyldig input", en: "❌ Invalid input" }));
-			setLogOpen(true);
-			return;
-		}
-
-		const payloadKey = payloadKeyFromPayload(parsed.data);
-		const shouldReuseSession =
-			lastPayloadKeyRef.current === payloadKey && !!scanSessionIdRef.current;
-		
-		// Only clear log if starting a fresh scan, not when continuing
-		if (!shouldReuseSession) {
-			clearLog();
-		}
-		const nextSessionId = shouldReuseSession
-			? scanSessionIdRef.current
-			: getScanSessionId();
-		setScanSessionIdSafe(nextSessionId);
-		lastPayloadKeyRef.current = payloadKey;
-
-		// Always refresh billing before starting scan to ensure we have current credit status
-		const freshStatus = await refreshBilling();
-		const status = freshStatus ?? billingStatus;
-		const availableCredits =
-			(status?.freeRemaining ?? 0) + (status?.creditsRemaining ?? 0);
-		const hasKnownCredits =
-			status !== null &&
-			status.freeRemaining !== undefined &&
-			status.creditsRemaining !== undefined;
-		if (shouldReuseSession && hasKnownCredits && availableCredits <= 0) {
-			const msg = tr({
-				no: "Ikke nok TX Credits til å fortsette skannet.",
-				en: "Not enough TX Credits to continue the scan."
-			});
-			setError(msg);
-			setErrorCta({
-				label: tr({ no: "Topp opp", en: "Top up" }),
-				href: "/pricing"
-			});
-			setCreditsSpent(null);
-			setPartialResult(true);
-			pushLog(tr({ no: "⚠️ Ikke nok TX Credits. Topp opp for å fortsette.", en: "⚠️ Not enough TX Credits. Top up to continue." }));
-			setLogOpen(true);
-			return;
-		}
-
-		setError(null);
-		setErrorCta(null);
-		setOk(false);
-		setRows(null);
-		setCreditsSpent(null);
-		setPartialResult(false);
-
-		const rangeLabel = formatDateRange(payload.fromISO, payload.toISO);
-		pushLog(
-			(shouldReuseSession
-				? tr({ no: "Fortsetter skann", en: "Continuing scan" })
-				: tr({ no: "Ny sjekk", en: "New check" })) +
-				` ${q(payload.walletName)} ${q(payload.address)}` +
-				(rangeLabel ? ` — ${rangeLabel}` : "")
-		);
-		setLogOpen(true);
-		if (shouldReuseSession) {
-			pushLog(
-				tr({
-					no: "Fortsetter forrige skann. Totalt antall vises først når hele perioden er skannet.",
-					en: "Continuing previous scan. Total count is shown once the full period is scanned."
-				})
-			);
-		}
-
-		await rememberAddress(parsed.data.address);
-
-		const ctrl = new AbortController();
-		abortRef.current = ctrl;
-
-		setLoading(true);
-		setCreditsSpent(null);
-		setPartialResult(false);
-		let pendingErrorCta: { label: string; href: string } | null = null;
-		try {
-			pushLog(
-				tr({
-					no: "Starter sjekk… dette kan ta noen minutter for store lommebøker.",
-					en: "Starting scan… this can take a few minutes for large wallets."
-				})
-			);
-			const res = await fetch("/api/kryptosekken?format=ndjson", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					...parsed.data,
-					scanSessionId: nextSessionId
-				}),
-				signal: ctrl.signal
-			});
-
-			if (!res.ok || !res.body) {
-				const text = await res.text().catch(() => "");
-				let errMsg = res.statusText;
-				try {
-					const j = text ? JSON.parse(text) : null;
-					errMsg =
-						(typeof j?.error === "string" && j.error) ||
-						(typeof j?.message === "string" && j.message) ||
-						errMsg;
-					pendingErrorCta =
-						j?.cta && typeof j.cta?.href === "string" ? j.cta : null;
-				} catch {
-					errMsg = text?.trim()?.slice(0, 300) || errMsg;
-				}
-				errMsg = normalizeCreditError(errMsg);
-				pushLog(tr({ no: "❌ API-feil:", en: "❌ API error:" }) + ` ${errMsg}`);
-				throw new Error(errMsg);
-			}
-
-			const reader = res.body.getReader();
-			const decoder = new TextDecoder();
-			let buf = "";
-			for (;;) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				buf += decoder.decode(value, { stream: true });
-				let nlIndex: number;
-				while ((nlIndex = buf.indexOf("\n")) >= 0) {
-					const line = buf.slice(0, nlIndex).trim();
-					buf = buf.slice(nlIndex + 1);
-					if (!line) continue;
-					try {
-						const evt = JSON.parse(line);
-						if (evt.type === "log") {
-							pushLog(localizeStreamLog(evt.message));
-						} else if (evt.type === "error") {
-							const msgRaw =
-								typeof evt.error === "string" && evt.error
-									? evt.error
-									: "Something went wrong";
-							const msg = normalizeCreditError(msgRaw);
-							setError(msg);
-							setErrorCta(
-								evt?.cta && typeof evt.cta?.href === "string" ? evt.cta : null
-							);
-							if (msgRaw.toLowerCase().includes("not enough tx credits")) {
-								window.dispatchEvent(new Event("sol2ks:billing:update"));
-							}
-							pushLog(tr({ no: "❌ Feil:", en: "❌ Error:" }) + ` ${msg}`);
-						} else if (evt.type === "page") {
-							const prefix =
-								evt.kind === "main"
-									? tr({ no: "Hovedadresse", en: "Main address" })
-									: `ATA ${evt.idx + 1}/${evt.totalATAs}`;
-							pushLog(
-								`${prefix}: ${tr({ no: "side", en: "page" })} ${evt.page}`
-							);
-						} else if (evt.type === "addrDone") {
-							const prefix =
-								evt.kind === "main"
-									? tr({ no: "Hovedadresse", en: "Main address" })
-									: `ATA ${evt.idx + 1}/${evt.totalATAs}`;
-							pushLog(
-								tr({ no: "Ferdig", en: "Done" }) +
-									` — ${prefix}: ${evt.pages} ${tr({
-										no: "sider",
-										en: "pages"
-									})} (${evt.addressShort})`
-							);
-						} else if (evt.type === "done") {
-							const j = evt.data as {
-								rowsPreview: KSPreviewRow[];
-								count: number;
-								rawCount: number;
-								totalRaw?: number;
-								totalLogged?: number;
-								newRaw?: number;
-								newLogged?: number;
-								partial?: boolean;
-								fromCache?: boolean;
-								chargedCredits?: number;
-							};
-							setRows(j.rowsPreview || []);
-							lastPayloadRef.current = parsed.data;
-							lastCountsRef.current = {
-								rawCount: j.rawCount,
-								processedCount: j.count
-							};
-							setErrorCta(null);
-							if (j.rowsPreview?.length) {
-								const csvAuto = buildCsvFromRows(j.rowsPreview, overrides);
-								await saveGeneratedCsv(
-									csvAuto,
-									Boolean(j.partial),
-									j.partial ? nextSessionId : null
-								);
-							}
-							setOk(true);
-							setCreditsSpent(j.fromCache ? null : (j.chargedCredits ?? null));
-							setPartialResult(Boolean(j.partial));
-							if (!j.partial) {
-								setScanSessionIdSafe(null);
-								lastPayloadKeyRef.current = null;
-							}
-							window.dispatchEvent(new Event("sol2ks:billing:update"));
-							const totalRaw = j.totalRaw ?? j.rawCount;
-							const totalLogged = j.totalLogged ?? j.count;
-							const newRaw = j.newRaw ?? totalRaw;
-							const newLogged = j.newLogged ?? totalLogged;
-							if (totalRaw !== totalLogged || newRaw !== totalRaw) {
-								pushLog(
-									tr({
-										no: `Rå transaksjoner - Nye: ${newRaw} | Totalt: ${totalRaw}`,
-										en: `Raw transactions - New: ${newRaw} | Total: ${totalRaw}`
-									})
-								);
-								pushLog(
-									tr({
-										no: `Loggførte transaksjoner - Nye: ${newLogged} | Totalt: ${totalLogged}`,
-										en: `Logged transactions - New: ${newLogged} | Total: ${totalLogged}`
-									})
-								);
-							} else {
-								pushLog(
-									tr({
-										no: `Transaksjoner funnet: ${totalLogged}.`,
-										en: `Transactions found: ${totalLogged}.`
-									})
-								);
-							}
-							pushLog(
-								tr({
-									no: `✅ ${j.count} transaksjoner loggført.`,
-									en: `✅ ${j.count} transactions logged.`
-								})
-							);
-							if (!j.partial) {
-								pushLog(
-									tr({
-										no: "Alle transaksjoner i perioden er funnet. Full rapport er generert.",
-										en: "All transactions in the period have been found. A full report has been generated."
-									})
-								);
-							}
-							if (!j.fromCache && typeof j.chargedCredits === "number") {
-								pushLog(
-									tr({
-										no: `TX Credits brukt ${j.chargedCredits}.`,
-										en: `TX Credits spent ${j.chargedCredits}.`
-									})
-								);
-							}
-						}
-					} catch {
-						// ignore bad chunk
-					}
-				}
-			}
-		} catch (err: any) {
-			if (err?.name === "AbortError") {
-				pushLog(
-					tr({ no: "⏹️ Avbrutt av bruker.", en: "⏹️ Cancelled by user." })
+	const startScan = useCallback(
+		async (payload: Payload) => {
+			if (!isAuthed) {
+				setError(
+					tr({
+						no: "Du må være innlogget for å generere CSV-er.",
+						en: "You must be signed in to generate CSVs."
+					})
 				);
-			} else {
-				const messageRaw =
-					err instanceof Error
-						? err.message
-						: typeof err === "string"
-							? err
-							: "Something went wrong";
-				const message = normalizeCreditError(messageRaw);
-				setError(message);
-				setErrorCta(pendingErrorCta);
+				setErrorCta(null);
 				setCreditsSpent(null);
 				setPartialResult(false);
+				return;
 			}
-		} finally {
-			setLoading(false);
-			abortRef.current = null;
-		}
-	}, [
-		isAuthed,
-		tr,
-		clearLog,
-		normalizeCreditError,
-		refreshBilling,
-		billingStatus,
-		payloadKeyFromPayload,
-		getScanSessionId,
-		setScanSessionIdSafe,
-		rememberAddress,
-		buildCsvFromRows,
-		overrides,
-		saveGeneratedCsv,
-		formatDateRange,
-		q,
-		pushLog,
-		setError,
-		setErrorCta,
-		setCreditsSpent,
-		setPartialResult,
-		setOk,
-		setRows,
-		setLoading,
-		setLogOpen,
-		localizeStreamLog
-	]);
+
+			const parsed = schema.safeParse(payload);
+			if (!parsed.success) {
+				setError(
+					parsed.error.issues[0]?.message ??
+						tr({ no: "Ugyldig input", en: "Invalid input" })
+				);
+				setErrorCta(null);
+				setCreditsSpent(null);
+				setPartialResult(false);
+				pushLog(tr({ no: "❌ Ugyldig input", en: "❌ Invalid input" }));
+				setLogOpen(true);
+				return;
+			}
+
+			const payloadKey = payloadKeyFromPayload(parsed.data);
+			const shouldReuseSession =
+				lastPayloadKeyRef.current === payloadKey && !!scanSessionIdRef.current;
+
+			// Only clear log if starting a fresh scan, not when continuing
+			if (!shouldReuseSession) {
+				clearLog();
+			}
+			const nextSessionId = shouldReuseSession
+				? scanSessionIdRef.current
+				: getScanSessionId();
+			setScanSessionIdSafe(nextSessionId);
+			lastPayloadKeyRef.current = payloadKey;
+
+			// Always refresh billing before starting scan to ensure we have current credit status
+			const freshStatus = await refreshBilling();
+			const status = freshStatus ?? billingStatus;
+			const availableCredits =
+				(status?.freeRemaining ?? 0) + (status?.creditsRemaining ?? 0);
+			const hasKnownCredits =
+				status !== null &&
+				status.freeRemaining !== undefined &&
+				status.creditsRemaining !== undefined;
+			if (shouldReuseSession && hasKnownCredits && availableCredits <= 0) {
+				const msg = tr({
+					no: "Ikke nok TX Credits til å fortsette skannet.",
+					en: "Not enough TX Credits to continue the scan."
+				});
+				setError(msg);
+				setErrorCta({
+					label: tr({ no: "Topp opp", en: "Top up" }),
+					href: "/pricing"
+				});
+				setCreditsSpent(null);
+				setPartialResult(true);
+				pushLog(
+					tr({
+						no: "⚠️ Ikke nok TX Credits. Topp opp for å fortsette.",
+						en: "⚠️ Not enough TX Credits. Top up to continue."
+					})
+				);
+				setLogOpen(true);
+				return;
+			}
+
+			setError(null);
+			setErrorCta(null);
+			setOk(false);
+			setRows(null);
+			setCreditsSpent(null);
+			setPartialResult(false);
+
+			const rangeLabel = formatDateRange(payload.fromISO, payload.toISO);
+			pushLog(
+				(shouldReuseSession
+					? tr({ no: "Fortsetter skann", en: "Continuing scan" })
+					: tr({ no: "Ny sjekk", en: "New check" })) +
+					` ${q(payload.walletName)} ${q(payload.address)}` +
+					(rangeLabel ? ` — ${rangeLabel}` : "")
+			);
+			setLogOpen(true);
+			if (shouldReuseSession) {
+				pushLog(
+					tr({
+						no: "Fortsetter forrige skann. Totalt antall vises først når hele perioden er skannet.",
+						en: "Continuing previous scan. Total count is shown once the full period is scanned."
+					})
+				);
+			}
+
+			await rememberAddress(parsed.data.address);
+
+			const ctrl = new AbortController();
+			abortRef.current = ctrl;
+
+			setLoading(true);
+			setCreditsSpent(null);
+			setPartialResult(false);
+			let pendingErrorCta: { label: string; href: string } | null = null;
+			try {
+				pushLog(
+					tr({
+						no: "Starter sjekk… dette kan ta noen minutter for store lommebøker.",
+						en: "Starting scan… this can take a few minutes for large wallets."
+					})
+				);
+				const res = await fetch("/api/kryptosekken?format=ndjson", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						...parsed.data,
+						scanSessionId: nextSessionId
+					}),
+					signal: ctrl.signal
+				});
+
+				if (!res.ok || !res.body) {
+					const text = await res.text().catch(() => "");
+					let errMsg = res.statusText;
+					try {
+						const j = text ? JSON.parse(text) : null;
+						errMsg =
+							(typeof j?.error === "string" && j.error) ||
+							(typeof j?.message === "string" && j.message) ||
+							errMsg;
+						pendingErrorCta =
+							j?.cta && typeof j.cta?.href === "string" ? j.cta : null;
+					} catch {
+						errMsg = text?.trim()?.slice(0, 300) || errMsg;
+					}
+					errMsg = normalizeCreditError(errMsg);
+					pushLog(
+						tr({ no: "❌ API-feil:", en: "❌ API error:" }) + ` ${errMsg}`
+					);
+					throw new Error(errMsg);
+				}
+
+				const reader = res.body.getReader();
+				const decoder = new TextDecoder();
+				let buf = "";
+				for (;;) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					buf += decoder.decode(value, { stream: true });
+					let nlIndex: number;
+					while ((nlIndex = buf.indexOf("\n")) >= 0) {
+						const line = buf.slice(0, nlIndex).trim();
+						buf = buf.slice(nlIndex + 1);
+						if (!line) continue;
+						try {
+							const evt = JSON.parse(line);
+							if (evt.type === "log") {
+								pushLog(localizeStreamLog(evt.message));
+							} else if (evt.type === "error") {
+								const msgRaw =
+									typeof evt.error === "string" && evt.error
+										? evt.error
+										: "Something went wrong";
+								const msg = normalizeCreditError(msgRaw);
+								setError(msg);
+								setErrorCta(
+									evt?.cta && typeof evt.cta?.href === "string" ? evt.cta : null
+								);
+								if (msgRaw.toLowerCase().includes("not enough tx credits")) {
+									window.dispatchEvent(new Event("sol2ks:billing:update"));
+								}
+								pushLog(tr({ no: "❌ Feil:", en: "❌ Error:" }) + ` ${msg}`);
+							} else if (evt.type === "page") {
+								const prefix =
+									evt.kind === "main"
+										? tr({ no: "Hovedadresse", en: "Main address" })
+										: `ATA ${evt.idx + 1}/${evt.totalATAs}`;
+								pushLog(
+									`${prefix}: ${tr({ no: "side", en: "page" })} ${evt.page}`
+								);
+							} else if (evt.type === "addrDone") {
+								const prefix =
+									evt.kind === "main"
+										? tr({ no: "Hovedadresse", en: "Main address" })
+										: `ATA ${evt.idx + 1}/${evt.totalATAs}`;
+								pushLog(
+									tr({ no: "Ferdig", en: "Done" }) +
+										` — ${prefix}: ${evt.pages} ${tr({
+											no: "sider",
+											en: "pages"
+										})} (${evt.addressShort})`
+								);
+							} else if (evt.type === "done") {
+								const j = evt.data as {
+									rowsPreview: KSPreviewRow[];
+									count: number;
+									rawCount: number;
+									totalRaw?: number;
+									totalLogged?: number;
+									newRaw?: number;
+									newLogged?: number;
+									partial?: boolean;
+									fromCache?: boolean;
+									chargedCredits?: number;
+								};
+								setRows(j.rowsPreview || []);
+								lastPayloadRef.current = parsed.data;
+								lastCountsRef.current = {
+									rawCount: j.rawCount,
+									processedCount: j.count
+								};
+								setErrorCta(null);
+								if (j.rowsPreview?.length) {
+									const csvAuto = buildCsvFromRows(j.rowsPreview, overrides);
+									await saveGeneratedCsv(
+										csvAuto,
+										Boolean(j.partial),
+										j.partial ? nextSessionId : null
+									);
+								}
+								setOk(true);
+								setCreditsSpent(
+									j.fromCache ? null : (j.chargedCredits ?? null)
+								);
+								setPartialResult(Boolean(j.partial));
+								if (!j.partial) {
+									setScanSessionIdSafe(null);
+									lastPayloadKeyRef.current = null;
+								}
+								window.dispatchEvent(new Event("sol2ks:billing:update"));
+								const totalRaw = j.totalRaw ?? j.rawCount;
+								const totalLogged = j.totalLogged ?? j.count;
+								const newRaw = j.newRaw ?? totalRaw;
+								const newLogged = j.newLogged ?? totalLogged;
+								if (totalRaw !== totalLogged || newRaw !== totalRaw) {
+									pushLog(
+										tr({
+											no: `Rå transaksjoner - Nye: ${newRaw} | Totalt: ${totalRaw}`,
+											en: `Raw transactions - New: ${newRaw} | Total: ${totalRaw}`
+										})
+									);
+									pushLog(
+										tr({
+											no: `Loggførte transaksjoner - Nye: ${newLogged} | Totalt: ${totalLogged}`,
+											en: `Logged transactions - New: ${newLogged} | Total: ${totalLogged}`
+										})
+									);
+								} else {
+									pushLog(
+										tr({
+											no: `Transaksjoner funnet: ${totalLogged}.`,
+											en: `Transactions found: ${totalLogged}.`
+										})
+									);
+								}
+								pushLog(
+									tr({
+										no: `✅ ${j.count} transaksjoner loggført.`,
+										en: `✅ ${j.count} transactions logged.`
+									})
+								);
+								if (!j.partial) {
+									pushLog(
+										tr({
+											no: "Alle transaksjoner i perioden er funnet. Full rapport er generert.",
+											en: "All transactions in the period have been found. A full report has been generated."
+										})
+									);
+								}
+								if (!j.fromCache && typeof j.chargedCredits === "number") {
+									pushLog(
+										tr({
+											no: `TX Credits brukt ${j.chargedCredits}.`,
+											en: `TX Credits spent ${j.chargedCredits}.`
+										})
+									);
+								}
+							}
+						} catch {
+							// ignore bad chunk
+						}
+					}
+				}
+			} catch (err: any) {
+				if (err?.name === "AbortError") {
+					pushLog(
+						tr({ no: "⏹️ Avbrutt av bruker.", en: "⏹️ Cancelled by user." })
+					);
+				} else {
+					const messageRaw =
+						err instanceof Error
+							? err.message
+							: typeof err === "string"
+								? err
+								: "Something went wrong";
+					const message = normalizeCreditError(messageRaw);
+					setError(message);
+					setErrorCta(pendingErrorCta);
+					setCreditsSpent(null);
+					setPartialResult(false);
+				}
+			} finally {
+				setLoading(false);
+				abortRef.current = null;
+			}
+		},
+		[
+			isAuthed,
+			tr,
+			clearLog,
+			normalizeCreditError,
+			refreshBilling,
+			billingStatus,
+			payloadKeyFromPayload,
+			getScanSessionId,
+			setScanSessionIdSafe,
+			rememberAddress,
+			buildCsvFromRows,
+			overrides,
+			saveGeneratedCsv,
+			formatDateRange,
+			q,
+			pushLog,
+			setError,
+			setErrorCta,
+			setCreditsSpent,
+			setPartialResult,
+			setOk,
+			setRows,
+			setLoading,
+			setLogOpen,
+			localizeStreamLog
+		]
+	);
 
 	/* ========== Streamed preview with progress + cancel ========== */
 	async function onCheckWallet(e: React.FormEvent<HTMLFormElement>) {
 		e.preventDefault();
 		const payload = buildPayload();
-		
+
 		// Debug logging for form state
 		if (process.env.NODE_ENV === "development") {
 			console.log("onCheckWallet - Form state:", {
@@ -1770,24 +1791,26 @@ function CSVGeneratorPageInner() {
 			});
 			console.log("onCheckWallet - Built payload:", payload);
 		}
-		
+
 		// Fetch latest CSV versions to check for existing scans
 		const versions = await fetchCsvVersionsForAddress(payload.address);
-		
+
 		// Check if there's ANY incomplete scan for this address
-		const partialMatches = versions.filter(v => Boolean(v.partial));
-		
+		const partialMatches = versions.filter((v) => Boolean(v.partial));
+
 		// Check if there's a complete scan with matching parameters
 		const payloadKey = payloadKeyFromPayload(payload);
-		const completeMatches = versions.filter(v => !v.partial && payloadKeyFromVersion(v) === payloadKey);
-		
+		const completeMatches = versions.filter(
+			(v) => !v.partial && payloadKeyFromVersion(v) === payloadKey
+		);
+
 		// Debug logging
 		if (process.env.NODE_ENV === "development") {
 			console.log("Check wallet - versions:", versions);
 			console.log("Check wallet - payload key:", payloadKey);
 			console.log("Check wallet - partial versions:", partialMatches);
 			console.log("Check wallet - complete versions:", completeMatches);
-			
+
 			// Log each version's key for comparison
 			versions.forEach((v, idx) => {
 				const vKey = payloadKeyFromVersion(v);
@@ -1799,21 +1822,31 @@ function CSVGeneratorPageInner() {
 				});
 			});
 		}
-		
+
 		if (partialMatches.length > 0) {
 			// If there are multiple partial scans, prefer one with matching parameters
-			const exactMatch = partialMatches.find(v => payloadKeyFromVersion(v) === payloadKey);
+			const exactMatch = partialMatches.find(
+				(v) => payloadKeyFromVersion(v) === payloadKey
+			);
 			const selectedPartial = exactMatch || partialMatches[0];
-			
+
 			// Open modal to ask user if they want to continue or start fresh
-			setPartialScanModal({ payload, partialVersion: selectedPartial, isComplete: false });
+			setPartialScanModal({
+				payload,
+				partialVersion: selectedPartial,
+				isComplete: false
+			});
 		} else if (completeMatches.length > 0) {
 			// There's already a complete scan with these parameters
 			// Ask user if they want to start a new scan (which will replace the old one)
 			if (process.env.NODE_ENV === "development") {
 				console.log("Opening modal for complete scan:", completeMatches[0]);
 			}
-			setPartialScanModal({ payload, partialVersion: completeMatches[0], isComplete: true });
+			setPartialScanModal({
+				payload,
+				partialVersion: completeMatches[0],
+				isComplete: true
+			});
 		} else {
 			await startScan(payload);
 		}
@@ -1823,30 +1856,35 @@ function CSVGeneratorPageInner() {
 		if (!partialScanModal) return;
 		const { partialVersion } = partialScanModal;
 		setPartialScanModal(null);
-		
+
 		// Update form fields with the partial scan's parameters
 		setAddress(partialVersion.address);
 		setWalletName(partialVersion.label || "");
 		setIncludeNFT(Boolean(partialVersion.include_nft));
 		setUseOslo(Boolean(partialVersion.use_oslo));
 		setDustMode((partialVersion.dust_mode as DustMode) || "off");
-		if (partialVersion.dust_threshold !== undefined && partialVersion.dust_threshold !== null) {
+		if (
+			partialVersion.dust_threshold !== undefined &&
+			partialVersion.dust_threshold !== null
+		) {
 			setDustThreshold(String(partialVersion.dust_threshold));
 		}
 		if (partialVersion.dust_interval) {
 			setDustInterval(partialVersion.dust_interval as DustInterval);
 		}
-		
+
 		// Set date range
 		if (partialVersion.from_iso || partialVersion.to_iso) {
 			setRange({
-				from: partialVersion.from_iso ? new Date(partialVersion.from_iso) : undefined,
+				from: partialVersion.from_iso
+					? new Date(partialVersion.from_iso)
+					: undefined,
 				to: partialVersion.to_iso ? new Date(partialVersion.to_iso) : undefined
 			});
 		} else {
 			setRange(undefined);
 		}
-		
+
 		// Build payload from the partial version's parameters
 		const partialPayload: Payload = {
 			address: partialVersion.address,
@@ -1856,26 +1894,28 @@ function CSVGeneratorPageInner() {
 			includeNFT: Boolean(partialVersion.include_nft),
 			useOslo: Boolean(partialVersion.use_oslo),
 			dustMode: (partialVersion.dust_mode as DustMode) || "off",
-			dustThreshold: partialVersion.dust_threshold !== undefined && partialVersion.dust_threshold !== null
-				? String(partialVersion.dust_threshold)
-				: undefined,
+			dustThreshold:
+				partialVersion.dust_threshold !== undefined &&
+				partialVersion.dust_threshold !== null
+					? String(partialVersion.dust_threshold)
+					: undefined,
 			dustInterval: (partialVersion.dust_interval as DustInterval) || undefined
 		};
-		
+
 		// Set up session to continue the partial scan
 		const payloadKey = payloadKeyFromPayload(partialPayload);
 		lastPayloadKeyRef.current = payloadKey;
 		if (partialVersion.scan_session_id) {
 			setScanSessionIdSafe(partialVersion.scan_session_id);
 		}
-		
+
 		await startScan(partialPayload);
 	}
 
 	async function startFreshScan() {
 		if (!partialScanModal) return;
 		const { payload, partialVersion } = partialScanModal;
-		
+
 		// Check credits BEFORE deleting the old scan
 		const freshStatus = await refreshBilling();
 		const status = freshStatus ?? billingStatus;
@@ -1885,7 +1925,7 @@ function CSVGeneratorPageInner() {
 			status !== null &&
 			status.freeRemaining !== undefined &&
 			status.creditsRemaining !== undefined;
-		
+
 		if (hasKnownCredits && availableCredits <= 0) {
 			setPartialScanModal(null);
 			const msg = tr({
@@ -1899,20 +1939,25 @@ function CSVGeneratorPageInner() {
 			});
 			setCreditsSpent(null);
 			setPartialResult(true);
-			pushLog(tr({ no: "⚠️ Ikke nok TX Credits. Topp opp for å starte ny skanning.", en: "⚠️ Not enough TX Credits. Top up to start a new scan." }));
+			pushLog(
+				tr({
+					no: "⚠️ Ikke nok TX Credits. Topp opp for å starte ny skanning.",
+					en: "⚠️ Not enough TX Credits. Top up to start a new scan."
+				})
+			);
 			setLogOpen(true);
 			return;
 		}
-		
+
 		setPartialScanModal(null);
-		
+
 		// Clear backend cache for this address/parameters
 		await fetch("/api/kryptosekken?clearCache=1", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(payload)
 		}).catch(() => undefined);
-		
+
 		// Delete the partial/complete scan and start fresh
 		if (partialVersion.id) {
 			await fetch("/api/csvs", {
@@ -1920,15 +1965,15 @@ function CSVGeneratorPageInner() {
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ id: partialVersion.id })
 			}).catch(() => undefined);
-			
+
 			// Refresh CSV versions after deletion
 			await fetchCsvVersionsForAddress(payload.address);
 		}
-		
+
 		// Reset session to force new scan
 		setScanSessionIdSafe(null);
 		lastPayloadKeyRef.current = null;
-		
+
 		await startScan(payload);
 	}
 
@@ -2065,14 +2110,19 @@ function CSVGeneratorPageInner() {
 		[csvVersions, csvVersionId]
 	);
 
-	const scrollToElementWithOffset = useCallback((element: HTMLElement | null) => {
-		if (!element) return;
-		const headerEl = document.querySelector("header.s2ks-header");
-		const navbarHeight = headerEl ? (headerEl as HTMLElement).offsetHeight : 80; // Fallback to ~80px
-		const elementTop = element.getBoundingClientRect().top + window.scrollY;
-		const scrollTop = elementTop - navbarHeight - 16; // 16px extra padding
-		window.scrollTo({ top: Math.max(0, scrollTop), behavior: "smooth" });
-	}, []);
+	const scrollToElementWithOffset = useCallback(
+		(element: HTMLElement | null) => {
+			if (!element) return;
+			const headerEl = document.querySelector("header.s2ks-header");
+			const navbarHeight = headerEl
+				? (headerEl as HTMLElement).offsetHeight
+				: 80; // Fallback to ~80px
+			const elementTop = element.getBoundingClientRect().top + window.scrollY;
+			const scrollTop = elementTop - navbarHeight - 16; // 16px extra padding
+			window.scrollTo({ top: Math.max(0, scrollTop), behavior: "smooth" });
+		},
+		[]
+	);
 
 	const openSelectedCsv = useCallback(async () => {
 		if (!csvVersionId) return;
@@ -2226,8 +2276,14 @@ function CSVGeneratorPageInner() {
 														type="button"
 														onClick={continueSelectedCsv}
 														className="inline-flex items-center gap-2 rounded-lg px-2 py-1 text-xs font-semibold transition bg-indigo-600 text-white hover:bg-indigo-500"
-														title={tr({ no: "Fortsett skann", en: "Continue scan" })}
-														aria-label={tr({ no: "Fortsett skann", en: "Continue scan" })}
+														title={tr({
+															no: "Fortsett skann",
+															en: "Continue scan"
+														})}
+														aria-label={tr({
+															no: "Fortsett skann",
+															en: "Continue scan"
+														})}
 													>
 														<FiEye className="h-3.5 w-3.5" />
 														{tr({ no: "Fortsett skann", en: "Continue scan" })}
@@ -2409,14 +2465,19 @@ function CSVGeneratorPageInner() {
 													</div>
 													<div className="text-left">
 														<div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-															{tr({ no: "Valgt periode", en: "Selected period" })}
+															{tr({
+																no: "Valgt periode",
+																en: "Selected period"
+															})}
 														</div>
 														<div className="text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-100 mt-0.5">
 															{formatRangeLabel(tr, locale, range)}
 														</div>
 													</div>
 												</div>
-												<FiChevronDown className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${calOpen ? "rotate-180" : ""}`} />
+												<FiChevronDown
+													className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${calOpen ? "rotate-180" : ""}`}
+												/>
 											</div>
 										</button>
 
@@ -2426,7 +2487,10 @@ function CSVGeneratorPageInner() {
 												{/* Header with close button */}
 												<div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 px-3 py-2">
 													<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-														{tr({ no: "Velg tidsrom", en: "Select date range" })}
+														{tr({
+															no: "Velg tidsrom",
+															en: "Select date range"
+														})}
 													</div>
 													<button
 														type="button"
@@ -2593,7 +2657,7 @@ function CSVGeneratorPageInner() {
 															? tr({
 																	no: "Europe/Oslo (UTC+01:00)",
 																	en: "Europe/Oslo"
-															  })
+																})
 															: "UTC"}
 													</span>
 												</div>
@@ -2653,10 +2717,16 @@ function CSVGeneratorPageInner() {
 										</div>
 										<div>
 											<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-												{tr({ no: "Støvtransaksjoner", en: "Dust transactions" })}
+												{tr({
+													no: "Støvtransaksjoner",
+													en: "Dust transactions"
+												})}
 											</div>
 											<div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-												{tr({ no: "Håndter små transaksjoner", en: "Handle small transactions" })}
+												{tr({
+													no: "Håndter små transaksjoner",
+													en: "Handle small transactions"
+												})}
 											</div>
 										</div>
 									</div>
@@ -2861,17 +2931,17 @@ function CSVGeneratorPageInner() {
 
 									{/* Threshold */}
 									{dustMode !== "off" && (
-											<div className="flex flex-col gap-1.5">
-												<label className="text-xs font-medium text-slate-600 dark:text-slate-400">
-													{tr({ no: "Grense (beløp)", en: "Threshold (amount)" })}
-												</label>
-												<input
-													type="number"
-													step="0.001"
-													inputMode="decimal"
-													value={dustThreshold}
-													onChange={(e) => setDustThreshold(e.target.value)}
-													className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 dark:focus:ring-emerald-900/40 transition-all"
+										<div className="flex flex-col gap-1.5">
+											<label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+												{tr({ no: "Grense (beløp)", en: "Threshold (amount)" })}
+											</label>
+											<input
+												type="number"
+												step="0.001"
+												inputMode="decimal"
+												value={dustThreshold}
+												onChange={(e) => setDustThreshold(e.target.value)}
+												className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 dark:focus:ring-emerald-900/40 transition-all"
 												placeholder="0.001"
 											/>
 										</div>
@@ -2920,7 +2990,9 @@ function CSVGeneratorPageInner() {
 								{/* Info text – specific per mode */}
 								{dustMode === "off" && (
 									<div className="mt-3 rounded-xl bg-slate-100 dark:bg-slate-800/50 px-3 py-2.5 text-xs text-slate-600 dark:text-slate-400">
-										<span className="font-semibold text-slate-700 dark:text-slate-300">{tr({ no: "Vis alle", en: "Show all" })}:</span>{" "}
+										<span className="font-semibold text-slate-700 dark:text-slate-300">
+											{tr({ no: "Vis alle", en: "Show all" })}:
+										</span>{" "}
 										{tr({
 											no: "Ingen støvbehandling.",
 											en: "No dust processing."
@@ -2929,7 +3001,9 @@ function CSVGeneratorPageInner() {
 								)}
 								{dustMode === "remove" && (
 									<div className="mt-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 px-3 py-2.5 text-xs text-amber-900 dark:text-amber-200">
-										<span className="font-semibold">{tr({ no: "Skjul", en: "Hide" })}:</span>{" "}
+										<span className="font-semibold">
+											{tr({ no: "Skjul", en: "Hide" })}:
+										</span>{" "}
 										{tr({
 											no: "Filtrerer vekk alle overføringer under grensen.",
 											en: "Filters out all transfers below the threshold."
@@ -2949,7 +3023,13 @@ function CSVGeneratorPageInner() {
 											:
 										</span>{" "}
 										{tr({ no: "Slår sammen små ", en: "Aggregates small " })}
-										<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">Overføring-Inn</code> og <code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">Overføring-Ut</code>{" "}
+										<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
+											Overføring-Inn
+										</code>{" "}
+										og{" "}
+										<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
+											Overføring-Ut
+										</code>{" "}
 										fra hver{" "}
 										<i>{tr({ no: "signer-adresse", en: "signer address" })}</i>{" "}
 										{tr({
@@ -2961,7 +3041,8 @@ function CSVGeneratorPageInner() {
 												no: "valgt periode",
 												en: "selected period"
 											})}
-										</span>.
+										</span>
+										.
 									</div>
 								)}
 								{dustMode === "aggregate-period" && (
@@ -2974,7 +3055,13 @@ function CSVGeneratorPageInner() {
 											:
 										</span>{" "}
 										{tr({ no: "Slår sammen små ", en: "Aggregates small " })}
-										<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">Overføring-Inn</code> og <code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">Overføring-Ut</code>{" "}
+										<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
+											Overføring-Inn
+										</code>{" "}
+										og{" "}
+										<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
+											Overføring-Ut
+										</code>{" "}
 										per valgt periode
 										{tr({
 											no: " (uavhengig av sender).",
@@ -3213,7 +3300,9 @@ function CSVGeneratorPageInner() {
 															const label = creditMatch[1];
 															const value = creditMatch[3];
 															const tail = creditMatch[4] ?? "";
-															const prefix = ln.slice(0, creditMatch.index ?? 0).trim();
+															const prefix = ln
+																.slice(0, creditMatch.index ?? 0)
+																.trim();
 															return (
 																<li key={i} className="flex items-center gap-1">
 																	{prefix ? <span>{prefix}</span> : null}
@@ -3241,17 +3330,17 @@ function CSVGeneratorPageInner() {
 
 				{/* ========= Card: Current holdings (now always shows even if empty/error) ========= */}
 				{address?.trim() && (
-				<div className="mt-6" ref={holdingsContainerRef}>
-					<WalletHoldings
-						address={address}
-						includeNFT={false}
-						enabled={ok}
-						onLogoMap={(logos) =>
-							setSharedLogos((prev) => ({ ...prev, ...logos }))
-						}
-					/>
-				</div>
-			)}
+					<div className="mt-6" ref={holdingsContainerRef}>
+						<WalletHoldings
+							address={address}
+							includeNFT={false}
+							enabled={ok}
+							onLogoMap={(logos) =>
+								setSharedLogos((prev) => ({ ...prev, ...logos }))
+							}
+						/>
+					</div>
+				)}
 
 				{/* ========= Card 2: Preview ========= */}
 				{hasRows && (
@@ -3314,8 +3403,14 @@ function CSVGeneratorPageInner() {
 							<div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 px-4 py-3">
 								<p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
 									{partialScanModal.isComplete
-										? tr({ no: "Skann eksisterer allerede", en: "Scan already exists" })
-										: tr({ no: "Ufullstendig skann funnet", en: "Incomplete scan found" })}
+										? tr({
+												no: "Skann eksisterer allerede",
+												en: "Scan already exists"
+											})
+										: tr({
+												no: "Ufullstendig skann funnet",
+												en: "Incomplete scan found"
+											})}
 								</p>
 								<button
 									type="button"
@@ -3331,13 +3426,13 @@ function CSVGeneratorPageInner() {
 									<p>
 										{partialScanModal.isComplete
 											? tr({
-												no: "Det finnes allerede et fullført skann med disse parameterene.",
-												en: "There is already a completed scan with these parameters."
-											  })
+													no: "Det finnes allerede et fullført skann med disse parameterene.",
+													en: "There is already a completed scan with these parameters."
+												})
 											: tr({
-												no: "Det finnes et ufullstendig skann for denne lommeboken.",
-												en: "There is an incomplete scan for this wallet."
-											  })}
+													no: "Det finnes et ufullstendig skann for denne lommeboken.",
+													en: "There is an incomplete scan for this wallet."
+												})}
 									</p>
 									{partialScanModal && (
 										<div className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-lg px-3 py-2 space-y-1">
@@ -3346,27 +3441,33 @@ function CSVGeneratorPageInner() {
 												{formatDateRange(
 													partialScanModal.partialVersion.from_iso,
 													partialScanModal.partialVersion.to_iso
-												) || tr({ no: "Alle transaksjoner", en: "All transactions" })}
+												) ||
+													tr({
+														no: "Alle transaksjoner",
+														en: "All transactions"
+													})}
 											</div>
-											{partialScanModal.partialVersion.dust_mode && 
+											{partialScanModal.partialVersion.dust_mode &&
 												partialScanModal.partialVersion.dust_mode !== "off" && (
-												<div>
-													<strong>{tr({ no: "Støvmodus:", en: "Dust mode:" })}</strong>{" "}
-													{partialScanModal.partialVersion.dust_mode}
-												</div>
-											)}
+													<div>
+														<strong>
+															{tr({ no: "Støvmodus:", en: "Dust mode:" })}
+														</strong>{" "}
+														{partialScanModal.partialVersion.dust_mode}
+													</div>
+												)}
 										</div>
 									)}
 									<p>
 										{partialScanModal.isComplete
 											? tr({
-												no: "Vil du starte et nytt skann? Dette vil erstatte det eksisterende resultatet.",
-												en: "Do you want to start a new scan? This will replace the existing result."
-											  })
+													no: "Vil du starte et nytt skann? Dette vil erstatte det eksisterende resultatet.",
+													en: "Do you want to start a new scan? This will replace the existing result."
+												})
 											: tr({
-												no: "Vil du fortsette det forrige skannet eller starte på nytt med nye parametere?",
-												en: "Do you want to continue the previous scan or start fresh with new parameters?"
-											  })}
+													no: "Vil du fortsette det forrige skannet eller starte på nytt med nye parametere?",
+													en: "Do you want to continue the previous scan or start fresh with new parameters?"
+												})}
 									</p>
 								</div>
 								<div className="flex flex-col sm:flex-row gap-3">
@@ -3376,15 +3477,20 @@ function CSVGeneratorPageInner() {
 											onClick={continuePartialScan}
 											className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white px-4 py-2.5 text-sm font-semibold shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:to-emerald-500 transition"
 										>
-											{tr({ no: "Fortsett forrige skann", en: "Continue previous scan" })}
+											{tr({
+												no: "Fortsett forrige skann",
+												en: "Continue previous scan"
+											})}
 										</button>
 									)}
 									<button
 										type="button"
 										onClick={startFreshScan}
-										className={partialScanModal.isComplete
-											? "flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white px-4 py-2.5 text-sm font-semibold shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:to-emerald-500 transition"
-											: "flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition"}
+										className={
+											partialScanModal.isComplete
+												? "flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white px-4 py-2.5 text-sm font-semibold shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:to-emerald-500 transition"
+												: "flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+										}
 									>
 										{tr({ no: "Nytt skann", en: "New scan" })}
 									</button>

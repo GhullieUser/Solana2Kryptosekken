@@ -780,6 +780,12 @@ export default function UserPage() {
 								en: "This deletes your account and all saved addresses and CSVs. This action cannot be undone."
 							})}
 						</p>
+						<p className="mt-3 text-sm font-semibold text-rose-600 dark:text-rose-400">
+							{tr({
+								no: "⚠️ Ubrukte TX Credits går tapt permanent.",
+								en: "⚠️ Unused TX Credits will be permanently lost."
+							})}
+						</p>
 						<div className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
 							<button
 								type="button"

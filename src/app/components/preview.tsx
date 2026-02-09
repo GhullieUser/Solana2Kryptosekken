@@ -1741,7 +1741,10 @@ export default function Preview({
 			: null;
 
 		return (
-			<th className="relative" style={{ width: `${colWidths[colKey]}px`, padding: 0 }}>
+			<th
+				className="relative"
+				style={{ width: `${colWidths[colKey]}px`, padding: 0 }}
+			>
 				<CellPad>
 					<div
 						ref={contentMeasureRef}

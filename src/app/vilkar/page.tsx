@@ -76,7 +76,10 @@ export default function VilkarPage() {
 					</ul>
 
 					<h2 className="text-xl font-semibold">
-						{tr({ no: "4. Produktinformasjon og priser", en: "4. Product information and pricing" })}
+						{tr({
+							no: "4. Produktinformasjon og priser",
+							en: "4. Product information and pricing"
+						})}
 					</h2>
 					<p>
 						{tr({
@@ -99,9 +102,11 @@ export default function VilkarPage() {
 						</Link>
 					</p>
 
-
 					<h2 className="text-xl font-semibold">
-						{tr({ no: "6. Begrensning av ansvar", en: "6. Limitation of liability" })}
+						{tr({
+							no: "6. Begrensning av ansvar",
+							en: "6. Limitation of liability"
+						})}
 					</h2>
 					<p>
 						{tr({
@@ -121,29 +126,35 @@ export default function VilkarPage() {
 					</p>
 
 					<h2 className="text-xl font-semibold">
-						{tr({ no: "8. Firma- og kontaktinformasjon", en: "8. Company and contact information" })}
+						{tr({
+							no: "8. Firma- og kontaktinformasjon",
+							en: "8. Company and contact information"
+						})}
 					</h2>
 					<ul className="list-disc pl-6 space-y-2">
 						<li>
 							{tr({ no: "Firmanavn: ARTBYMI", en: "Company name: ARTBYMI" })}
 						</li>
 						<li>
-								{tr({ no: "Organisasjonsnummer: 926077090", en: "Organization number: 926077090" })}
+							{tr({
+								no: "Organisasjonsnummer: 926077090",
+								en: "Organization number: 926077090"
+							})}
 						</li>
 						<li>
-								{tr({
-									no: "Adresse: Juliuanus Holms veg 12, 7041 Trondheim",
-									en: "Address: Juliuanus Holms veg 12, 7041 Trondheim"
-								})}
+							{tr({
+								no: "Adresse: Juliuanus Holms veg 12, 7041 Trondheim",
+								en: "Address: Juliuanus Holms veg 12, 7041 Trondheim"
+							})}
 						</li>
+						<li>{tr({ no: "Telefon: 41299488", en: "Phone: 41299488" })}</li>
 						<li>
-								{tr({ no: "Telefon: 41299488", en: "Phone: 41299488" })}
-						</li>
-						<li>
-								{tr({ no: "E-post: hello@sol2ks.no", en: "Email: hello@sol2ks.no" })}
+							{tr({
+								no: "E-post: hello@sol2ks.no",
+								en: "Email: hello@sol2ks.no"
+							})}
 						</li>
 					</ul>
-
 				</section>
 
 				<div className="mt-10 self-start">

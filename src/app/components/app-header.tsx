@@ -201,8 +201,8 @@ export default function AppHeader() {
 					filter: `user_id=eq.${userId}`
 				},
 				(payload) => {
-					const next = (payload as { new?: { credits_remaining?: number } })
-						.new?.credits_remaining;
+					const next = (payload as { new?: { credits_remaining?: number } }).new
+						?.credits_remaining;
 					if (typeof next === "number") {
 						setCreditsRemaining(next);
 					}
