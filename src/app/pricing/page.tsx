@@ -344,7 +344,7 @@ export default function PricingPage() {
 									Klarna
 								</p>
 								<p className="text-xs text-slate-500 dark:text-slate-400">
-									{tr({ no: "Kjøp nå", en: "Buy now" })}
+									{tr({ no: "Betal senere eller del opp", en: "Pay later or split it" })}
 								</p>
 							</div>
 						</div>
