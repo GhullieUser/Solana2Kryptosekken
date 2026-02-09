@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useLocale } from "@/app/components/locale-provider";
 
 export default function AccountCreatedPage() {

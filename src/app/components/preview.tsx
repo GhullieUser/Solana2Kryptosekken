@@ -193,7 +193,7 @@ type ColKey =
 	| "marked"
 	| "notat"
 	| "explorer"
-	| "debug";
+	| "metadata";
 
 /** Single source of truth: default widths in px. */
 const DEFAULT_COL_WIDTHS: Record<ColKey, number> = {
@@ -207,8 +207,8 @@ const DEFAULT_COL_WIDTHS: Record<ColKey, number> = {
 	gebyrValuta: 120,
 	marked: 140,
 	notat: 300,
-	explorer: 120,
-	debug: 70
+	explorer: 45,
+	metadata: 70
 };
 
 const MIN_COL_WIDTH = 60;
@@ -226,7 +226,7 @@ const COL_ORDER: ColKey[] = [
 	"marked",
 	"notat",
 	"explorer",
-	"debug"
+	"metadata"
 ];
 
 /** Unified select styling (match expanded counterpart; avoid bright white border) */
@@ -1741,7 +1741,7 @@ export default function Preview({
 			: null;
 
 		return (
-			<th className="relative" style={{ width: colWidths[colKey], padding: 0 }}>
+			<th className="relative" style={{ width: `${colWidths[colKey]}px`, padding: 0 }}>
 				<CellPad>
 					<div
 						ref={contentMeasureRef}
@@ -1822,7 +1822,7 @@ export default function Preview({
 		return (
 			<th
 				className={`relative ${extraClass}`}
-				style={{ width: colWidths[colKey], padding: 0 }}
+				style={{ width: `${colWidths[colKey]}px`, padding: 0 }}
 			>
 				<CellPad>
 					<div
@@ -1867,9 +1867,9 @@ export default function Preview({
 			>
 				<colgroup>
 					{COL_ORDER.map((k) => (
-						<col key={k} style={{ width: colWidths[k] }} />
+						<col key={k} style={{ width: `${colWidths[k]}px` }} />
 					))}
-					{hasStretch && <col style={{ width: stretchWidth }} />}
+					{hasStretch && <col style={{ width: `${stretchWidth}px` }} />}
 				</colgroup>
 
 				<thead className="sticky top-0 z-20 bg-white dark:bg-[#0e1729] text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/35">
@@ -1891,7 +1891,7 @@ export default function Preview({
 						<PlainHeader label="Gebyr" colKey="gebyr" extraClass="text-right" />
 						<th
 							className="relative hidden md:table-cell"
-							style={{ width: colWidths.gebyrValuta, padding: 0 }}
+							style={{ width: `${colWidths.gebyrValuta}px`, padding: 0 }}
 						>
 							<CellPad>
 								<div className="select-none overflow-hidden truncate whitespace-nowrap">
@@ -1903,8 +1903,8 @@ export default function Preview({
 						<HeaderWithFilter label="Marked" field="Marked" colKey="marked" />
 						<PlainHeader label="Notat" colKey="notat" />
 						<th
-							className="relative whitespace-nowrap text-center hidden md:table-cell"
-							style={{ width: colWidths.explorer }}
+							className="relative whitespace-nowrap text-center"
+							style={{ width: `${colWidths.explorer}px` }}
 						>
 							<CellPad>
 								<div className="select-none overflow-hidden truncate whitespace-nowrap">
@@ -1915,14 +1915,14 @@ export default function Preview({
 						</th>
 						<th
 							className="relative whitespace-nowrap text-center"
-							style={{ width: colWidths.debug }}
+							style={{ width: `${colWidths.metadata}px` }}
 						>
 							<CellPad>
 								<div className="select-none overflow-hidden truncate whitespace-nowrap">
-									Debug
+									Metadata
 								</div>
 							</CellPad>
-							<Resizer colKey="debug" />
+							<Resizer colKey="metadata" />
 						</th>
 						{hasStretch && (
 							<th
@@ -2076,7 +2076,7 @@ export default function Preview({
 										/>
 									</td>
 
-									<td className="text-center hidden md:table-cell">
+									<td className="text-center">
 										{solscan ? (
 											<Link
 												href={solscan}
@@ -2103,7 +2103,7 @@ export default function Preview({
 												type="button"
 												onClick={() => setDebugRow(r)}
 												className="inline-flex items-center justify-center rounded-full p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
-												title="Vis debug-data"
+												title="Vis metadata"
 											>
 												<FiInfo className="h-4 w-4" />
 											</button>
@@ -2146,7 +2146,7 @@ export default function Preview({
 					<div className="w-full max-w-3xl rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-slate-200 dark:bg-[#0f172a] dark:ring-white/10">
 						<div className="mb-3 flex items-center justify-between gap-3">
 							<div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-								Debug JSON
+								Metadata JSON
 							</div>
 							<div className="flex items-center gap-2">
 								<button

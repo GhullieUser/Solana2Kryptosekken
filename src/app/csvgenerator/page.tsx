@@ -10,8 +10,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { z } from "zod";
-import { DayPicker, DateRange } from "react-day-picker";
-import "react-day-picker/dist/style.css";
+import { FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import {
 	FiCalendar,
 	FiLoader,
@@ -24,7 +23,8 @@ import {
 	FiTag,
 	FiInfo,
 	FiActivity,
-	FiAlertTriangle
+	FiAlertTriangle,
+	FiImage
 } from "react-icons/fi";
 import { BsXDiamondFill } from "react-icons/bs";
 import { MdOutlineCleaningServices } from "react-icons/md";
@@ -172,6 +172,335 @@ function Switch({
 	);
 }
 
+/* ================= Custom Calendar Component ================= */
+type DateRange = { from?: Date; to?: Date };
+
+function CustomCalendar({
+	range,
+	onRangeChange,
+	onConfirm,
+	hasSelection,
+	calMonth,
+	setCalMonth,
+	maxDate
+}: {
+	range?: DateRange;
+	onRangeChange: (range?: DateRange) => void;
+	onConfirm: () => void;
+	hasSelection: boolean;
+	calMonth: Date;
+	setCalMonth: (date: Date) => void;
+	maxDate: Date;
+}) {
+	const { tr, locale } = useLocale();
+	const [showMonthPicker, setShowMonthPicker] = useState(false);
+	const SOLANA_YEAR = 2020; // Solana was created in 2020
+
+	const weekDays =
+		locale === "no"
+			? ["Sø", "Ma", "Ti", "On", "To", "Fr", "Lø"]
+			: ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+	const monthNames =
+		locale === "no"
+			? [
+					"Januar",
+					"Februar",
+					"Mars",
+					"April",
+					"Mai",
+					"Juni",
+					"Juli",
+					"August",
+					"September",
+					"Oktober",
+					"November",
+					"Desember"
+			  ]
+			: [
+					"January",
+					"February",
+					"March",
+					"April",
+					"May",
+					"June",
+					"July",
+					"August",
+					"September",
+					"October",
+					"November",
+					"December"
+			  ];
+
+	const year = calMonth.getFullYear();
+	const month = calMonth.getMonth();
+
+	// Get days in current month
+	const firstDay = new Date(year, month, 1);
+	const lastDay = new Date(year, month + 1, 0);
+	const daysInMonth = lastDay.getDate();
+	const startDayOfWeek = firstDay.getDay(); // 0 = Sunday
+
+	// Create calendar grid
+	const days: (Date | null)[] = [];
+
+	// Add empty cells for days before month starts
+	for (let i = 0; i < startDayOfWeek; i++) {
+		days.push(null);
+	}
+
+	// Add all days in month
+	for (let i = 1; i <= daysInMonth; i++) {
+		days.push(new Date(year, month, i));
+	}
+
+	const handleDayClick = (date: Date) => {
+		if (date > maxDate) return;
+
+		if (!range?.from || (range.from && range.to)) {
+			// Start new selection
+			onRangeChange({ from: date, to: undefined });
+		} else {
+			// Complete selection
+			if (date < range.from) {
+				onRangeChange({ from: date, to: range.from });
+			} else {
+				onRangeChange({ from: range.from, to: date });
+			}
+		}
+	};
+
+	const isInRange = (date: Date) => {
+		if (!range?.from || !range?.to) return false;
+		return date >= range.from && date <= range.to;
+	};
+
+	const isRangeStart = (date: Date) => {
+		return range?.from && date.toDateString() === range.from.toDateString();
+	};
+
+	const isRangeEnd = (date: Date) => {
+		return range?.to && date.toDateString() === range.to.toDateString();
+	};
+
+	const isToday = (date: Date) => {
+		const today = new Date();
+		return date.toDateString() === today.toDateString();
+	};
+
+	const isDisabled = (date: Date) => {
+		return date > maxDate;
+	};
+
+	const prevMonth = () => {
+		setCalMonth(new Date(year, month - 1, 1));
+	};
+
+	const nextMonth = () => {
+		const next = new Date(year, month + 1, 1);
+		if (next <= maxDate) {
+			setCalMonth(next);
+		}
+	};
+
+	const canGoNext = new Date(year, month + 1, 1) <= maxDate;
+
+	return (
+		<div className="px-3 py-2 w-full">
+			{/* Header with navigation */}
+			<div className="flex items-center justify-between mb-2">
+				<button
+					type="button"
+					onClick={prevMonth}
+					className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+					aria-label={tr({ no: "Forrige måned", en: "Previous month" })}
+				>
+					<FiChevronLeft className="h-4 w-4 text-slate-600 dark:text-slate-400" />
+				</button>
+
+				<button
+					type="button"
+					onClick={() => setShowMonthPicker(!showMonthPicker)}
+					className="px-3 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+				>
+					<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+						{monthNames[month]} {year}
+					</div>
+				</button>
+
+				<button
+					type="button"
+					onClick={nextMonth}
+					disabled={!canGoNext}
+					className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+					aria-label={tr({ no: "Neste måned", en: "Next month" })}
+				>
+					<FiChevronRight className="h-4 w-4 text-slate-600 dark:text-slate-400" />
+				</button>
+			</div>
+
+			{/* Month/Year Picker */}
+			{showMonthPicker && (
+				<div className="mb-3 p-2.5 bg-slate-50 dark:bg-slate-800 rounded-lg space-y-2">
+					{/* Year selector */}
+					<div>
+						<div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">
+							{tr({ no: "År", en: "Year" })}
+						</div>
+						<div className="flex gap-2 items-center">
+							<button
+								type="button"
+								onClick={() =>
+									setCalMonth(
+										new Date(Math.max(year - 1, SOLANA_YEAR), month, 1)
+									)
+								}
+								disabled={year <= SOLANA_YEAR}
+								className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+							>
+								<FiChevronLeft className="h-3.5 w-3.5" />
+							</button>
+							<span className="flex-1 text-center font-semibold text-slate-800 dark:text-slate-200">
+								{year}
+							</span>
+							<button
+								type="button"
+								onClick={() =>
+									setCalMonth(
+										new Date(
+											Math.min(year + 1, maxDate.getFullYear()),
+											month,
+											1
+										)
+									)
+								}
+								disabled={year >= maxDate.getFullYear()}
+								className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+							>
+								<FiChevronRight className="h-3.5 w-3.5" />
+							</button>
+						</div>
+					</div>
+
+					{/* Month selector grid */}
+					<div>
+						<div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">
+							{tr({ no: "Måned", en: "Month" })}
+						</div>
+						<div className="grid grid-cols-3 gap-1.5">
+							{monthNames.map((m, idx) => {
+								const selectedMonth = new Date(year, idx, 1);
+								const isSelectable =
+									selectedMonth <= maxDate &&
+									selectedMonth.getFullYear() >= SOLANA_YEAR;
+								return (
+									<button
+										key={idx}
+										type="button"
+										onClick={() => {
+											if (isSelectable) {
+												setCalMonth(selectedMonth);
+												setShowMonthPicker(false);
+											}
+										}}
+										disabled={!isSelectable}
+										className={[
+											"px-2 py-1.5 rounded text-[11px] font-medium transition-colors",
+											idx === month && year === calMonth.getFullYear()
+												? "bg-indigo-600 text-white"
+												: "bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600",
+											!isSelectable ? "opacity-40 cursor-not-allowed" : ""
+										].join(" ")}
+									>
+										{m.slice(0, 3)}
+									</button>
+								);
+							})}
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Weekday headers */}
+			<div className="grid grid-cols-7 gap-px mb-1">
+				{weekDays.map((day) => (
+					<div
+						key={day}
+						className="text-center text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase py-1"
+					>
+						{day}
+					</div>
+				))}
+			</div>
+
+			{/* Calendar grid */}
+			<div className="grid grid-cols-7 gap-px">
+				{days.map((date, idx) => {
+					if (!date) {
+						return <div key={`empty-${idx}`} className="aspect-square w-full" />;
+					}
+
+					const inRange = isInRange(date);
+					const rangeStart = isRangeStart(date);
+					const rangeEnd = isRangeEnd(date);
+					const today = isToday(date);
+					const disabled = isDisabled(date);
+
+					return (
+						<button
+							key={idx}
+							type="button"
+							onClick={() => handleDayClick(date)}
+							disabled={disabled}
+							className={[
+								"aspect-square w-full rounded-md text-[11px] font-medium transition-all relative",
+								disabled
+									? "text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-40"
+									: !rangeStart && !rangeEnd
+									? "hover:bg-slate-100 dark:hover:bg-slate-800"
+									: "",
+								rangeStart
+									? "bg-indigo-600 text-white hover:brightness-110 rounded-l-full"
+									: rangeEnd
+									? "bg-emerald-600 text-white hover:brightness-110 rounded-r-full"
+									: inRange
+									? "bg-indigo-50 text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-200"
+									: "text-slate-700 dark:text-slate-300"
+							].join(" ")}
+						>
+							{date.getDate()}
+							{today && !rangeStart && !rangeEnd && (
+								<span className="absolute inset-0 pointer-events-none">
+									<span className="absolute top-0 left-0 w-2.5 h-2.5 border-t-2 border-l-2 border-indigo-600 rounded-tl-lg" />
+									<span className="absolute top-0 right-0 w-2.5 h-2.5 border-t-2 border-r-2 border-indigo-600 rounded-tr-lg" />
+									<span className="absolute bottom-0 left-0 w-2.5 h-2.5 border-b-2 border-l-2 border-indigo-600 rounded-bl-lg" />
+									<span className="absolute bottom-0 right-0 w-2.5 h-2.5 border-b-2 border-r-2 border-indigo-600 rounded-br-lg" />
+								</span>
+							)}
+						</button>
+					);
+				})}
+			</div>
+
+			{/* Confirm button */}
+			<div className="pt-3 border-t border-slate-200 dark:border-slate-700 mt-3">
+				<button
+					type="button"
+					onClick={onConfirm}
+					disabled={!hasSelection}
+					className={[
+						"w-full rounded-lg py-2.5 px-3 font-semibold text-xs transition-all",
+						hasSelection
+							? "bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 shadow-sm hover:shadow"
+							: "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600 cursor-not-allowed"
+					].join(" ")}
+				>
+					{tr({ no: "Bekreft valg", en: "Confirm selection" })}
+				</button>
+			</div>
+		</div>
+	);
+}
+
 /* ================= Page ================= */
 const HISTORY_MAX = 10;
 
@@ -294,8 +623,6 @@ function CSVGeneratorPageInner() {
 	const [addrMenuOpen, setAddrMenuOpen] = useState(false);
 	const [csvVersions, setCsvVersions] = useState<CsvVersion[]>([]);
 	const [csvVersionId, setCsvVersionId] = useState<string | null>(null);
-	const [csvNotice, setCsvNotice] = useState<string | null>(null);
-	const prevCsvVersionsRef = useRef<CsvVersion[]>([]);
 
 	// Live log
 	const [logOpen, setLogOpen] = useState(false);
@@ -347,7 +674,7 @@ function CSVGeneratorPageInner() {
 		setLogLines([]);
 		lastPayloadRef.current = null;
 		lastCountsRef.current = null;
-	}, []);
+	}, [setScanSessionIdSafe]);
 
 	useEffect(() => {
 		const addr = searchParams.get("address");
@@ -445,6 +772,167 @@ function CSVGeneratorPageInner() {
 		}
 		return out;
 	}, []);
+
+	// Settings
+	const [includeNFT, setIncludeNFT] = useState(false);
+	const [useOslo, setUseOslo] = useState(false);
+
+	// Dust controls
+	const [dustMode, setDustMode] = useState<DustMode>("off");
+	const [dustThreshold, setDustThreshold] = useState<string>("0.001");
+	const [dustInterval, setDustInterval] = useState<DustInterval>("week");
+
+	// Overrides
+	const [overrides, setOverrides] = useState<OverrideMaps>({
+		symbols: {},
+		markets: {}
+	});
+
+	const buildCsvFromRows = useCallback(
+		(inputRows: KSPreviewRow[], currentOverrides: OverrideMaps) => {
+			const tokenMapRaw = currentOverrides?.symbols ?? {};
+			const marketMap = currentOverrides?.markets ?? {};
+			const normTokenMap: Record<string, string> = {};
+			for (const [from, to] of Object.entries(tokenMapRaw)) {
+				const fromKey = currencyCode(from);
+				const toVal = currencyCode(to);
+				if (fromKey && toVal) normTokenMap[fromKey] = toVal;
+			}
+
+			const rowsForCsv: KSRow[] = inputRows.map((r) => {
+				const inn = r["Inn-Valuta"];
+				const ut = r["Ut-Valuta"];
+				const mkt = r.Marked;
+				const innNew = inn && normTokenMap[inn] ? normTokenMap[inn] : inn;
+				const utNew = ut && normTokenMap[ut] ? normTokenMap[ut] : ut;
+				const mktNew =
+					mkt && marketMap[mkt] !== undefined ? marketMap[mkt]! : mkt;
+
+				return {
+					Tidspunkt: r.Tidspunkt,
+					Type: r.Type,
+					Inn: r.Inn,
+					"Inn-Valuta": innNew,
+					Ut: r.Ut,
+					"Ut-Valuta": utNew,
+					Gebyr: r.Gebyr,
+					"Gebyr-Valuta": r["Gebyr-Valuta"],
+					Marked: mktNew,
+					Notat: r.Notat
+				};
+			});
+
+			return rowsToCSV(rowsForCsv);
+		},
+		[]
+	);
+
+	function payloadKeyFromPayload(payload: Payload) {
+		return JSON.stringify({
+			address: payload.address,
+			fromISO: payload.fromISO ?? null,
+			toISO: payload.toISO ?? null,
+			includeNFT: payload.includeNFT ?? false,
+			useOslo: payload.useOslo ?? false,
+			dustMode: payload.dustMode ?? "off",
+			dustThreshold: payload.dustThreshold ?? null,
+			dustInterval: payload.dustInterval ?? "day"
+		});
+	}
+	function payloadKeyFromVersion(v: CsvVersion) {
+		return JSON.stringify({
+			address: v.address,
+			fromISO: v.from_iso ?? null,
+			toISO: v.to_iso ?? null,
+			includeNFT: v.include_nft ?? false,
+			useOslo: v.use_oslo ?? false,
+			dustMode: v.dust_mode ?? "off",
+			dustThreshold:
+				v.dust_threshold !== undefined && v.dust_threshold !== null
+					? String(v.dust_threshold)
+					: null,
+			dustInterval: v.dust_interval ?? "day"
+		});
+	}
+
+	const fetchCsvVersionsForAddress = useCallback(
+		async (
+			addr: string,
+			opts?: {
+				payload?: Payload;
+			}
+		) => {
+			if (!isAuthed || !isProbablySolanaAddress(addr)) {
+				setCsvVersions([]);
+				setCsvVersionId(null);
+				return;
+			}
+			const res = await fetch(
+				`/api/csvs?address=${encodeURIComponent(addr)}&format=list`
+			);
+			if (!res.ok) return;
+			const j = await res.json();
+			const list: CsvVersion[] = Array.isArray(j?.data) ? j.data : [];
+			setCsvVersions(list);
+			setCsvVersionId(list[0]?.id ?? null);
+
+		},
+		[isAuthed]
+	);
+
+	useEffect(() => {
+		let active = true;
+		(async () => {
+			const addr = address.trim();
+			if (!active) return;
+			await fetchCsvVersionsForAddress(addr);
+		})().catch(() => undefined);
+		return () => {
+			active = false;
+		};
+	}, [address, isAuthed, fetchCsvVersionsForAddress]);
+
+	const saveGeneratedCsv = useCallback(
+		async (
+			csvText: string,
+			partialOverride?: boolean,
+			scanSessionOverride?: string | null
+		) => {
+			if (!isAuthed || !lastPayloadRef.current) return;
+			const payload = lastPayloadRef.current;
+			const counts = lastCountsRef.current;
+			const rawCount = counts?.rawCount ?? (rows ? rows.length : undefined);
+			const processedCount =
+				counts?.processedCount ?? (rows ? rows.length : undefined);
+			const partialValue =
+				typeof partialOverride === "boolean" ? partialOverride : partialResult;
+			await fetch("/api/csvs", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					address: payload.address,
+					label: payload.walletName ?? null,
+					csv: csvText,
+					rawCount,
+					processedCount,
+					partial: partialValue,
+					scanSessionId:
+						scanSessionOverride !== undefined
+							? scanSessionOverride
+							: scanSessionId,
+					fromISO: payload.fromISO ?? null,
+					toISO: payload.toISO ?? null,
+					includeNFT: payload.includeNFT ?? false,
+					useOslo: payload.useOslo ?? false,
+					dustMode: payload.dustMode ?? null,
+					dustThreshold: payload.dustThreshold ?? null,
+					dustInterval: payload.dustInterval ?? null
+				})
+			}).catch(() => undefined);
+			await fetchCsvVersionsForAddress(payload.address, { payload });
+		},
+		[isAuthed, partialResult, rows, scanSessionId, fetchCsvVersionsForAddress]
+	);
 
 	const loadCsvPreview = useCallback(
 		async (query: string, opts?: { skipDebug?: boolean }) => {
@@ -556,41 +1044,29 @@ function CSVGeneratorPageInner() {
 							debugMap.set(sig, row.debugTx);
 						}
 						const meta: Partial<KSPreviewRow> = {};
-						if (row.signer) meta.signer = row.signer;
-						const recipient =
-							(row as any).recipient ??
-							(row as any).mottaker ??
-							(row as any).Mottaker ??
-							(row as any).receiver ??
-							(row as any).Receiver ??
-							(row as any).to ??
-							(row as any).To ??
-							(row as any).til ??
-							(row as any).Til;
-						if (recipient) (meta as any).recipient = recipient;
+						const rowAny = row as any;
 						const sender =
-							(row as any).sender ??
-							(row as any).Sender ??
-							(row as any).avsender ??
-							(row as any).Avsender ??
-							(row as any).fra ??
-							(row as any).Fra ??
-							(row as any).from ??
-							(row as any).From;
-						if (sender) (meta as any).sender = sender;
+							rowAny.avsender ??
+							rowAny.sender ??
+							rowAny.Avsender ??
+							rowAny.fra ??
+							rowAny.Fra ??
+							rowAny.from ??
+							rowAny.From;
+						if (sender) meta.sender = sender;
 						const programId =
-							(row as any).programId ??
-							(row as any).program_id ??
-							(row as any).ProgramId ??
-							(row as any).program ??
-							(row as any).Program;
-						if (programId) (meta as any).programId = programId;
+							rowAny.programId ??
+							rowAny.program_id ??
+							rowAny.ProgramId ??
+							rowAny.program ??
+							rowAny.Program;
+						if (programId) meta.programId = programId;
 						const programName =
-							(row as any).programName ??
-							(row as any).program_name ??
-							(row as any).ProgramName;
-						if (programName) (meta as any).programName = programName;
-						if (row.signature) (meta as any).signature = row.signature;
+							rowAny.programName ??
+							rowAny.program_name ??
+							rowAny.ProgramName;
+						if (programName) meta.programName = programName;
+						if (row.signature) meta.signature = row.signature;
 						if (Object.keys(meta).length > 0) metaMap.set(sig, meta);
 					}
 					if (debugMap.size > 0 || metaMap.size > 0) {
@@ -614,209 +1090,17 @@ function CSVGeneratorPageInner() {
 				// Ignore debug rehydration failures.
 			}
 		},
-		[address, extractSigFromNotat, parseCsvToRows]
-	);
-
-	// Settings
-	const [includeNFT, setIncludeNFT] = useState(false);
-	const [useOslo, setUseOslo] = useState(false);
-
-	// Dust controls
-	const [dustMode, setDustMode] = useState<DustMode>("off");
-	const [dustThreshold, setDustThreshold] = useState<string>("0.001");
-	const [dustInterval, setDustInterval] = useState<DustInterval>("week");
-
-	// Overrides
-	const [overrides, setOverrides] = useState<OverrideMaps>({
-		symbols: {},
-		markets: {}
-	});
-
-	const buildCsvFromRows = useCallback(
-		(inputRows: KSPreviewRow[], currentOverrides: OverrideMaps) => {
-			const tokenMapRaw = currentOverrides?.symbols ?? {};
-			const marketMap = currentOverrides?.markets ?? {};
-			const normTokenMap: Record<string, string> = {};
-			for (const [from, to] of Object.entries(tokenMapRaw)) {
-				const fromKey = currencyCode(from);
-				const toVal = currencyCode(to);
-				if (fromKey && toVal) normTokenMap[fromKey] = toVal;
-			}
-
-			const rowsForCsv: KSRow[] = inputRows.map((r) => {
-				const inn = r["Inn-Valuta"];
-				const ut = r["Ut-Valuta"];
-				const mkt = r.Marked;
-				const innNew = inn && normTokenMap[inn] ? normTokenMap[inn] : inn;
-				const utNew = ut && normTokenMap[ut] ? normTokenMap[ut] : ut;
-				const mktNew =
-					mkt && marketMap[mkt] !== undefined ? marketMap[mkt]! : mkt;
-
-				return {
-					Tidspunkt: r.Tidspunkt,
-					Type: r.Type,
-					Inn: r.Inn,
-					"Inn-Valuta": innNew,
-					Ut: r.Ut,
-					"Ut-Valuta": utNew,
-					Gebyr: r.Gebyr,
-					"Gebyr-Valuta": r["Gebyr-Valuta"],
-					Marked: mktNew,
-					Notat: r.Notat
-				};
-			});
-
-			return rowsToCSV(rowsForCsv);
-		},
-		[]
-	);
-
-	function payloadKeyFromPayload(payload: Payload) {
-		return JSON.stringify({
-			address: payload.address,
-			fromISO: payload.fromISO ?? null,
-			toISO: payload.toISO ?? null,
-			includeNFT: payload.includeNFT ?? false,
-			useOslo: payload.useOslo ?? false,
-			dustMode: payload.dustMode ?? "off",
-			dustThreshold: payload.dustThreshold ?? null,
-			dustInterval: payload.dustInterval ?? "day"
-		});
-	}
-	function payloadKeyFromVersion(v: CsvVersion) {
-		return JSON.stringify({
-			address: v.address,
-			fromISO: v.from_iso ?? null,
-			toISO: v.to_iso ?? null,
-			includeNFT: v.include_nft ?? false,
-			useOslo: v.use_oslo ?? false,
-			dustMode: v.dust_mode ?? "off",
-			dustThreshold:
-				v.dust_threshold !== undefined && v.dust_threshold !== null
-					? String(v.dust_threshold)
-					: null,
-			dustInterval: v.dust_interval ?? "day"
-		});
-	}
-
-	const fetchCsvVersionsForAddress = useCallback(
-		async (
-			addr: string,
-			opts?: {
-				payload?: Payload;
-			}
-		) => {
-			if (!isAuthed || !isProbablySolanaAddress(addr)) {
-				setCsvVersions([]);
-				setCsvVersionId(null);
-				setCsvNotice(null);
-				prevCsvVersionsRef.current = [];
-				return;
-			}
-			const res = await fetch(
-				`/api/csvs?address=${encodeURIComponent(addr)}&format=list`
-			);
-			if (!res.ok) return;
-			const j = await res.json();
-			const list: CsvVersion[] = Array.isArray(j?.data) ? j.data : [];
-			setCsvVersions(list);
-			setCsvVersionId(list[0]?.id ?? null);
-
-			if (opts?.payload) {
-				const key = payloadKeyFromPayload(opts.payload);
-				const prevList = prevCsvVersionsRef.current;
-				const prevMatch = prevList.find(
-					(v) => payloadKeyFromVersion(v) === key
-				);
-				const nextMatch = list.find(
-					(v) => payloadKeyFromVersion(v) === key
-				);
-				if (!prevMatch && nextMatch) {
-					setCsvNotice(
-						tr({
-							no: "Ny CSV generert for denne lommeboken.",
-							en: "New CSV generated for this wallet."
-						})
-					);
-				} else if (prevMatch?.partial && nextMatch && !nextMatch.partial) {
-					setCsvNotice(
-						tr({
-							no: "Ufullstendig skann fullført.",
-							en: "Incomplete scan completed."
-						})
-					);
-				} else if (nextMatch) {
-					setCsvNotice(
-						tr({
-							no: "CSV oppdatert for denne lommeboken.",
-							en: "CSV updated for this wallet."
-						})
-					);
-				}
-			} else {
-				setCsvNotice(null);
-			}
-
-			prevCsvVersionsRef.current = list;
-		},
-		[isAuthed, tr]
-	);
-
-	useEffect(() => {
-		let active = true;
-		(async () => {
-			const addr = address.trim();
-			if (!active) return;
-			await fetchCsvVersionsForAddress(addr);
-		})().catch(() => undefined);
-		return () => {
-			active = false;
-		};
-	}, [address, isAuthed, fetchCsvVersionsForAddress]);
-
-	const saveGeneratedCsv = useCallback(
-		async (
-			csvText: string,
-			partialOverride?: boolean,
-			scanSessionOverride?: string | null
-		) => {
-			if (!isAuthed || !lastPayloadRef.current) return;
-			const payload = lastPayloadRef.current;
-			const counts = lastCountsRef.current;
-			const rawCount = counts?.rawCount ?? (rows ? rows.length : undefined);
-			const processedCount =
-				counts?.processedCount ?? (rows ? rows.length : undefined);
-			const partialValue =
-				typeof partialOverride === "boolean" ? partialOverride : partialResult;
-			await fetch("/api/csvs", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					address: payload.address,
-					label: payload.walletName ?? null,
-					csv: csvText,
-					rawCount,
-					processedCount,
-					partial: partialValue,
-					scanSessionId:
-						scanSessionOverride !== undefined
-							? scanSessionOverride
-							: scanSessionId,
-					fromISO: payload.fromISO ?? null,
-					toISO: payload.toISO ?? null,
-					includeNFT: payload.includeNFT ?? false,
-					useOslo: payload.useOslo ?? false,
-					dustMode: payload.dustMode ?? null,
-					dustThreshold: payload.dustThreshold ?? null,
-					dustInterval: payload.dustInterval ?? null
-				})
-			}).catch(() => undefined);
-			await fetchCsvVersionsForAddress(payload.address, { payload });
-		},
-		[isAuthed, partialResult, rows, scanSessionId, fetchCsvVersionsForAddress]
+		[
+			address,
+			extractSigFromNotat,
+			parseCsvToRows,
+			saveGeneratedCsv,
+			setScanSessionIdSafe
+		]
 	);
 
 	const previewContainerRef = useRef<HTMLDivElement | null>(null);
+	const holdingsContainerRef = useRef<HTMLDivElement | null>(null);
 
 	const addrInputRef = useRef<HTMLInputElement | null>(null);
 	const canOpenExplorer = address.trim().length > 0;
@@ -933,7 +1217,7 @@ function CSVGeneratorPageInner() {
 
 	// Calendar popover
 	const [calOpen, setCalOpen] = useState(false);
-	const [calMonth, setCalMonth] = useState<Date | undefined>(undefined);
+	const [calMonth, setCalMonth] = useState<Date>(() => new Date());
 	const today = new Date();
 
 	// Load auth + history on mount
@@ -1098,7 +1382,7 @@ function CSVGeneratorPageInner() {
 		return `"${String(s ?? "").replace(/"/g, '\\"')}"`;
 	}
 
-	async function startScan(payload: Payload) {
+	const startScan = useCallback(async (payload: Payload) => {
 		if (!isAuthed) {
 			setError(
 				tr({
@@ -1402,7 +1686,33 @@ function CSVGeneratorPageInner() {
 			setLoading(false);
 			abortRef.current = null;
 		}
-	}
+	}, [
+		isAuthed,
+		tr,
+		clearLog,
+		normalizeCreditError,
+		refreshBilling,
+		billingStatus,
+		payloadKeyFromPayload,
+		getScanSessionId,
+		setScanSessionIdSafe,
+		rememberAddress,
+		buildCsvFromRows,
+		overrides,
+		saveGeneratedCsv,
+		formatDateRange,
+		q,
+		pushLog,
+		setError,
+		setErrorCta,
+		setCreditsSpent,
+		setPartialResult,
+		setOk,
+		setRows,
+		setLoading,
+		setLogOpen,
+		localizeStreamLog
+	]);
 
 	/* ========== Streamed preview with progress + cancel ========== */
 	async function onCheckWallet(e: React.FormEvent<HTMLFormElement>) {
@@ -1543,10 +1853,25 @@ function CSVGeneratorPageInner() {
 		[csvVersions, csvVersionId]
 	);
 
+	const scrollToElementWithOffset = useCallback((element: HTMLElement | null) => {
+		if (!element) return;
+		const headerEl = document.querySelector("header.s2ks-header");
+		const navbarHeight = headerEl ? (headerEl as HTMLElement).offsetHeight : 80; // Fallback to ~80px
+		const elementTop = element.getBoundingClientRect().top + window.scrollY;
+		const scrollTop = elementTop - navbarHeight - 16; // 16px extra padding
+		window.scrollTo({ top: Math.max(0, scrollTop), behavior: "smooth" });
+	}, []);
+
 	const openSelectedCsv = useCallback(async () => {
 		if (!csvVersionId) return;
 		await loadCsvPreview(`id=${encodeURIComponent(csvVersionId)}`);
-	}, [csvVersionId, loadCsvPreview]);
+		// Scroll to holdings first (if available), then preview, accounting for navbar
+		if (holdingsContainerRef.current) {
+			scrollToElementWithOffset(holdingsContainerRef.current);
+		} else if (previewContainerRef.current) {
+			scrollToElementWithOffset(previewContainerRef.current);
+		}
+	}, [csvVersionId, loadCsvPreview, scrollToElementWithOffset]);
 
 	const continueSelectedCsv = useCallback(async () => {
 		if (!csvVersionId) return;
@@ -1573,8 +1898,8 @@ function CSVGeneratorPageInner() {
 							</h1>
 							<p className="mt-2 text-sm sm:text-base text-slate-600 dark:text-slate-300">
 								{tr({
-									no: "Lim inn en Solana addresse og velg tidsrom for å sjekke historikken.",
-									en: "Paste a Solana address and select a time range to check the history."
+									no: "Lim inn en Solana addresse og velg tidsrom for å sjekke historikken og generere en CSV kompatibel med Kryptosekken.",
+									en: "Paste a Solana address and select a time range to check the history and generate a CSV compatible with Kryptosekken."
 								})}
 							</p>
 						</div>
@@ -1839,7 +2164,7 @@ function CSVGeneratorPageInner() {
 								</div>
 							</div>
 
-							{/* Timespan (dropdown calendar + presets) */}
+							{/* Timespan (modern date picker) */}
 							<div className="mt-6">
 								<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
 									<label className="block text-sm font-medium text-slate-800 dark:text-slate-200">
@@ -1853,9 +2178,9 @@ function CSVGeneratorPageInner() {
 									</div>
 								</div>
 
-								<div className="mt-2 flex flex-wrap items-center gap-3">
-									{/* Trigger */}
-									<div className="relative w-full sm:w-auto">
+								<div className="mt-2 space-y-2">
+									{/* Date display & calendar trigger */}
+									<div className="relative">
 										<button
 											type="button"
 											onClick={() => {
@@ -1863,112 +2188,133 @@ function CSVGeneratorPageInner() {
 												setCalMonth(range?.to ?? new Date());
 											}}
 											aria-expanded={calOpen}
-											className="inline-flex w-full sm:w-auto items-center justify-between sm:justify-start gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10"
+											className="group w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-800/50 shadow-sm dark:shadow-black/25 hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700 transition-all duration-200"
 										>
-											<span className="inline-flex items-center gap-2">
-												<FiCalendar className="h-4 w-4 text-slate-500 dark:text-slate-400" />
-												{formatRangeLabel(tr, locale, range)}
-											</span>
-											<FiChevronDown className="h-4 w-4 text-slate-400" />
+											<div className="flex items-center justify-between px-3 py-2.5 sm:px-4 sm:py-3">
+												<div className="flex items-center gap-3">
+													<div className="rounded-lg bg-indigo-100 dark:bg-indigo-500/20 p-2 group-hover:bg-indigo-200 dark:group-hover:bg-indigo-500/30 transition-colors">
+														<FiCalendar className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+													</div>
+													<div className="text-left">
+														<div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+															{tr({ no: "Valgt periode", en: "Selected period" })}
+														</div>
+														<div className="text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-100 mt-0.5">
+															{formatRangeLabel(tr, locale, range)}
+														</div>
+													</div>
+												</div>
+												<FiChevronDown className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${calOpen ? "rotate-180" : ""}`} />
+											</div>
 										</button>
 
-										{/* Popover dropdown (same on mobile & desktop) */}
+										{/* Calendar dropdown */}
 										{calOpen && (
-											<div className="absolute z-30 mt-2 w-full sm:w-[360px] max-w-[92vw] rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 shadow-xl">
-												{/* Legend */}
-												<div className="flex items-center justify-between px-1 pb-2">
-													<button
-														type="button"
-														className="text-[11px] text-slate-600 dark:text-slate-300"
-														onClick={() =>
-															range?.from && setCalMonth(range.from)
-														}
-														title={tr({
-															no: "Gå til Fra-måned",
-															en: "Go to From month"
-														})}
-													>
-														<span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-400/10 px-2 py-0.5 hover:bg-indigo-100 dark:hover:bg-indigo-400/20">
-															<span className="h-2 w-2 rounded-full bg-indigo-600" />
-															{tr({ no: "Fra", en: "From" })}:{" "}
-															<b>{nice(range?.from)}</b>
-														</span>
-													</button>
-													<button
-														type="button"
-														className="text-[11px] text-slate-600 dark:text-slate-300"
-														onClick={() => range?.to && setCalMonth(range.to)}
-														title={tr({
-															no: "Gå til Til-måned",
-															en: "Go to To month"
-														})}
-													>
-														<span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-400/10 px-2 py-0.5 hover:bg-emerald-100 dark:hover:bg-emerald-400/20">
-															<span className="h-2 w-2 rounded-full bg-emerald-600" />
-															{tr({ no: "Til", en: "To" })}:{" "}
-															<b>{nice(range?.to)}</b>
-														</span>
-													</button>
-												</div>
-
-												<DayPicker
-													mode="range"
-													selected={range}
-													month={calMonth}
-													onMonthChange={setCalMonth}
-													onSelect={(r) => {
-														const now = new Date();
-														const bounded =
-															r?.to && r.to > now
-																? { ...r, to: now }
-																: r || undefined;
-														setRange(bounded);
-														if (bounded?.from && bounded?.to) setCalOpen(false);
-													}}
-													numberOfMonths={1}
-													showOutsideDays
-													toDate={today}
-													className="rdp"
-													modifiersClassNames={{
-														range_start:
-															"bg-indigo-600 text-white rounded-l-full",
-														range_middle:
-															"bg-indigo-100 text-indigo-900 dark:bg-indigo-400/20 dark:text-indigo-200",
-														range_end:
-															"bg-emerald-600 text-white rounded-r-full",
-														selected: "font-semibold",
-														today: "ring-1 ring-indigo-500"
-													}}
-												/>
-
-												<div className="mt-2 flex justify-end gap-2">
+											<div className="absolute z-30 mt-1.5 w-full sm:w-[320px] max-w-[min(92vw,320px)] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+												{/* Header with close button */}
+												<div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 px-3 py-2">
+													<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+														{tr({ no: "Velg tidsrom", en: "Select date range" })}
+													</div>
 													<button
 														type="button"
 														onClick={() => setCalOpen(false)}
-														className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
+														className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+														aria-label={tr({ no: "Lukk", en: "Close" })}
 													>
-														{tr({ no: "Lukk", en: "Close" })}
+														<FiX className="h-3.5 w-3.5" />
 													</button>
 												</div>
+
+												{/* Selected range badges */}
+												{(range?.from || range?.to) && (
+													<div className="flex items-center justify-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800/50">
+														<button
+															type="button"
+															className="text-xs"
+															onClick={() =>
+																range?.from && setCalMonth(range.from)
+															}
+															title={tr({
+																no: "Gå til Fra-måned",
+																en: "Go to From month"
+															})}
+														>
+															<span className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-500/20 px-2.5 py-1 hover:bg-indigo-200 dark:hover:bg-indigo-500/30 transition-colors">
+																<FiClock className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+																<span className="font-medium text-indigo-900 dark:text-indigo-200">
+																	{tr({ no: "Fra", en: "From" })}
+																</span>
+																<span className="font-semibold text-indigo-700 dark:text-indigo-300">
+																	{nice(range?.from)}
+																</span>
+															</span>
+														</button>
+														<div className="text-slate-400">→</div>
+														<button
+															type="button"
+															className="text-xs"
+															onClick={() => range?.to && setCalMonth(range.to)}
+															title={tr({
+																no: "Gå til Til-måned",
+																en: "Go to To month"
+															})}
+														>
+															<span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 px-2.5 py-1 hover:bg-emerald-200 dark:hover:bg-emerald-500/30 transition-colors">
+																<FiClock className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+																<span className="font-medium text-emerald-900 dark:text-emerald-200">
+																	{tr({ no: "Til", en: "To" })}
+																</span>
+																<span className="font-semibold text-emerald-700 dark:text-emerald-300">
+																	{nice(range?.to)}
+																</span>
+															</span>
+														</button>
+													</div>
+												)}
+
+												{/* Custom Calendar */}
+												<CustomCalendar
+													range={range}
+													onRangeChange={(newRange) => {
+														const now = new Date();
+														const bounded =
+															newRange?.to && newRange.to > now
+																? { ...newRange, to: now }
+																: newRange;
+														setRange(bounded);
+													}}
+													onConfirm={() => setCalOpen(false)}
+													hasSelection={!!(range?.from && range?.to)}
+													calMonth={calMonth}
+													setCalMonth={setCalMonth}
+													maxDate={today}
+												/>
 											</div>
 										)}
 									</div>
 
-									{/* Presets (wrap on small screens) */}
-									<div className="flex flex-wrap gap-2 text-xs">
+									{/* Quick presets - single row on desktop */}
+									<div className="flex flex-wrap gap-1.5">
 										<button
 											type="button"
 											onClick={() => presetDays(7)}
-											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
+											className="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-150 hover:shadow-sm"
 										>
-											{tr({ no: "Siste 7 dager", en: "Last 7 days" })}
+											<div className="flex items-center justify-center gap-2">
+												<FiClock className="h-3 w-3 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400" />
+												{tr({ no: "7 dager", en: "7 days" })}
+											</div>
 										</button>
 										<button
 											type="button"
 											onClick={() => presetDays(30)}
-											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
+											className="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-150 hover:shadow-sm"
 										>
-											{tr({ no: "Siste 30 dager", en: "Last 30 days" })}
+											<div className="flex items-center justify-center gap-2">
+												<FiClock className="h-3 w-3 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400" />
+												{tr({ no: "30 dager", en: "30 days" })}
+											</div>
 										</button>
 										<button
 											type="button"
@@ -1977,13 +2323,12 @@ function CSVGeneratorPageInner() {
 												no: "Hittil i år — Fra 1. januar til i dag",
 												en: "Year to date — From Jan 1 to today"
 											})}
-											aria-label={tr({
-												no: "Hittil i år (Året så langt)",
-												en: "Year to date"
-											})}
-											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
+											className="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-150 hover:shadow-sm"
 										>
-											{tr({ no: "Hittil i år", en: "Year to date" })}
+											<div className="flex items-center justify-center gap-2">
+												<FiActivity className="h-3 w-3 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400" />
+												{tr({ no: "I år", en: "YTD" })}
+											</div>
 										</button>
 										<button
 											type="button"
@@ -1992,87 +2337,116 @@ function CSVGeneratorPageInner() {
 												no: "Hele fjoråret — Fra 1. januar til 31. desember i fjor",
 												en: "Last year — From Jan 1 to Dec 31"
 											})}
-											aria-label={tr({ no: "Hele fjoråret", en: "Last year" })}
-											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
+											className="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-150 hover:shadow-sm"
 										>
-											{tr({ no: "Hele fjoråret", en: "Last year" })}
+											<div className="flex items-center justify-center gap-2">
+												<FiCalendar className="h-3 w-3 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400" />
+												{tr({ no: "Fjoråret", en: "Last year" })}
+											</div>
 										</button>
 										<button
 											type="button"
 											onClick={clearDates}
-											className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
+											className="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 hover:border-red-300 dark:hover:border-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-700 dark:hover:text-red-300 transition-all duration-150 hover:shadow-sm"
 										>
-											{tr({ no: "Nullstill", en: "Reset" })}
+											<div className="flex items-center justify-center gap-2">
+												<FiX className="h-3 w-3" />
+												{tr({ no: "Nullstill", en: "Clear" })}
+											</div>
 										</button>
 									</div>
 								</div>
 
-								{/* Tidssone toggle */}
-								<div className="mt-3 inline-flex flex-wrap items-center gap-3">
-									<Switch
-										checked={useOslo}
-										onChange={setUseOslo}
-										label={tr({
-											no: "Norsk tid (Europe/Oslo)",
-											en: "Norway time (Europe/Oslo)"
-										})}
-									/>
-									<span className="text-sm font-medium text-slate-800 dark:text-slate-200">
-										{tr({
-											no: "Norsk tid (Europe/Oslo)",
-											en: "Norway time (Europe/Oslo)"
-										})}
-									</span>
-									<span className="text-[11px] text-slate-500 dark:text-slate-400">
-										{tr({
-											no: "CSV tidsstempler skrives i ",
-											en: "CSV timestamps are written in "
-										})}
-										{useOslo
-											? tr({
-													no: "Norsk tid (UTC+01:00 Europe/Oslo)",
-													en: "Norway time (Europe/Oslo)"
-												})
-											: "UTC"}
-										.
-									</span>
+								{/* Timezone toggle */}
+								<div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-800/50 p-4">
+									<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+										<div className="flex items-center gap-3">
+											<div className="rounded-xl bg-indigo-100 dark:bg-indigo-500/20 p-2.5">
+												<FiClock className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+											</div>
+											<div>
+												<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+													{tr({
+														no: "Tidssone for CSV",
+														en: "CSV timezone"
+													})}
+												</div>
+												<div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+													{tr({
+														no: "Tidsstempler skrives som ",
+														en: "Timestamps written as "
+													})}
+													<span className="font-semibold text-slate-700 dark:text-slate-300">
+														{useOslo
+															? tr({
+																	no: "Europe/Oslo (UTC+01:00)",
+																	en: "Europe/Oslo"
+															  })
+															: "UTC"}
+													</span>
+												</div>
+											</div>
+										</div>
+										<Switch
+											checked={useOslo}
+											onChange={setUseOslo}
+											label={tr({
+												no: "Bruk norsk tid",
+												en: "Use Norway time"
+											})}
+										/>
+									</div>
 								</div>
 							</div>
 
 							{/* NFT section */}
-							<div className="mt-6 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-white/5 p-4">
-								<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-									<div className="inline-flex items-center gap-3">
-										<Switch
-											checked={includeNFT}
-											onChange={setIncludeNFT}
-											label={tr({
-												no: "Inkluder NFT-overføringer",
-												en: "Include NFT transfers"
-											})}
-										/>
-										<span className="text-sm font-medium text-slate-800 dark:text-slate-200">
-											{tr({
-												no: "Inkluder NFT-overføringer",
-												en: "Include NFT transfers"
-											})}
-										</span>
+							<div className="mt-4 rounded-2xl border border-purple-200 dark:border-purple-700/50 bg-gradient-to-br from-purple-50 to-white dark:from-purple-900/20 dark:to-slate-800/50 p-4">
+								<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+									<div className="flex items-center gap-3">
+										<div className="rounded-xl bg-purple-100 dark:bg-purple-500/20 p-2.5">
+											<FiImage className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+										</div>
+										<div>
+											<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+												{tr({
+													no: "NFT-overføringer",
+													en: "NFT transfers"
+												})}
+											</div>
+											<div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+												{tr({
+													no: "Ingen prising, kun overføringer",
+													en: "No pricing, transfers only"
+												})}
+											</div>
+										</div>
 									</div>
-									<div className="text-[11px] text-slate-500 dark:text-slate-400">
-										{tr({
-											no: "Tar med bevegelser av NFT-er. (Ingen prising, kun overføringer.)",
-											en: "Includes NFT movements. (No pricing, transfers only.)"
+									<Switch
+										checked={includeNFT}
+										onChange={setIncludeNFT}
+										label={tr({
+											no: "Inkluder NFT-er",
+											en: "Include NFTs"
 										})}
-									</div>
+									/>
 								</div>
 							</div>
 
 							{/* Dust section */}
-							<div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
-								<div className="mb-3 flex items-center justify-between">
-									<div className="inline-flex items-center gap-2 text-sm font-medium text-slate-800 dark:text-slate-200">
-										<MdOutlineCleaningServices className="h-4 w-4" />
-										{tr({ no: "Støvtransaksjoner", en: "Dust transactions" })}
+							<div className="mt-4 rounded-2xl border border-emerald-200 dark:border-emerald-700/50 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-900/20 dark:to-slate-800/50 p-5">
+								<div className="mb-4 flex items-center justify-between">
+									<div className="flex items-center gap-3">
+										<div className="rounded-xl bg-emerald-100 dark:bg-emerald-500/20 p-2.5">
+											<MdOutlineCleaningServices className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+										</div>
+										<div>
+											<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+												{tr({ no: "Støvtransaksjoner", en: "Dust transactions" })}
+											</div>
+											<div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+												{tr({ no: "Håndter små transaksjoner", en: "Handle small transactions" })}
+											</div>
+										</div>
 									</div>
 
 									<div className="relative group">
@@ -2152,7 +2526,7 @@ function CSVGeneratorPageInner() {
 													</div>
 												)
 											}
-											className="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 focus:outline-none"
+											className="rounded-lg p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
 										>
 											<FiInfo className="h-4 w-4" />
 										</button>
@@ -2232,8 +2606,8 @@ function CSVGeneratorPageInner() {
 
 								<div className="grid gap-3 sm:grid-cols-3">
 									{/* Mode */}
-									<div className="flex flex-col gap-1">
-										<label className="text-xs text-slate-600 dark:text-slate-400">
+									<div className="flex flex-col gap-1.5">
+										<label className="text-xs font-medium text-slate-600 dark:text-slate-400">
 											{tr({ no: "Modus", en: "Mode" })}
 										</label>
 										<StyledSelect
@@ -2275,17 +2649,17 @@ function CSVGeneratorPageInner() {
 
 									{/* Threshold */}
 									{dustMode !== "off" && (
-										<div className="flex flex-col gap-1">
-											<label className="text-xs text-slate-600 dark:text-slate-400">
-												{tr({ no: "Grense (beløp)", en: "Threshold (amount)" })}
-											</label>
-											<input
-												type="number"
-												step="0.001"
-												inputMode="decimal"
-												value={dustThreshold}
-												onChange={(e) => setDustThreshold(e.target.value)}
-												className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+											<div className="flex flex-col gap-1.5">
+												<label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+													{tr({ no: "Grense (beløp)", en: "Threshold (amount)" })}
+												</label>
+												<input
+													type="number"
+													step="0.001"
+													inputMode="decimal"
+													value={dustThreshold}
+													onChange={(e) => setDustThreshold(e.target.value)}
+													className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 dark:focus:ring-emerald-900/40 transition-all"
 												placeholder="0.001"
 											/>
 										</div>
@@ -2294,8 +2668,8 @@ function CSVGeneratorPageInner() {
 									{/* Interval — when aggregating */}
 									{(dustMode === "aggregate-period" ||
 										dustMode === "aggregate-signer") && (
-										<div className="flex flex-col gap-1">
-											<label className="text-xs text-slate-600 dark:text-slate-400">
+										<div className="flex flex-col gap-1.5">
+											<label className="text-xs font-medium text-slate-600 dark:text-slate-400">
 												{tr({ no: "Periode", en: "Period" })}
 											</label>
 											<StyledSelect
@@ -2333,73 +2707,68 @@ function CSVGeneratorPageInner() {
 
 								{/* Info text – specific per mode */}
 								{dustMode === "off" && (
-									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-										<b>{tr({ no: "Vis alle", en: "Show all" })}:</b>{" "}
+									<div className="mt-3 rounded-xl bg-slate-100 dark:bg-slate-800/50 px-3 py-2.5 text-xs text-slate-600 dark:text-slate-400">
+										<span className="font-semibold text-slate-700 dark:text-slate-300">{tr({ no: "Vis alle", en: "Show all" })}:</span>{" "}
 										{tr({
 											no: "Ingen støvbehandling.",
 											en: "No dust processing."
 										})}
-									</p>
+									</div>
 								)}
 								{dustMode === "remove" && (
-									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-										<b>{tr({ no: "Skjul", en: "Hide" })}:</b>{" "}
+									<div className="mt-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 px-3 py-2.5 text-xs text-amber-900 dark:text-amber-200">
+										<span className="font-semibold">{tr({ no: "Skjul", en: "Hide" })}:</span>{" "}
 										{tr({
 											no: "Filtrerer vekk alle overføringer under grensen.",
 											en: "Filters out all transfers below the threshold."
 										})}{" "}
-										<span className="text-amber-700">
+										<span className="font-semibold">
 											({tr({ no: "Ikke anbefalt", en: "Not recommended" })})
 										</span>
-									</p>
+									</div>
 								)}
 								{dustMode === "aggregate-signer" && (
-									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-										<b>
+									<div className="mt-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700/50 px-3 py-2.5 text-xs text-emerald-900 dark:text-emerald-200">
+										<span className="font-semibold">
 											{tr({
 												no: "Slå sammen fra samme sender",
 												en: "Aggregate by sender"
 											})}
 											:
-										</b>{" "}
+										</span>{" "}
 										{tr({ no: "Slår sammen små ", en: "Aggregates small " })}
-										<code>Overføring-Inn</code> og <code>Overføring-Ut</code>{" "}
-										hver for seg fra hver{" "}
+										<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">Overføring-Inn</code> og <code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">Overføring-Ut</code>{" "}
+										fra hver{" "}
 										<i>{tr({ no: "signer-adresse", en: "signer address" })}</i>{" "}
 										{tr({
 											no: "per ",
 											en: "per "
 										})}
-										<b>
+										<span className="font-semibold">
 											{tr({
-												no: "per valgt periode",
-												en: "per selected period"
+												no: "valgt periode",
+												en: "selected period"
 											})}
-										</b>
-										.
-										{tr({
-											no: " Notatet viser hvem som sendte.",
-											en: " The note shows who sent it."
-										})}
-									</p>
+										</span>.
+									</div>
 								)}
 								{dustMode === "aggregate-period" && (
-									<p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-										<b>
+									<div className="mt-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700/50 px-3 py-2.5 text-xs text-emerald-900 dark:text-emerald-200">
+										<span className="font-semibold">
 											{tr({
 												no: "Slå sammen periodisk",
 												en: "Aggregate by period"
 											})}
 											:
-										</b>{" "}
+										</span>{" "}
 										{tr({ no: "Slår sammen små ", en: "Aggregates small " })}
-										<code>Overføring-Inn</code> og <code>Overføring-Ut</code>{" "}
-										hver for seg per valgt periode
+										<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">Overføring-Inn</code> og <code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">Overføring-Ut</code>{" "}
+										per valgt periode
 										{tr({
 											no: " (uavhengig av sender).",
 											en: " (regardless of sender)."
 										})}
-									</p>
+									</div>
 								)}
 							</div>
 
@@ -2432,7 +2801,7 @@ function CSVGeneratorPageInner() {
 									onClick={onReset}
 									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] w-full sm:w-auto"
 								>
-									{tr({ no: "Nullstill", en: "Reset" })}
+									{tr({ no: "Nullstill", en: "Clear" })}
 								</button>
 
 								{error && !isCreditError && (
@@ -2660,17 +3029,17 @@ function CSVGeneratorPageInner() {
 
 				{/* ========= Card: Current holdings (now always shows even if empty/error) ========= */}
 				{address?.trim() && (
-					<div className="mt-6">
-						<WalletHoldings
-							address={address}
-							includeNFT={false}
-							enabled={ok}
-							onLogoMap={(logos) =>
-								setSharedLogos((prev) => ({ ...prev, ...logos }))
-							}
-						/>
-					</div>
-				)}
+				<div className="mt-6" ref={holdingsContainerRef}>
+					<WalletHoldings
+						address={address}
+						includeNFT={false}
+						enabled={ok}
+						onLogoMap={(logos) =>
+							setSharedLogos((prev) => ({ ...prev, ...logos }))
+						}
+					/>
+				</div>
+			)}
 
 				{/* ========= Card 2: Preview ========= */}
 				{hasRows && (

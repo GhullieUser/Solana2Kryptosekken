@@ -1,6 +1,3 @@
-/* --- Third-party styles (load before Tailwind) --- */
-@import "react-day-picker/dist/style.css";
-
 /* --- Tailwind v4 --- */
 @import "tailwindcss";
 @plugin "@tailwindcss/forms";
@@ -163,15 +160,6 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
 	-moz-appearance: textfield;
 	appearance: textfield;
-}
-
-/* react-day-picker size tweaks */
-.rdp {
-	--rdp-cell-size: 24px;
-	font-size: 12px;
-}
-.rdp-caption_label {
-	font-size: 12px;
 }
 
 /* Optional helper if you ever want CSS-only surface */

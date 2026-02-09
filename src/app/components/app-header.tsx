@@ -134,6 +134,11 @@ export default function AppHeader() {
 	const [freeRemaining, setFreeRemaining] = useState<number | null>(null);
 	const [animatedCredits, setAnimatedCredits] = useState<number | null>(null);
 	const creditsAnimRef = useRef<number | null>(null);
+	const animatedCreditsRef = useRef<number | null>(null);
+
+	useEffect(() => {
+		animatedCreditsRef.current = animatedCredits;
+	}, [animatedCredits]);
 
 	const refreshCredits = async (signal?: AbortSignal) => {
 		try {
@@ -257,9 +262,10 @@ export default function AppHeader() {
 			return;
 		}
 		const start =
-			animatedCredits === null || Number.isNaN(animatedCredits)
+			animatedCreditsRef.current === null ||
+			Number.isNaN(animatedCreditsRef.current)
 				? total
-				: animatedCredits;
+				: animatedCreditsRef.current;
 		const end = total;
 		if (start === end) {
 			setAnimatedCredits(end);
