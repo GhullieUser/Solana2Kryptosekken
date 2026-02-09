@@ -253,8 +253,8 @@ export default function LandingPage() {
 											</p>
 											<p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
 												{tr({
-													no: "Rediger felter basert på signer, sender, mottaker og program‑ID‑adresse.",
-													en: "Edit fields based on signer, sender, receiver, and program ID address."
+													no: "Rediger flere felter samtidig basert på signerer, sender, mottaker og program‑ID‑adresse.",
+													en: "Edit multiple fields at once based on signer, sender, receiver, and program ID address."
 												})}
 											</p>
 										</div>

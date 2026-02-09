@@ -539,6 +539,9 @@ function CSVGeneratorPageInner() {
 	} | null>(null);
 	const abortRef = useRef<AbortController | null>(null);
 	const loadedFromParamsRef = useRef(false);
+	const holdingsContainerRef = useRef<HTMLDivElement | null>(null);
+	const previewContainerRef = useRef<HTMLDivElement | null>(null);
+	const addrInputRef = useRef<HTMLInputElement | null>(null);
 
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -834,7 +837,7 @@ function CSVGeneratorPageInner() {
 		[]
 	);
 
-	function payloadKeyFromPayload(payload: Payload) {
+	const payloadKeyFromPayload = useCallback((payload: Payload) => {
 		return JSON.stringify({
 			address: payload.address.trim(),
 			fromISO: payload.fromISO ?? null,
@@ -848,7 +851,7 @@ function CSVGeneratorPageInner() {
 					: null,
 			dustInterval: payload.dustInterval ?? "day"
 		});
-	}
+	}, []);
 	function payloadKeyFromVersion(v: CsvVersion) {
 		return JSON.stringify({
 			address: (v.address || "").trim(),
@@ -866,12 +869,7 @@ function CSVGeneratorPageInner() {
 	}
 
 	const fetchCsvVersionsForAddress = useCallback(
-		async (
-			addr: string,
-			opts?: {
-				payload?: Payload;
-			}
-		) => {
+		async (addr: string) => {
 			if (!isAuthed || !isProbablySolanaAddress(addr)) {
 				setCsvVersions([]);
 				setCsvVersionId(null);
@@ -975,10 +973,21 @@ function CSVGeneratorPageInner() {
 					dustInterval: payload.dustInterval ?? null
 				})
 			}).catch(() => undefined);
-			await fetchCsvVersionsForAddress(payload.address, { payload });
+			await fetchCsvVersionsForAddress(payload.address);
 		},
 		[isAuthed, partialResult, rows, scanSessionId, fetchCsvVersionsForAddress]
 	);
+
+	const getScanSessionId = useCallback(() => {
+		if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+			return crypto.randomUUID();
+		}
+		return `scan_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+	}, []);
+
+	const q = useCallback((s?: string) => {
+		return `"${String(s ?? "").replace(/"/g, '\\"')}"`;
+	}, []);
 
 	const loadCsvPreview = useCallback(
 		async (query: string, opts?: { skipDebug?: boolean }) => {
@@ -1138,14 +1147,11 @@ function CSVGeneratorPageInner() {
 			extractSigFromNotat,
 			parseCsvToRows,
 			saveGeneratedCsv,
-			setScanSessionIdSafe
+			setScanSessionIdSafe,
+			getScanSessionId
 		]
 	);
 
-	const previewContainerRef = useRef<HTMLDivElement | null>(null);
-	const holdingsContainerRef = useRef<HTMLDivElement | null>(null);
-
-	const addrInputRef = useRef<HTMLInputElement | null>(null);
 	const canOpenExplorer = address.trim().length > 0;
 	const explorerHref = canOpenExplorer
 		? `https://solscan.io/address/${address.trim()}`
@@ -1322,26 +1328,30 @@ function CSVGeneratorPageInner() {
 	function saveHistory(list: AddressHistoryItem[]) {
 		setAddrHistory(list);
 	}
-	async function rememberAddress(addr: string) {
-		const a = addr.trim();
-		if (!isProbablySolanaAddress(a)) return; // avoid garbage
-		const existing = addrHistory.find((x) => x.address === a);
-		const label = walletName.trim() || existing?.label || null;
-		const next: AddressHistoryItem[] = [
-			{ address: a, label },
-			...addrHistory.filter((x) => x.address !== a)
-		].slice(0, HISTORY_MAX);
-		saveHistory(next);
-		if (!isAuthed) return;
-		await fetch("/api/addresses", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				address: a,
-				label
-			})
-		}).catch(() => undefined);
-	}
+	const rememberAddress = useCallback(
+		async (addr: string) => {
+			const a = addr.trim();
+			if (!isProbablySolanaAddress(a)) return; // avoid garbage
+			const existing = addrHistory.find((x) => x.address === a);
+			const label = walletName.trim() || existing?.label || null;
+			const next: AddressHistoryItem[] = [
+				{ address: a, label },
+				...addrHistory.filter((x) => x.address !== a)
+			].slice(0, HISTORY_MAX);
+			saveHistory(next);
+			if (!isAuthed) return;
+			await fetch("/api/addresses", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					address: a,
+					label
+				})
+			}).catch(() => undefined);
+		},
+		[addrHistory, walletName, isAuthed]
+	);
+
 	async function pickAddress(addr: string) {
 		resetPreview();
 		setAddress(addr);
@@ -1422,15 +1432,6 @@ function CSVGeneratorPageInner() {
 			dustInterval,
 			useOslo
 		};
-	}
-	function getScanSessionId() {
-		if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-			return crypto.randomUUID();
-		}
-		return `scan_${Math.random().toString(36).slice(2)}_${Date.now()}`;
-	}
-	function q(s?: string) {
-		return `"${String(s ?? "").replace(/"/g, '\\"')}"`;
 	}
 
 	const startScan = useCallback(

@@ -25,8 +25,7 @@ export default function SitePasswordPage() {
 			});
 
 			if (res.ok) {
-				router.push("/");
-				router.refresh();
+				window.location.assign("/");
 			} else {
 				setError(tr({ no: "Feil passord", en: "Incorrect password" }));
 			}

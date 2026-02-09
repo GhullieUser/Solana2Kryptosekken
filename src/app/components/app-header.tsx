@@ -324,52 +324,64 @@ export default function AppHeader() {
 					</Link>
 				</div>
 
-				<nav className="hidden md:flex flex-1 items-center justify-center gap-2 font-medium text-slate-700 dark:text-slate-200 text-sm">
+				<nav
+					className={`hidden md:flex items-center gap-2 font-medium text-slate-700 dark:text-slate-200 text-sm ${
+						isAuthed
+							? "flex-1 justify-center"
+							: "absolute left-1/2 -translate-x-1/2"
+					}`}
+				>
 					<Link
 						href="/"
-						className={`rounded-full px-4 py-1.5 transition ${
+						className={`px-4 py-1.5 transition-colors duration-200 ${
 							pathname === "/"
-								? "text-slate-900 dark:text-white"
-								: "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+								? "text-slate-900 dark:text-white opacity-100"
+								: "text-slate-600 dark:text-slate-400 opacity-70 hover:opacity-100 hover:text-slate-800 dark:hover:text-slate-200"
 						}`}
 					>
 						{tr({ no: "Hjem", en: "Home" })}
 					</Link>
 					<Link
 						href="/csvgenerator"
-						className={`rounded-full px-4 py-1.5 transition ${
+						className={`px-4 py-1.5 transition-colors duration-200 ${
 							pathname === "/csvgenerator"
-								? "text-slate-900 dark:text-white"
-								: "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+								? "text-slate-900 dark:text-white opacity-100"
+								: "text-slate-600 dark:text-slate-400 opacity-70 hover:opacity-100 hover:text-slate-800 dark:hover:text-slate-200"
 						}`}
 					>
 						{tr({ no: "Lommebok Skanner", en: "Wallet Scanner" })}
 					</Link>
 					<Link
 						href="/pricing"
-						className={`rounded-full px-4 py-1.5 transition ${
+						className={`px-4 py-1.5 transition-colors duration-200 ${
 							pathname === "/pricing"
-								? "text-slate-900 dark:text-white"
-								: "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+								? "text-slate-900 dark:text-white opacity-100"
+								: "text-slate-600 dark:text-slate-400 opacity-70 hover:opacity-100 hover:text-slate-800 dark:hover:text-slate-200"
 						}`}
 					>
 						{tr({ no: "Priser", en: "Pricing" })}
 					</Link>
 				</nav>
 
-				<div className="flex items-center gap-2">
+				<div
+					className={`flex items-center gap-2 ml-auto ${
+						isAuthed ? "md:ml-0" : "md:ml-auto"
+					}`}
+				>
 					{isAuthed && (
-						<Link
-							href="/pricing"
-							className="inline-flex h-[34px] sm:h-[32px] items-center justify-center gap-2 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 sm:px-4 text-[12px] sm:text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
-							aria-label={tr({ no: "TX Credits", en: "TX Credits" })}
-							title={tr({ no: "TX Credits", en: "TX Credits" })}
-						>
-							<BsXDiamondFill className="h-4 w-4 sm:h-4 sm:w-4 text-amber-500" />
-							<span className="tabular-nums">
-								{animatedCredits === null ? "—" : animatedCredits}
-							</span>
-						</Link>
+						<div className="w-[90px] sm:w-[90px] flex justify-end">
+							<Link
+								href="/pricing"
+								className="inline-flex h-[34px] sm:h-[32px] items-center justify-center gap-2 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 sm:px-4 text-[12px] sm:text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-white dark:hover:bg-white/10 transition"
+								aria-label={tr({ no: "TX Credits", en: "TX Credits" })}
+								title={tr({ no: "TX Credits", en: "TX Credits" })}
+							>
+								<BsXDiamondFill className="h-4 w-4 sm:h-4 sm:w-4 text-amber-500" />
+								<span className="tabular-nums">
+									{animatedCredits === null ? "—" : animatedCredits}
+								</span>
+							</Link>
+						</div>
 					)}
 					{isAuthed ? (
 						<div className="relative w-max" ref={userMenuRef}>
@@ -488,21 +500,21 @@ export default function AppHeader() {
 							<div className="md:hidden fixed inset-x-0 top-[60px] rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden z-50">
 								<Link
 									href="/"
-									className="block px-4 py-3 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
+									className="block px-4 py-3 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:text-slate-900 dark:hover:text-white"
 									onClick={() => setMobileMenuOpen(false)}
 								>
 									{tr({ no: "Hjem", en: "Home" })}
 								</Link>
 								<Link
 									href="/csvgenerator"
-									className="block px-4 py-3 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
+									className="block px-4 py-3 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:text-slate-900 dark:hover:text-white"
 									onClick={() => setMobileMenuOpen(false)}
 								>
 									{tr({ no: "Lommebok Skanner", en: "Wallet Scanner" })}
 								</Link>
 								<Link
 									href="/pricing"
-									className="block px-4 py-3 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5"
+									className="block px-4 py-3 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:text-slate-900 dark:hover:text-white"
 									onClick={() => setMobileMenuOpen(false)}
 								>
 									{tr({ no: "Priser", en: "Pricing" })}
