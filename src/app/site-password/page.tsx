@@ -28,10 +28,10 @@ export default function SitePasswordPage() {
 				window.location.assign("/");
 			} else {
 				setError(tr({ no: "Feil passord", en: "Incorrect password" }));
+				setLoading(false);
 			}
 		} catch {
 			setError(tr({ no: "Noe gikk galt", en: "Something went wrong" }));
-		} finally {
 			setLoading(false);
 		}
 	}

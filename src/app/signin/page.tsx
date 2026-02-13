@@ -42,8 +42,8 @@ export default function SignInPage() {
 		if (error) {
 			setMessage(error.message);
 			setMessageType("error");
+			setLoading(false);
 		}
-		setLoading(false);
 	}
 
 	return (
