@@ -89,8 +89,14 @@ export default function VilkarPage() {
 					</p>
 					<p>
 						{tr({
-							no: "TX credits fungerer som valuta for den digitale tjenesten. Hver rå transaksjon som skannes forbruker 1 TX credit, og du kan kjøpe pakker med credits ved behov.",
-							en: "TX credits act as the usage-based currency for the digital service. Each raw transaction scanned consumes 1 TX credit, and you can purchase packages as needed."
+							no: "TX credits er interne bruksenheter for den digitale tjenesten. Hver rå transaksjon som skannes forbruker 1 TX credit, og du kan kjøpe pakker ved behov. Credits brukes kun til å beregne pris basert på faktisk ressursbruk (API-kall og prosessering) og representerer ikke penger eller kryptovaluta.",
+							en: "TX credits are internal usage units for the digital service. Each raw transaction scanned consumes 1 TX credit, and you can purchase packages as needed. Credits are only used to calculate price based on actual resource usage (API calls and processing) and do not represent money or cryptocurrency."
+						})}
+					</p>
+					<p>
+						{tr({
+							no: "TX credits kan kun brukes til å kjøre beregninger og CSV-eksporter i Sol2KS, kan ikke tas ut i penger, overføres til andre brukere eller brukes til å kjøpe varer eller tjenester utenfor Sol2KS. Refusjon tilbys kun dersom kunden angrer på kjøpet og ingen TX credits er brukt.",
+							en: "TX credits can only be used to run calculations and CSV exports in Sol2KS, and cannot be withdrawn as money, transferred to other users, or used to purchase goods or services outside Sol2KS. Refunds are only offered if the customer regrets the purchase and no TX credits have been used."
 						})}
 					</p>
 					<p>
