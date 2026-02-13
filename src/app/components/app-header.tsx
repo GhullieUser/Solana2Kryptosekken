@@ -451,7 +451,12 @@ export default function AppHeader() {
 							{tr({ no: "Logg inn", en: "Sign in" })}
 						</Link>
 					)}
-					<div className="relative" ref={settingsMenuRef}>
+					<div className="hidden lg:inline-flex items-center h-[34px] sm:h-[32px] gap-2 px-3 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 shadow-sm dark:shadow-black/25">
+						<LocalePill />
+						<div className="w-px h-4 bg-slate-200 dark:bg-white/10" />
+						<ThemePill />
+					</div>
+					<div className="relative lg:hidden" ref={settingsMenuRef}>
 						<button
 							type="button"
 							onClick={() => setSettingsMenuOpen((v) => !v)}

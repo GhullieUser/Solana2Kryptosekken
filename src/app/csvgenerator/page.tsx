@@ -2166,7 +2166,7 @@ function CSVGeneratorPageInner() {
 								})}
 							</p>
 						</div>
-						<HiOutlineSearch className="h-12 w-12 sm:h-16 sm:w-16 text-slate-600 dark:text-slate-300" />
+						<HiOutlineSearch className="hidden sm:block h-12 w-12 sm:h-16 sm:w-16 text-slate-600 dark:text-slate-300" />
 					</div>
 				</div>
 
