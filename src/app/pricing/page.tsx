@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { BsCheckLg, BsXDiamondFill } from "react-icons/bs";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useLocale } from "@/app/components/locale-provider";
@@ -265,40 +266,15 @@ export default function PricingPage() {
 						<div className="grid grid-cols-2 gap-6">
 							{/* Credit/Debit Card */}
 							<div className="flex flex-col items-center gap-3">
-								<div className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg bg-gradient-to-br from-indigo-100 to-indigo-200 dark:from-indigo-500/20 dark:to-indigo-600/20 flex items-center justify-center">
-									<svg
-										className="w-8 h-8 sm:w-9 sm:h-9"
-										viewBox="0 0 24 24"
-										fill="none"
-										xmlns="http://www.w3.org/2000/svg"
-									>
-										<rect
-											x="2"
-											y="4"
-											width="20"
-											height="16"
-											rx="2"
-											className="stroke-indigo-600 dark:stroke-indigo-300"
-											strokeWidth="1.5"
-											fill="none"
-										/>
-										<rect
-											x="2"
-											y="4"
-											width="20"
-											height="5"
-											rx="1"
-											className="fill-indigo-600/10 dark:fill-indigo-500/10"
-										/>
-										<line
-											x1="6"
-											y1="16"
-											x2="10"
-											y2="16"
-											className="stroke-indigo-600 dark:stroke-indigo-300"
-											strokeWidth="1.5"
-										/>
-									</svg>
+								<div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-slate-100 dark:bg-blue-200/40 flex items-center justify-center overflow-hidden p-1 sm:p-2">
+									<Image
+										src="/logos/CardsLogo.png"
+										alt={tr({ no: "Kort", en: "Card" })}
+										width={64}
+										height={64}
+										className="w-full h-full object-contain"
+										priority
+									/>
 								</div>
 								<p className="text-sm text-slate-600 dark:text-slate-300 text-center font-medium">
 									{tr({ no: "Kort", en: "Card" })}
@@ -310,41 +286,24 @@ export default function PricingPage() {
 
 							{/* Klarna */}
 							<div className="flex flex-col items-center gap-3">
-								<div className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg bg-gradient-to-br from-pink-100 to-pink-200 dark:from-pink-500/20 dark:to-pink-600/20 flex items-center justify-center">
-									<svg
-										className="w-8 h-8 sm:w-9 sm:h-9"
-										viewBox="0 0 24 24"
-										fill="none"
-										xmlns="http://www.w3.org/2000/svg"
-									>
-										<path
-											d="M8 6C8 5.44772 8.44772 5 9 5H15C15.5523 5 16 5.44772 16 6V9H8V6Z"
-											className="fill-pink-600 dark:fill-pink-300"
-										/>
-										<path
-											d="M6 10C5.44772 10 5 10.4477 5 11V18C5 18.5523 5.44772 19 6 19H18C18.5523 19 19 18.5523 19 18V11C19 10.4477 18.5523 10 18 10H6Z"
-											className="fill-pink-600/20 dark:fill-pink-500/20 stroke-pink-600 dark:stroke-pink-300"
-											strokeWidth="1.5"
-										/>
-										<circle
-											cx="9"
-											cy="14"
-											r="1.5"
-											className="fill-pink-600 dark:fill-pink-300"
-										/>
-										<circle
-											cx="15"
-											cy="14"
-											r="1.5"
-											className="fill-pink-600 dark:fill-pink-300"
-										/>
-									</svg>
+								<div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-slate-100 dark:bg-white/10 flex items-center justify-center overflow-hidden">
+									<Image
+										src="/logos/KlarnaIcon.jpeg"
+										alt="Klarna"
+										width={64}
+										height={64}
+										className="w-full h-full object-cover"
+										priority
+									/>
 								</div>
 								<p className="text-sm text-slate-600 dark:text-slate-300 text-center font-medium">
 									Klarna
 								</p>
 								<p className="text-xs text-slate-500 dark:text-slate-400">
-									{tr({ no: "Betal senere eller del opp", en: "Pay later or split it" })}
+									{tr({
+										no: "Betal senere eller del opp",
+										en: "Pay later or split it"
+									})}
 								</p>
 							</div>
 						</div>
