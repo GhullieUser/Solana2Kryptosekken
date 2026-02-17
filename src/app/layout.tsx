@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 		locale: "nb_NO",
 		images: [
 			{
-				url: "/thumbnail.jpg",
+				url: "/sol2ks_thumbnail.jpg",
 				width: 1200,
 				height: 630,
 				alt: "Sol2Kryptosekken"
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
 		card: "summary_large_image",
 		title: "Sol2Kryptosekken",
 		description: "Solana-transaksjoner gjort enklere",
-		images: ["/thumbnail.jpg"]
+		images: ["/sol2ks_thumbnail.jpg"]
 	},
 	robots: {
 		index: false,

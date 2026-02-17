@@ -24,7 +24,7 @@ export default function NotFound() {
 				<div className="mt-8 flex items-center justify-center">
 					<Link
 						href="/"
-						className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-600 via-blue-600 to-emerald-600 text-slate-50 dark:text-white px-6 py-3 text-base font-semibold shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:via-blue-500 hover:to-emerald-500 transition"
+						className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-600 via-blue-600 to-emerald-600 !text-slate-50 dark:!text-slate-50 px-6 py-3 text-base font-semibold shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:via-blue-500 hover:to-emerald-500 transition"
 					>
 						{tr({ no: "Tilbake til forsiden", en: "Return to home" })}
 					</Link>
