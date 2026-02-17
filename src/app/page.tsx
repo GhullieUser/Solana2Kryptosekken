@@ -90,15 +90,15 @@ export default function LandingPage() {
 								<h1 className="text-balance text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight max-w-[18ch] sm:max-w-[20ch] lg:max-w-[22ch] mx-auto sm:mx-0">
 									<span className="bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">
 										{tr({
-											no: "Solana-transaksjoner gjort enklere",
-											en: "Solana transactions, simplified"
+										no: "Solana-lommebok til skattemelding",
+										en: <>Solana wallet address<br/>to tax report</>
 										})}
 									</span>
 								</h1>
 								<p className="mt-5 text-balance leading-relaxed max-w-[90ch] text-sm sm:text-base text-slate-700 dark:text-slate-300">
 									{tr({
-										no: "Hent transaksjoner fra enhver Solana-adresse til en ryddig og oversiktlig CSV-fil for skattemeldingen.",
-										en: "Extract transactions from any Solana address into a clean CSV file for your tax report."
+										no: "Hent transaksjoner fra enhver Solana-adresse til en ryddig og oversiktlig kryptosekken-tilpasset CSV-fil for skattemeldingen.",
+										en: "Extract transactions from any Solana address into a clean and organized kryptosekken-tailored CSV file for your tax report."
 									})}
 								</p>
 								<div className="mt-12 sm:mt-6 flex flex-col sm:flex-row items-stretch justify-center sm:justify-start gap-3 w-full sm:w-auto">

@@ -26,18 +26,18 @@ export const metadata: Metadata = {
 		locale: "nb_NO",
 		images: [
 			{
-				url: "/Sol2KS_logo_512.png",
-				width: 512,
-				height: 512,
+				url: "/thumbnail.jpg",
+				width: 1200,
+				height: 630,
 				alt: "Sol2Kryptosekken"
 			}
 		]
 	},
 	twitter: {
-		card: "summary",
+		card: "summary_large_image",
 		title: "Sol2Kryptosekken",
 		description: "Solana-transaksjoner gjort enklere",
-		images: ["/Sol2KS_logo_512.png"]
+		images: ["/thumbnail.jpg"]
 	},
 	robots: {
 		index: false,

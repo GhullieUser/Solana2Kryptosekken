@@ -18,9 +18,9 @@ export default function Head() {
 			<meta property="og:site_name" content="Sol2Kryptosekken" />
 			<meta
 				property="og:image"
-				content="https://sol2ks.no/Sol2KS_logo_512.png"
+				content="https://sol2ks.no/thumbnail.jpg"
 			/>
-			<meta name="twitter:card" content="summary" />
+			<meta name="twitter:card" content="summary_large_image" />
 			<meta name="twitter:title" content="Priser | Sol2Kryptosekken" />
 			<meta
 				name="twitter:description"
@@ -28,7 +28,7 @@ export default function Head() {
 			/>
 			<meta
 				name="twitter:image"
-				content="https://sol2ks.no/Sol2KS_logo_512.png"
+				content="https://sol2ks.no/thumbnail.jpg"
 			/>
 		</>
 	);
