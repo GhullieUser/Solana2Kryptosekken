@@ -80,9 +80,13 @@ export default function RootLayout({
 			{/* No gradient utilities here; globals.css controls background/gradients */}
 			<body className="min-h-dvh font-sans antialiased">
 				<AppProviders>
-					<AppHeader />
-					{children}
-					<AppFooter />
+					<div className="min-h-dvh flex flex-col">
+						<AppHeader />
+						<main className="flex-1 flex flex-col">
+							{children}
+						</main>
+						<AppFooter />
+					</div>
 				</AppProviders>
 			</body>
 		</html>
