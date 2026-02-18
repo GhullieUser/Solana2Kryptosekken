@@ -66,7 +66,7 @@ export default function SignUpPage() {
 
 	return (
 		<main className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
-			<div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] p-6 shadow-xl shadow-slate-900/10 dark:shadow-black/35">
+			<div className="w-full max-w-md rounded-2xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 p-6 shadow-md shadow-slate-300/80 dark:shadow-black/50">
 				<h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
 					{tr({ no: "Opprett konto", en: "Create account" })}
 				</h1>
@@ -89,7 +89,7 @@ export default function SignUpPage() {
 						placeholder={tr({ no: "E-post", en: "Email" })}
 						value={email}
 						onChange={(e) => setEmail(e.target.value)}
-						className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+					className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
 					/>
 					<div className="grid grid-cols-[140px_1fr] gap-3">
 						<input
@@ -98,7 +98,7 @@ export default function SignUpPage() {
 							placeholder={tr({ no: "Landskode", en: "Area code" })}
 							value={areaCode}
 							onChange={(e) => setAreaCode(e.target.value)}
-							className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+							className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
 						/>
 						<input
 							type="tel"
@@ -106,7 +106,7 @@ export default function SignUpPage() {
 							placeholder={tr({ no: "Telefonnummer", en: "Phone number" })}
 							value={phoneNumber}
 							onChange={(e) => setPhoneNumber(e.target.value)}
-							className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+							className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
 						/>
 					</div>
 					<div className="relative">
@@ -116,21 +116,21 @@ export default function SignUpPage() {
 							placeholder={tr({ no: "Passord", en: "Password" })}
 							value={password}
 							onChange={(e) => setPassword(e.target.value)}
-							className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+							className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
 						/>
 						<button
 							type="button"
 							onClick={() => setShowPassword((v) => !v)}
-							className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"
+							className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
 							aria-label={tr({
 								no: showPassword ? "Skjul passord" : "Vis passord",
 								en: showPassword ? "Hide password" : "Show password"
 							})}
 						>
 							{showPassword ? (
-								<FiEyeOff className="h-4 w-4" />
-							) : (
 								<FiEye className="h-4 w-4" />
+							) : (
+								<FiEyeOff className="h-4 w-4" />
 							)}
 						</button>
 					</div>
@@ -144,21 +144,21 @@ export default function SignUpPage() {
 							})}
 							value={confirmPassword}
 							onChange={(e) => setConfirmPassword(e.target.value)}
-							className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+							className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
 						/>
 						<button
 							type="button"
 							onClick={() => setShowConfirmPassword((v) => !v)}
-							className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"
+							className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-100"
 							aria-label={tr({
 								no: showConfirmPassword ? "Skjul passord" : "Vis passord",
 								en: showConfirmPassword ? "Hide password" : "Show password"
 							})}
 						>
 							{showConfirmPassword ? (
-								<FiEyeOff className="h-4 w-4" />
-							) : (
 								<FiEye className="h-4 w-4" />
+							) : (
+								<FiEyeOff className="h-4 w-4" />
 							)}
 						</button>
 					</div>

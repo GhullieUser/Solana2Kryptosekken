@@ -22,7 +22,7 @@ type Step = {
 };
 
 export default function KryptosekkenImportCard({
-	cardClassName = "rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/5 dark:shadow-black/35 ring-1 ring-slate-200/60 dark:ring-white/10",
+	cardClassName = "rounded-3xl bg-white dark:bg-white/5 shadow-xl shadow-slate-900/5 dark:shadow-black/50 ring-1 ring-slate-200/60 dark:ring-white/10",
 	importHref = "https://www.kryptosekken.no/regnskap/importer-csv-generisk"
 }: Props) {
 	const { tr } = useLocale();
@@ -103,7 +103,7 @@ export default function KryptosekkenImportCard({
 							href={importHref}
 							target="_blank"
 							rel="noopener noreferrer"
-							className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10"
+							className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10"
 						>
 							{tr({
 								no: "Åpne Kryptosekken import",

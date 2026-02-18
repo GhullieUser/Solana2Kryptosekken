@@ -175,7 +175,7 @@ export default function StyledSelect<T extends string>({
 								}
 								className={[
 									"overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl",
-									"dark:border-white/10 dark:bg-slate-900",
+									"dark:border-white/10 dark:bg-[#1f2937]",
 									usePortal
 										? ""
 										: [

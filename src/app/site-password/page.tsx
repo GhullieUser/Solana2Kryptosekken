@@ -62,7 +62,7 @@ export default function SitePasswordPage() {
 					</p>
 				</div>
 
-				<div className="bg-white dark:bg-[#0e1729] rounded-2xl border border-slate-200 dark:border-white/10 shadow-xl p-8">
+				<div className="bg-white dark:bg-white/5 rounded-2xl border border-slate-300 dark:border-white/10 shadow-md shadow-slate-300/80 dark:shadow-black/50 p-8">
 					<form onSubmit={handleSubmit} className="space-y-4">
 						<div>
 							<label
@@ -78,7 +78,7 @@ export default function SitePasswordPage() {
 								onChange={(e) => setPassword(e.target.value)}
 								required
 								autoFocus
-								className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-slate-800 dark:text-slate-100 shadow-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+								className="block w-full rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3 text-slate-800 dark:text-slate-100 shadow-md shadow-slate-300/80 dark:shadow-black/50 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 								placeholder={tr({
 									no: "Skriv inn passord",
 									en: "Enter password"

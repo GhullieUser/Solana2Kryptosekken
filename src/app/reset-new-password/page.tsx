@@ -111,7 +111,7 @@ export default function ResetNewPasswordPage() {
 	if (success) {
 		return (
 			<main className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
-				<div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] p-8 shadow-xl shadow-slate-900/10 dark:shadow-black/35 text-center">
+				<div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 p-8 shadow-xl shadow-slate-900/10 dark:shadow-black/50 text-center">
 					<div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-emerald-500 flex items-center justify-center mb-4">
 						<svg
 							className="w-8 h-8 text-white"
@@ -154,7 +154,7 @@ export default function ResetNewPasswordPage() {
 
 	return (
 		<main className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
-			<div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] p-6 shadow-xl shadow-slate-900/10 dark:shadow-black/35">
+			<div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 p-6 shadow-xl shadow-slate-900/10 dark:shadow-black/50">
 				<h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
 					{tr({ no: "Sett nytt passord", en: "Set new password" })}
 				</h1>
@@ -183,7 +183,7 @@ export default function ResetNewPasswordPage() {
 							value={password}
 							onChange={(e) => setPassword(e.target.value)}
 							autoComplete="new-password"
-							className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+						className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
 						/>
 						<button
 							type="button"
@@ -212,7 +212,7 @@ export default function ResetNewPasswordPage() {
 							value={confirmPassword}
 							onChange={(e) => setConfirmPassword(e.target.value)}
 							autoComplete="new-password"
-							className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+							className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
 						/>
 						<button
 							type="button"

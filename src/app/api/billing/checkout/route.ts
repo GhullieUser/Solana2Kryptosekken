@@ -17,10 +17,6 @@ const PRICE_MAP = {
 	"10000": {
 		credits: 10000,
 		priceId: process.env.STRIPE_PRICE_10000
-	},
-	test: {
-		credits: 750,
-		priceId: process.env.STRIPE_PRICE_TEST
 	}
 } as const;
 

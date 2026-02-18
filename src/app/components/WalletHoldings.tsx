@@ -54,7 +54,7 @@ export default function WalletHoldings({
 	const [err, setErr] = useState<string | null>(null);
 	const [holdings, setHoldings] = useState<Holding[]>([]);
 	const [justCopied, setJustCopied] = useState<"wallet" | string | null>(null);
-	const [collapsed, setCollapsed] = useState(false);
+	const [collapsed, setCollapsed] = useState(true);
 
 	// Currency toggle (USD <-> NOK)
 	const [currency, setCurrency] = useState<Currency>("USD");
@@ -354,13 +354,13 @@ export default function WalletHoldings({
 
 	return (
 		<section
-			className="mt-6 rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 ring-1 ring-slate-300/80 dark:ring-white/10"
+			className="mt-6 rounded-3xl bg-white dark:bg-[#2B3345] shadow-xl shadow-slate-900/10 dark:shadow-black/50 ring-1 ring-slate-300/80 dark:ring-white/10"
 			aria-label={tr({ no: "Beholdning", en: "Holdings" })}
 		>
 			{/* Header */}
 			<div
 				className={`px-4 py-3 sm:px-10 sm:py-6 ${
-					!collapsed ? "border-b border-slate-200 dark:border-slate-800" : ""
+					!collapsed ? "border-b border-slate-200 dark:border-white/10" : ""
 				}`}
 			>
 				<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -428,7 +428,7 @@ export default function WalletHoldings({
 						<button
 							type="button"
 							onClick={() => setCollapsed((v) => !v)}
-							className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto shrink-0"
+						className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto shrink-0"
 							aria-expanded={!collapsed}
 							aria-controls="wallet-holdings-content"
 						>
@@ -496,7 +496,7 @@ export default function WalletHoldings({
 							<table className="min-w-full text-xs sm:text-sm whitespace-nowrap">
 								<thead
 									ref={headerRef}
-									className="sticky top-0 bg-white dark:bg-[#0e1729] z-10 text-left text-slate-500 dark:text-slate-400"
+									className="sticky top-0 z-10 text-left text-slate-500 dark:text-slate-400"
 								>
 									<tr>
 										<th
@@ -605,7 +605,7 @@ export default function WalletHoldings({
 											<tr
 												key={`${h.mint}-${h.symbol}`}
 												ref={idx === 0 ? firstRowRef : undefined}
-												className="border-t border-slate-200 dark:border-slate-800"
+												className="border-t border-slate-200 dark:border-white/10"
 											>
 												<td className="py-2 pr-4">
 													<div className="flex items-center gap-2 min-w-0">
@@ -643,7 +643,7 @@ export default function WalletHoldings({
 														<button
 															type="button"
 															onClick={() => copyText(h.mint, h.mint)}
-															className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-1.5 py-0.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
+															className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-1.5 py-0.5 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10"
 															title={tr({
 																no: "Kopier mint-adresse",
 																en: "Copy mint address"
@@ -693,7 +693,7 @@ function CurrencyToggle({
 	const { tr } = useLocale();
 	return (
 		<div
-			className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-white dark:bg-slate-900"
+			className="inline-flex rounded-lg border border-slate-200 dark:border-white/10 p-0.5 bg-white dark:bg-white/5"
 			role="group"
 			aria-label={tr({ no: "Valuta", en: "Currency" })}
 		>

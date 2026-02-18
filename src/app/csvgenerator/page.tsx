@@ -311,7 +311,7 @@ function CustomCalendar({
 				<button
 					type="button"
 					onClick={prevMonth}
-					className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+					className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors"
 					aria-label={tr({ no: "Forrige måned", en: "Previous month" })}
 				>
 					<FiChevronLeft className="h-4 w-4 text-slate-600 dark:text-slate-400" />
@@ -320,7 +320,7 @@ function CustomCalendar({
 				<button
 					type="button"
 					onClick={() => setShowMonthPicker(!showMonthPicker)}
-					className="px-3 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+					className="px-3 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors cursor-pointer"
 				>
 					<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
 						{monthNames[month]} {year}
@@ -331,7 +331,7 @@ function CustomCalendar({
 					type="button"
 					onClick={nextMonth}
 					disabled={!canGoNext}
-					className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+					className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
 					aria-label={tr({ no: "Neste måned", en: "Next month" })}
 				>
 					<FiChevronRight className="h-4 w-4 text-slate-600 dark:text-slate-400" />
@@ -340,7 +340,7 @@ function CustomCalendar({
 
 			{/* Month/Year Picker */}
 			{showMonthPicker && (
-				<div className="mb-3 p-2.5 bg-slate-50 dark:bg-slate-800 rounded-lg space-y-2">
+				<div className="mb-3 p-2.5 bg-slate-50 dark:bg-slate-900/70 rounded-lg space-y-2 border border-slate-200 dark:border-slate-700/70">
 					{/* Year selector */}
 					<div>
 						<div className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">
@@ -355,7 +355,7 @@ function CustomCalendar({
 									)
 								}
 								disabled={year <= SOLANA_YEAR}
-								className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+								className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700/80 disabled:opacity-40 disabled:cursor-not-allowed"
 							>
 								<FiChevronLeft className="h-3.5 w-3.5" />
 							</button>
@@ -374,7 +374,7 @@ function CustomCalendar({
 									)
 								}
 								disabled={year >= maxDate.getFullYear()}
-								className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+								className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700/80 disabled:opacity-40 disabled:cursor-not-allowed"
 							>
 								<FiChevronRight className="h-3.5 w-3.5" />
 							</button>
@@ -407,7 +407,7 @@ function CustomCalendar({
 											"px-2 py-1.5 rounded text-[11px] font-medium transition-colors",
 											idx === month && year === calMonth.getFullYear()
 												? "bg-indigo-600 text-white"
-												: "bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600",
+												: "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700",
 											!isSelectable ? "opacity-40 cursor-not-allowed" : ""
 										].join(" ")}
 									>
@@ -455,17 +455,17 @@ function CustomCalendar({
 							disabled={disabled}
 							className={[
 								"aspect-square w-full rounded-md text-[11px] font-medium transition-all relative",
-								disabled
-									? "text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-40"
-									: !rangeStart && !rangeEnd
-										? "hover:bg-slate-100 dark:hover:bg-slate-800"
+									disabled
+										? "text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-70"
+										: !rangeStart && !rangeEnd
+											? "hover:bg-slate-100 dark:hover:bg-slate-700/80"
 										: "",
 								rangeStart
 									? "bg-indigo-600 text-white hover:brightness-110 rounded-l-full"
 									: rangeEnd
 										? "bg-emerald-600 text-white hover:brightness-110 rounded-r-full"
 										: inRange
-											? "bg-indigo-50 text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-200"
+												? "bg-indigo-50 text-indigo-900 dark:bg-indigo-500/20 dark:text-indigo-100"
 											: "text-slate-700 dark:text-slate-300"
 							].join(" ")}
 						>
@@ -484,7 +484,7 @@ function CustomCalendar({
 			</div>
 
 			{/* Confirm button */}
-			<div className="pt-3 border-t border-slate-200 dark:border-slate-700 mt-3">
+			<div className="pt-3 pb-2 border-t border-slate-200 dark:border-slate-700 mt-3">
 				<button
 					type="button"
 					onClick={onConfirm}
@@ -493,7 +493,7 @@ function CustomCalendar({
 						"w-full rounded-lg py-2.5 px-3 font-semibold text-xs transition-all",
 						hasSelection
 							? "bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 shadow-sm hover:shadow"
-							: "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600 cursor-not-allowed"
+							: "bg-slate-100 text-slate-400 dark:bg-slate-800/80 dark:text-slate-500 cursor-not-allowed"
 					].join(" ")}
 				>
 					{tr({ no: "Bekreft valg", en: "Confirm selection" })}
@@ -791,6 +791,7 @@ function CSVGeneratorPageInner() {
 	const [dustMode, setDustMode] = useState<DustMode>("off");
 	const [dustThreshold, setDustThreshold] = useState<string>("0.001");
 	const [dustInterval, setDustInterval] = useState<DustInterval>("week");
+	const [dustOpen, setDustOpen] = useState(false);
 
 	// Overrides
 	const [overrides, setOverrides] = useState<OverrideMaps>({
@@ -1148,7 +1149,8 @@ function CSVGeneratorPageInner() {
 			parseCsvToRows,
 			saveGeneratedCsv,
 			setScanSessionIdSafe,
-			getScanSessionId
+			getScanSessionId,
+			payloadKeyFromPayload
 		]
 	);
 
@@ -1209,6 +1211,16 @@ function CSVGeneratorPageInner() {
 			...prev,
 			`${new Date().toLocaleTimeString()}  ${s}`
 		]);
+	}, []);
+
+	const pushLogUnique = useCallback((s: string) => {
+		setLogLines((prev) => {
+			const last = prev[prev.length - 1] ?? "";
+			const sep = last.indexOf("  ");
+			const lastMsg = sep >= 0 ? last.slice(sep + 2) : last;
+			if (lastMsg === s) return prev;
+			return [...prev, `${new Date().toLocaleTimeString()}  ${s}`];
+		});
 	}, []);
 
 	const clearLog = useCallback(() => setLogLines([]), []);
@@ -1318,7 +1330,7 @@ function CSVGeneratorPageInner() {
 				? `id=${encodeURIComponent(csvId)}`
 				: `address=${encodeURIComponent(addr!)}`;
 			if (!active) return;
-			await loadCsvPreview(query);
+			await loadCsvPreview(query, { skipDebug: true });
 			loadedFromParamsRef.current = true;
 		})().catch(() => undefined);
 		return () => {
@@ -1707,8 +1719,11 @@ function CSVGeneratorPageInner() {
 										})
 									);
 								}
-								if (!j.fromCache && typeof j.chargedCredits === "number") {
-									pushLog(
+								if (
+									typeof j.chargedCredits === "number" &&
+									j.chargedCredits > 0
+								) {
+									pushLogUnique(
 										tr({
 											no: `TX Credits brukt ${j.chargedCredits}.`,
 											en: `TX Credits spent ${j.chargedCredits}.`
@@ -1761,6 +1776,7 @@ function CSVGeneratorPageInner() {
 			formatDateRange,
 			q,
 			pushLog,
+			pushLogUnique,
 			setError,
 			setErrorCta,
 			setCreditsSpent,
@@ -2127,7 +2143,9 @@ function CSVGeneratorPageInner() {
 
 	const openSelectedCsv = useCallback(async () => {
 		if (!csvVersionId) return;
-		await loadCsvPreview(`id=${encodeURIComponent(csvVersionId)}`);
+		await loadCsvPreview(`id=${encodeURIComponent(csvVersionId)}`, {
+			skipDebug: true
+		});
 		// Scroll to holdings first (if available), then preview, accounting for navbar
 		if (holdingsContainerRef.current) {
 			scrollToElementWithOffset(holdingsContainerRef.current);
@@ -2148,7 +2166,7 @@ function CSVGeneratorPageInner() {
 
 	// Shared card class (proper light/dark)
 	const cardCn =
-		"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 ring-1 ring-slate-300/80 dark:ring-white/10";
+		"rounded-3xl border border-slate-300 dark:border-white/10 bg-white dark:bg-[#2B3345] shadow-lg shadow-slate-300/80 dark:shadow-black/50";
 
 	return (
 		<main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
@@ -2206,7 +2224,7 @@ function CSVGeneratorPageInner() {
 											onBlur={() =>
 												setTimeout(() => setAddrMenuOpen(false), 120)
 											}
-											className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-11 pr-24 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+											className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937] pl-11 pr-24 py-2.5 text-sm text-slate-800 dark:text-slate-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 										/>
 
 										{/* right-side actions: clear, history */}
@@ -2262,8 +2280,8 @@ function CSVGeneratorPageInner() {
 													value={csvVersionId}
 													onChange={(next) => setCsvVersionId(next)}
 													options={csvOptions}
-													buttonClassName="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-xs text-indigo-700 shadow-sm transition hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-white/5 dark:text-indigo-200 dark:hover:bg-white/10"
-													menuClassName="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden"
+													buttonClassName="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-xs text-indigo-700 transition hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-[#2B3345] dark:text-indigo-200 dark:hover:bg-indigo-600/30"
+													menuClassName="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1F2937] overflow-hidden"
 													optionClassName="flex items-center gap-2 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 whitespace-nowrap"
 													labelClassName="truncate whitespace-nowrap"
 													ariaLabel={tr({ no: "Velg CSV", en: "Select CSV" })}
@@ -2293,7 +2311,7 @@ function CSVGeneratorPageInner() {
 													<button
 														type="button"
 														onClick={openSelectedCsv}
-														className="inline-flex items-center justify-center rounded-lg border border-indigo-200 bg-white px-2 py-1 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-white/5 dark:text-indigo-200 dark:hover:bg-white/10"
+														className="inline-flex items-center justify-center rounded-lg border border-indigo-200 bg-white px-2 py-1 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-[#2B3345] dark:text-indigo-200 dark:hover:bg-indigo-600/30"
 														title={tr({ no: "Åpne", en: "Open" })}
 														aria-label={tr({ no: "Åpne", en: "Open" })}
 													>
@@ -2306,13 +2324,13 @@ function CSVGeneratorPageInner() {
 
 									{/* Dropdown history */}
 									{addrMenuOpen && (addrHistory.length > 0 || address) && (
-										<div className="absolute left-0 right-0 z-30 mt-2 w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl">
+										<div className="absolute left-0 right-0 z-30 mt-2 w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1F2937]">
 											{filteredHistory.length > 0 ? (
 												<ul className="max-h-64 overflow-auto text-sm">
 													{filteredHistory.map((item) => (
 														<li
 															key={item.address}
-															className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5"
+															className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700/80"
 														>
 															<button
 																type="button"
@@ -2324,7 +2342,7 @@ function CSVGeneratorPageInner() {
 																{item.address}
 																{/* tiny name hint */}
 																{item.label ? (
-																	<span className="ml-2 rounded bg-slate-100 dark:bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-600 dark:text-slate-300">
+																	<span className="ml-2 rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-600 dark:text-slate-200">
 																		{item.label}
 																	</span>
 																) : null}
@@ -2337,7 +2355,7 @@ function CSVGeneratorPageInner() {
 																})}
 																onMouseDown={(e) => e.preventDefault()}
 																onClick={() => removeAddress(item.address)}
-																className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10 hover:text-slate-600"
+																className="rounded p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/80 hover:text-slate-600 dark:hover:text-slate-100"
 															>
 																<FiTrash2 className="h-4 w-4" />
 															</button>
@@ -2352,7 +2370,7 @@ function CSVGeneratorPageInner() {
 													})}
 												</div>
 											)}
-											<div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-white/5 px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
+											<div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80 px-3 py-2 text-xs text-slate-600 dark:text-slate-200">
 												<span>
 													{tr({
 														no: `${addrHistory.length} lagret`,
@@ -2363,7 +2381,7 @@ function CSVGeneratorPageInner() {
 													type="button"
 													onMouseDown={(e) => e.preventDefault()}
 													onClick={clearHistory}
-													className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-white dark:hover:bg-white/10"
+													className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-white dark:hover:bg-slate-700/80"
 												>
 													<FiTrash2 className="h-3 w-3" />
 													{tr({ no: "Tøm historikk", en: "Clear history" })}
@@ -2374,8 +2392,8 @@ function CSVGeneratorPageInner() {
 								</div>
 								{/* Wallet name */}
 								<div className="relative">
-									<FiTag className="pointer-events-none absolute left-3 inset-y-0 mt-2.5 h-5 w-5 text-slate-400" />
-									<div className="flex items-center gap-2">
+									<div className="relative flex items-center gap-2">
+										<FiTag className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
 										<input
 											name="walletName"
 											autoComplete="off"
@@ -2385,36 +2403,38 @@ function CSVGeneratorPageInner() {
 											})}
 											value={walletName}
 											onChange={(e) => setWalletName(e.target.value)}
-											className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-11 pr-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
-										/>
+											className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937] pl-11 pr-3 py-2.5 text-sm text-slate-800 dark:text-slate-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+									/>
 
 										{/* Solscan button */}
-										<Link
-											href={explorerHref}
-											target="_blank"
-											rel="noopener noreferrer"
-											aria-disabled={!canOpenExplorer}
-											tabIndex={canOpenExplorer ? 0 : -1}
-											onClick={(e) => {
-												if (!canOpenExplorer) e.preventDefault();
-											}}
-											className={`inline-flex items-center gap-2 rounded-xl border  text-sm shadow-sm dark:shadow-black/25 aspect-square p-2 h-[37px] w-[37px] justify-center
+										{hasAddressInput && (
+											<Link
+												href={explorerHref}
+												target="_blank"
+												rel="noopener noreferrer"
+												aria-disabled={!canOpenExplorer}
+												tabIndex={canOpenExplorer ? 0 : -1}
+												onClick={(e) => {
+													if (!canOpenExplorer) e.preventDefault();
+												}}
+												className={`inline-flex items-center gap-2 rounded-xl border text-sm aspect-square h-[42px] w-[42px] justify-center
                         ${
 													canOpenExplorer
-														? "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-white/10"
+														? "border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-indigo-700 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-white/10"
 														: "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-white/5 text-slate-400 cursor-not-allowed"
 												}`}
-											title={
-												canOpenExplorer
-													? tr({ no: "Åpne i Solscan", en: "Open in Solscan" })
-													: tr({
-															no: "Skriv inn en adresse først",
-															en: "Enter an address first"
-														})
-											}
-										>
-											<IoOpenOutline className="h-[17px] w-[17px]" />
-										</Link>
+												title={
+													canOpenExplorer
+														? tr({ no: "Åpne i Solscan", en: "Open in Solscan" })
+														: tr({
+																no: "Ugyldig adresse",
+																en: "Invalid address"
+														  })
+												}
+											>
+												<IoOpenOutline className="h-[18px] w-[18px]" />
+											</Link>
+										)}
 									</div>
 
 									<p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
@@ -2457,12 +2477,12 @@ function CSVGeneratorPageInner() {
 												setCalMonth(range?.to ?? new Date());
 											}}
 											aria-expanded={calOpen}
-											className="group w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-800/50 shadow-sm dark:shadow-black/25 hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700 transition-all duration-200"
+											className="group w-full overflow-hidden rounded-xl border border-slate-200 dark:border-white/10 bg-gradient-to-br from-slate-50 to-white dark:from-white/5 dark:to-white/5 hover:border-indigo-300 dark:hover:border-indigo-600 transition-all duration-200"
 										>
 											<div className="flex items-center justify-between px-3 py-2.5 sm:px-4 sm:py-3">
 												<div className="flex items-center gap-3">
-													<div className="rounded-lg bg-indigo-100 dark:bg-indigo-500/20 p-2 group-hover:bg-indigo-200 dark:group-hover:bg-indigo-500/30 transition-colors">
-														<FiCalendar className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+													<div className="rounded-xl bg-indigo-50 dark:bg-indigo-500/15 p-2.5 transition-colors">
+														<FiCalendar className="h-5 w-5 text-indigo-600 dark:text-indigo-300" />
 													</div>
 													<div className="text-left">
 														<div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
@@ -2477,14 +2497,14 @@ function CSVGeneratorPageInner() {
 													</div>
 												</div>
 												<FiChevronDown
-													className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${calOpen ? "rotate-180" : ""}`}
+													className={`h-4 w-4 text-indigo-500/80 dark:text-indigo-300/80 transition-transform duration-200 ${calOpen ? "rotate-180" : ""}`}
 												/>
 											</div>
 										</button>
 
 										{/* Calendar dropdown */}
 										{calOpen && (
-											<div className="absolute z-30 mt-1.5 w-full sm:w-[320px] max-w-[min(92vw,320px)] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+											<div className="absolute z-30 mt-1.5 w-full sm:w-[320px] max-w-[min(92vw,320px)] rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1F2937] shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
 												{/* Header with close button */}
 												<div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 px-3 py-2">
 													<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
@@ -2496,7 +2516,7 @@ function CSVGeneratorPageInner() {
 													<button
 														type="button"
 														onClick={() => setCalOpen(false)}
-														className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+														className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors"
 														aria-label={tr({ no: "Lukk", en: "Close" })}
 													>
 														<FiX className="h-3.5 w-3.5" />
@@ -2505,7 +2525,7 @@ function CSVGeneratorPageInner() {
 
 												{/* Selected range badges */}
 												{(range?.from || range?.to) && (
-													<div className="flex items-center justify-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800/50">
+													<div className="flex items-center justify-center gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-900/70 border-b border-slate-200 dark:border-slate-700/70">
 														<button
 															type="button"
 															className="text-xs"
@@ -2517,7 +2537,7 @@ function CSVGeneratorPageInner() {
 																en: "Go to From month"
 															})}
 														>
-															<span className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-500/20 px-2.5 py-1 hover:bg-indigo-200 dark:hover:bg-indigo-500/30 transition-colors">
+															<span className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-500/25 px-2.5 py-1 hover:bg-indigo-200 dark:hover:bg-indigo-500/35 transition-colors">
 																<FiClock className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
 																<span className="font-medium text-indigo-900 dark:text-indigo-200">
 																	{tr({ no: "Fra", en: "From" })}
@@ -2537,7 +2557,7 @@ function CSVGeneratorPageInner() {
 																en: "Go to To month"
 															})}
 														>
-															<span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 px-2.5 py-1 hover:bg-emerald-200 dark:hover:bg-emerald-500/30 transition-colors">
+															<span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-500/25 px-2.5 py-1 hover:bg-emerald-200 dark:hover:bg-emerald-500/35 transition-colors">
 																<FiClock className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
 																<span className="font-medium text-emerald-900 dark:text-emerald-200">
 																	{tr({ no: "Til", en: "To" })}
@@ -2576,7 +2596,7 @@ function CSVGeneratorPageInner() {
 										<button
 											type="button"
 											onClick={() => presetDays(7)}
-											className="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-150 hover:shadow-sm"
+											className="group rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-2.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-150 hover:shadow-sm"
 										>
 											<div className="flex items-center justify-center gap-2">
 												<FiClock className="h-3 w-3 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400" />
@@ -2586,7 +2606,7 @@ function CSVGeneratorPageInner() {
 										<button
 											type="button"
 											onClick={() => presetDays(30)}
-											className="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-150 hover:shadow-sm"
+											className="group rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-2.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-150 hover:shadow-sm"
 										>
 											<div className="flex items-center justify-center gap-2">
 												<FiClock className="h-3 w-3 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400" />
@@ -2600,7 +2620,7 @@ function CSVGeneratorPageInner() {
 												no: "Hittil i år — Fra 1. januar til i dag",
 												en: "Year to date — From Jan 1 to today"
 											})}
-											className="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-150 hover:shadow-sm"
+											className="group rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-2.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-150 hover:shadow-sm"
 										>
 											<div className="flex items-center justify-center gap-2">
 												<FiActivity className="h-3 w-3 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400" />
@@ -2614,7 +2634,7 @@ function CSVGeneratorPageInner() {
 												no: "Hele fjoråret — Fra 1. januar til 31. desember i fjor",
 												en: "Last year — From Jan 1 to Dec 31"
 											})}
-											className="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-150 hover:shadow-sm"
+											className="group rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-2.5 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-150 hover:shadow-sm"
 										>
 											<div className="flex items-center justify-center gap-2">
 												<FiCalendar className="h-3 w-3 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400" />
@@ -2624,7 +2644,7 @@ function CSVGeneratorPageInner() {
 										<button
 											type="button"
 											onClick={clearDates}
-											className="group rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 hover:border-red-300 dark:hover:border-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-700 dark:hover:text-red-300 transition-all duration-150 hover:shadow-sm"
+											className="group rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-2.5 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 hover:border-red-300 dark:hover:border-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-700 dark:hover:text-red-300 transition-all duration-150 hover:shadow-sm"
 										>
 											<div className="flex items-center justify-center gap-2">
 												<FiX className="h-3 w-3" />
@@ -2634,93 +2654,95 @@ function CSVGeneratorPageInner() {
 									</div>
 								</div>
 
-								{/* Timezone toggle */}
-								<div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-800/50 p-4">
-									<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-										<div className="flex items-center gap-3">
-											<div className="rounded-xl bg-indigo-100 dark:bg-indigo-500/20 p-2.5">
-												<FiClock className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-											</div>
-											<div>
-												<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-													{tr({
-														no: "Tidssone for CSV",
-														en: "CSV timezone"
-													})}
+								{/* Timezone + NFT */}
+								<div className="mt-4 grid gap-4 lg:grid-cols-2">
+									<div className="rounded-2xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-[#1F2937] p-4">
+										<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+											<div className="flex items-center gap-3">
+												<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2.5">
+													<FiClock className="h-5 w-5 text-slate-600 dark:text-slate-400" />
 												</div>
-												<div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-													{tr({
-														no: "Tidsstempler skrives som ",
-														en: "Timestamps written as "
-													})}
-													<span className="font-semibold text-slate-700 dark:text-slate-300">
-														{useOslo
-															? tr({
-																	no: "Europe/Oslo (UTC+01:00)",
-																	en: "Europe/Oslo"
-																})
-															: "UTC"}
-													</span>
+												<div>
+													<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+														{tr({
+															no: "Tidssone for CSV",
+															en: "CSV timezone"
+														})}
+													</div>
+													<div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+														{tr({
+															no: "Tidsstempler skrives som ",
+															en: "Timestamps written as "
+														})}
+														<span className="font-semibold text-slate-700 dark:text-slate-300">
+															{useOslo
+																? tr({
+																		no: "Europe/Oslo (UTC+01:00)",
+																		en: "Europe/Oslo"
+																  })
+																: "UTC"}
+														</span>
+													</div>
 												</div>
 											</div>
+											<Switch
+												checked={useOslo}
+												onChange={setUseOslo}
+												label={tr({
+													no: "Bruk norsk tid",
+													en: "Use Norway time"
+												})}
+											/>
 										</div>
-										<Switch
-											checked={useOslo}
-											onChange={setUseOslo}
-											label={tr({
-												no: "Bruk norsk tid",
-												en: "Use Norway time"
-											})}
-										/>
 									</div>
-								</div>
-							</div>
 
-							{/* NFT section */}
-							<div className="mt-4 rounded-2xl border border-purple-200 dark:border-purple-700/50 bg-gradient-to-br from-purple-50 to-white dark:from-purple-900/20 dark:to-slate-800/50 p-4">
-								<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-									<div className="flex items-center gap-3">
-										<div className="rounded-xl bg-purple-100 dark:bg-purple-500/20 p-2.5">
-											<FiImage className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-										</div>
-										<div>
-											<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-												{tr({
-													no: "NFT-overføringer",
-													en: "NFT transfers"
-												})}
+									<div className="rounded-2xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-[#1F2937] p-4">
+										<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+											<div className="flex items-center gap-3">
+												<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2.5">
+													<FiImage className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+												</div>
+												<div>
+													<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+														{tr({
+															no: "NFT-overføringer",
+															en: "NFT transfers"
+														})}
+													</div>
+													<div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+														{tr({
+															no: "Ingen prising, kun overføringer",
+															en: "No pricing, transfers only"
+														})}
+													</div>
+												</div>
 											</div>
-											<div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-												{tr({
-													no: "Ingen prising, kun overføringer",
-													en: "No pricing, transfers only"
+											<Switch
+												checked={includeNFT}
+												onChange={setIncludeNFT}
+												label={tr({
+													no: "Inkluder NFT-er",
+													en: "Include NFTs"
 												})}
-											</div>
+											/>
 										</div>
 									</div>
-									<Switch
-										checked={includeNFT}
-										onChange={setIncludeNFT}
-										label={tr({
-											no: "Inkluder NFT-er",
-											en: "Include NFTs"
-										})}
-									/>
 								</div>
-							</div>
 
 							{/* Dust section */}
-							<div className="mt-4 rounded-2xl border border-emerald-200 dark:border-emerald-700/50 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-900/20 dark:to-slate-800/50 p-5">
-								<div className="mb-4 flex items-center justify-between">
+							<div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-[#1F2937] p-4">
+								<div
+									className={`${dustOpen ? "mb-4" : ""} flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3`}
+								>
 									<div className="flex items-center gap-3">
-										<div className="rounded-xl bg-emerald-100 dark:bg-emerald-500/20 p-2.5">
-											<MdOutlineCleaningServices className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+										<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2.5">
+											<MdOutlineCleaningServices className="h-5 w-5 text-slate-600 dark:text-slate-400" />
 										</div>
 										<div>
 											<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
 												{tr({
-													no: "Støvtransaksjoner",
-													en: "Dust transactions"
+													no: "Støvbehandling",
+													en: "Dust processing"
 												})}
 											</div>
 											<div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -2731,8 +2753,8 @@ function CSVGeneratorPageInner() {
 											</div>
 										</div>
 									</div>
-
-									<div className="relative group">
+									<div className="flex h-8 items-center gap-6 sm:gap-8 self-start sm:self-center">
+										<div className="relative group flex h-8 items-center">
 										<button
 											type="button"
 											aria-label={tr({
@@ -2809,13 +2831,13 @@ function CSVGeneratorPageInner() {
 													</div>
 												)
 											}
-											className="rounded-lg p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
+											className="inline-flex h-8 w-8 items-center justify-center rounded-full p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 transition-colors"
 										>
-											<FiInfo className="h-4 w-4" />
+											<FiInfo className="h-[18px] w-[18px]" />
 										</button>
 										<div
 											role="tooltip"
-											className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl sm:group-hover:block sm:group-focus-within:block"
+											className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#111827] p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl sm:group-hover:block sm:group-focus-within:block"
 										>
 											<p className="mb-1 font-medium">
 												{tr({
@@ -2884,10 +2906,23 @@ function CSVGeneratorPageInner() {
 												</li>
 											</ul>
 										</div>
+										<div className="ml-1 sm:ml-2 flex h-8 items-center">
+											<Switch
+												checked={dustOpen}
+												onChange={setDustOpen}
+												label={tr({
+													no: "Vis innstillinger",
+													en: "Show settings"
+												})}
+											/>
+										</div>
+									</div>
 									</div>
 								</div>
 
-								<div className="grid gap-3 sm:grid-cols-3">
+								{dustOpen && (
+									<>
+									<div className="grid gap-3 sm:grid-cols-3">
 									{/* Mode */}
 									<div className="flex flex-col gap-1.5">
 										<label className="text-xs font-medium text-slate-600 dark:text-slate-400">
@@ -2896,12 +2931,12 @@ function CSVGeneratorPageInner() {
 										<StyledSelect
 											value={dustMode}
 											onChange={(v) => setDustMode(v)}
-											buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+											buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 											options={
 												[
 													{
 														value: "off",
-														label: tr({ no: "Vis alle", en: "Show all" })
+														label: tr({ no: "Vis alle støvtransaksjoner", en: "Show all dust transactions" })
 													},
 													{
 														value: "remove",
@@ -2942,7 +2977,7 @@ function CSVGeneratorPageInner() {
 												inputMode="decimal"
 												value={dustThreshold}
 												onChange={(e) => setDustThreshold(e.target.value)}
-												className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 dark:focus:ring-emerald-900/40 transition-all"
+												className="rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 dark:focus:ring-emerald-900/40 transition-all"
 												placeholder="0.001"
 											/>
 										</div>
@@ -2958,7 +2993,7 @@ function CSVGeneratorPageInner() {
 											<StyledSelect
 												value={dustInterval}
 												onChange={(v) => setDustInterval(v)}
-												buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+												buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 												options={
 													[
 														{
@@ -2989,17 +3024,6 @@ function CSVGeneratorPageInner() {
 								</div>
 
 								{/* Info text – specific per mode */}
-								{dustMode === "off" && (
-									<div className="mt-3 rounded-xl bg-slate-100 dark:bg-slate-800/50 px-3 py-2.5 text-xs text-slate-600 dark:text-slate-400">
-										<span className="font-semibold text-slate-700 dark:text-slate-300">
-											{tr({ no: "Vis alle", en: "Show all" })}:
-										</span>{" "}
-										{tr({
-											no: "Ingen støvbehandling.",
-											en: "No dust processing."
-										})}
-									</div>
-								)}
 								{dustMode === "remove" && (
 									<div className="mt-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 px-3 py-2.5 text-xs text-amber-900 dark:text-amber-200">
 										<span className="font-semibold">
@@ -3070,45 +3094,138 @@ function CSVGeneratorPageInner() {
 										})}
 									</div>
 								)}
+									</>
+								)}
 							</div>
 
 							{/* Actions */}
-							<div className="mt-6 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3">
-								<button
+							<div className="mt-6 flex flex-col sm:flex-row sm:items-center gap-3">
+								<div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3">
+									<button
 									type="submit"
 									disabled={loading || !isAuthed}
 									className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:shadow-lg hover:from-indigo-700 hover:to-emerald-700 focus:outline-none focus:ring-4 focus:ring-indigo-200/60 dark:focus:ring-indigo-900/40 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
-								>
+									>
 									{loading ? (
 										<FiLoader className="h-4 w-4 animate-spin" />
 									) : (
 										<FiEye className="h-4 w-4" />
 									)}
 									{tr({ no: "Sjekk lommebok", en: "Check wallet" })}
-								</button>
+									</button>
 								{loading && (
 									<button
 										type="button"
 										onClick={onCancel}
-										className="inline-flex  items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 shadow-sm dark:shadow-black/25 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300 active:scale-[0.99] w-full sm:w-auto"
+										className="inline-flex  items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 shadow-sm dark:shadow-black/50 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300 active:scale-[0.99] w-full sm:w-auto"
 									>
 										<FiX className="h-4 w-4" />
 										{tr({ no: "Avbryt", en: "Cancel" })}
 									</button>
 								)}
-								<button
+									<button
 									type="button"
 									onClick={onReset}
-									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] w-full sm:w-auto"
-								>
+									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] w-full sm:w-auto"
+									>
 									{tr({ no: "Nullstill", en: "Clear" })}
-								</button>
+									</button>
+								</div>
+								<div className="flex w-full sm:w-auto items-center justify-start sm:justify-end gap-3 sm:ml-auto shrink-0">
+									<div className="relative group w-auto shrink-0">
+									<button
+										type="button"
+										aria-label={tr({
+											no: "Hvorfor skanner generatoren bakover i tid?",
+											en: "Why does the generator scan backwards in time?"
+										})}
+										onClick={() =>
+											openInfoModal(
+												tr({
+													no: "Skanning bakover i tid",
+													en: "Scanning backwards in time"
+												}),
+												<div>
+													<p className="mb-2 text-slate-700 dark:text-slate-200">
+														{tr({
+															no: "Solana-APIet leverer transaksjoner i nyeste-rekkefølge. Derfor starter vi fra de nyeste og jobber oss bakover for å finne eldre transaksjoner.",
+															en: "The Solana API returns transactions newest-first. We start from the latest and page backwards to find older transactions."
+														})}
+													</p>
+													<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
+														<li>
+															{tr({
+																no: "Dette gir raskere forhåndsvisning av nyere aktivitet.",
+																en: "This gives a faster preview of recent activity."
+															})}
+														</li>
+														<li>
+															{tr({
+																no: "Ved delvis skann stopper vi når kredittgrensen nås, men kan fortsette senere fra samme punkt.",
+																en: "On partial scans we stop when credit limits are reached, and can continue later from the same point."
+															})}
+														</li>
+													</ul>
+												</div>
+											)
+										}
+										className="inline-flex items-center justify-center rounded-full p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 transition-colors"
+					>
+										<FiInfo className="h-[18px] w-[18px]" />
+									</button>
+									<div
+										role="tooltip"
+										className="pointer-events-none absolute right-0 top-8 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#111827] p-3 text-xs text-slate-700 dark:text-slate-300 sm:group-hover:block sm:group-focus-within:block"
+									>
+										<p className="mb-1 font-medium">
+											{tr({
+												no: "Skanning bakover i tid",
+												en: "Scanning backwards in time"
+											})}
+										</p>
+										<p className="mb-2 text-slate-600 dark:text-slate-300">
+											{tr({
+												no: "Solana-APIet leverer transaksjoner i nyeste-rekkefølge, så vi starter med de nyeste og går bakover.",
+												en: "The Solana API returns transactions newest-first, so we start at the latest and page backwards."
+											})}
+										</p>
+										<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
+											<li>
+												{tr({
+													no: "Raskere forhåndsvisning av nyere aktivitet.",
+													en: "Faster preview of recent activity."
+												})}
+											</li>
+											<li>
+												{tr({
+													no: "Delvis skann stopper ved kredittgrense og kan fortsette senere.",
+													en: "Partial scans stop at the credit limit and can be resumed later."
+												})}
+											</li>
+										</ul>
+									</div>
+								</div>
+									<button
+									type="button"
+									onClick={() => setLogOpen((v) => !v)}
+									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto shrink-0"
+									title={tr({ no: "Vis/skjul logg", en: "Show/hide log" })}
+									>
+									<FiActivity className="h-4 w-4" />
+									{logOpen
+										? tr({ no: "Skjul logg", en: "Hide log" })
+										: tr({ no: "Vis logg", en: "Show log" })}
+									</button>
+								</div>
+							</div>
 
+							{/* Errors and info messages below buttons */}
+							<div className="space-y-2">
 								{error && !isCreditError && (
 									<div
 										role="status"
 										aria-live="polite"
-										className="sm:ml-2 text-sm text-red-600 flex flex-wrap items-center gap-2"
+										className="text-sm text-red-600 flex flex-wrap items-center gap-2"
 									>
 										<span>{error}</span>
 										{errorCta && (
@@ -3122,7 +3239,7 @@ function CSVGeneratorPageInner() {
 									</div>
 								)}
 								{!error && !isAuthed && (
-									<div className="sm:ml-2 text-sm text-slate-600 dark:text-slate-300">
+									<div className="text-sm text-slate-600 dark:text-slate-300">
 										<Link
 											href="/signin"
 											className="text-indigo-600 dark:text-indigo-400 hover:underline"
@@ -3134,96 +3251,6 @@ function CSVGeneratorPageInner() {
 										</Link>
 									</div>
 								)}
-								{!error && effectiveRows && effectiveRows.length > 0 && (
-									<span className="sm:ml-2" />
-								)}
-								{/* Live log toggle */}
-								<div className="sm:ml-auto flex items-center gap-2">
-									<div className="relative group">
-										<button
-											type="button"
-											aria-label={tr({
-												no: "Hvorfor skanner generatoren bakover i tid?",
-												en: "Why does the generator scan backwards in time?"
-											})}
-											onClick={() =>
-												openInfoModal(
-													tr({
-														no: "Skanning bakover i tid",
-														en: "Scanning backwards in time"
-													}),
-													<div>
-														<p className="mb-2 text-slate-700 dark:text-slate-200">
-															{tr({
-																no: "Solana-APIet leverer transaksjoner i nyeste-rekkefølge. Derfor starter vi fra de nyeste og jobber oss bakover for å finne eldre transaksjoner.",
-																en: "The Solana API returns transactions newest-first. We start from the latest and page backwards to find older transactions."
-															})}
-														</p>
-														<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
-															<li>
-																{tr({
-																	no: "Dette gir raskere forhåndsvisning av nyere aktivitet.",
-																	en: "This gives a faster preview of recent activity."
-																})}
-															</li>
-															<li>
-																{tr({
-																	no: "Ved delvis skann stopper vi når kredittgrensen nås, men kan fortsette senere fra samme punkt.",
-																	en: "On partial scans we stop when credit limits are reached, and can continue later from the same point."
-																})}
-															</li>
-														</ul>
-													</div>
-												)
-											}
-											className="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 focus:outline-none"
-										>
-											<FiInfo className="h-4 w-4" />
-										</button>
-										<div
-											role="tooltip"
-											className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl sm:group-hover:block sm:group-focus-within:block"
-										>
-											<p className="mb-1 font-medium">
-												{tr({
-													no: "Skanning bakover i tid",
-													en: "Scanning backwards in time"
-												})}
-											</p>
-											<p className="mb-2 text-slate-600 dark:text-slate-300">
-												{tr({
-													no: "Solana-APIet leverer transaksjoner i nyeste-rekkefølge, så vi starter med de nyeste og går bakover.",
-													en: "The Solana API returns transactions newest-first, so we start at the latest and page backwards."
-												})}
-											</p>
-											<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
-												<li>
-													{tr({
-														no: "Raskere forhåndsvisning av nyere aktivitet.",
-														en: "Faster preview of recent activity."
-													})}
-												</li>
-												<li>
-													{tr({
-														no: "Delvis skann stopper ved kredittgrense og kan fortsette senere.",
-														en: "Partial scans stop at the credit limit and can be resumed later."
-													})}
-												</li>
-											</ul>
-										</div>
-									</div>
-									<button
-										type="button"
-										onClick={() => setLogOpen((v) => !v)}
-										className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto justify-center"
-										title={tr({ no: "Vis/skjul logg", en: "Show/hide log" })}
-									>
-										<FiActivity className="h-4 w-4" />
-										{logOpen
-											? tr({ no: "Skjul logg", en: "Hide log" })
-											: tr({ no: "Vis logg", en: "Show log" })}
-									</button>
-								</div>
 							</div>
 
 							{isCreditError && (
@@ -3280,7 +3307,7 @@ function CSVGeneratorPageInner() {
 							{logOpen && (
 								<div
 									ref={logRef}
-									className="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-white/5 p-3 text-xs text-slate-700 dark:text-slate-200 max-h-40 overflow-auto"
+									className="mt-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 p-3 text-xs text-slate-700 dark:text-slate-200 max-h-40 overflow-auto"
 								>
 									{logLines.length === 0 ? (
 										<div className="text-slate-500 dark:text-slate-400">
@@ -3325,6 +3352,7 @@ function CSVGeneratorPageInner() {
 									)}
 								</div>
 							)}
+						</div>
 						</form>
 					</ClientOnly>
 				</div>

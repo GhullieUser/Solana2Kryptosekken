@@ -314,7 +314,7 @@ export default function UserPage() {
 	return (
 		<main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
 			<div className="mx-auto max-w-6xl px-4 pt-28 sm:pt-32 pb-10 sm:pb-16">
-				<div className="rounded-3xl bg-white/95 dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 ring-1 ring-slate-300/70 dark:ring-white/10 overflow-visible">
+				<div className="rounded-3xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 shadow-lg shadow-slate-300/80 dark:shadow-black/50 overflow-visible">
 					<div className="border-b border-slate-200/70 dark:border-white/10 px-6 py-5 sm:px-10">
 						<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 							<div className="flex items-center gap-4">
@@ -355,15 +355,15 @@ export default function UserPage() {
 
 					<div className="p-6 sm:p-10">
 						<div className="grid gap-3 sm:grid-cols-3">
-							<div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50/80 dark:bg-white/5 p-3">
-								<p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-									{tr({ no: "CSV-er", en: "CSVs" })}
-								</p>
-								<p className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">
-									{stats.csvCount}
-								</p>
-							</div>
-							<div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50/80 dark:bg-white/5 p-3">
+						<div className="rounded-2xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3 shadow-md shadow-slate-300/80 dark:shadow-black/50">
+							<p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+								{tr({ no: "CSV-er", en: "CSVs" })}
+							</p>
+							<p className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">
+								{stats.csvCount}
+							</p>
+						</div>
+						<div className="rounded-2xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3 shadow-md shadow-slate-300/80 dark:shadow-black/50">
 								<p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
 									{tr({ no: "Adresser", en: "Addresses" })}
 								</p>
@@ -371,7 +371,7 @@ export default function UserPage() {
 									{stats.addressCount}
 								</p>
 							</div>
-							<div className="relative rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50/80 dark:bg-white/5 p-3">
+						<div className="relative rounded-2xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3 shadow-md shadow-slate-300/80 dark:shadow-black/50">
 								<p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
 									{tr({ no: "Totale TX", en: "Total TX" })}
 								</p>
@@ -386,11 +386,11 @@ export default function UserPage() {
 										</span>
 									)}
 								</p>
-								<div className="absolute right-2 top-2 inline-flex items-center rounded-full border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-white/5 p-0.5">
+								<div className="absolute right-4 top-3 inline-flex items-center rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 p-0.5">
 									<button
 										type="button"
 										onClick={() => setShowRawTx(false)}
-										className={`inline-flex items-center px-2 py-1 text-[11px] font-semibold rounded-full transition ${
+										className={`inline-flex items-center justify-center rounded-md px-2.5 py-1 text-[11px] sm:text-xs leading-none transition ${
 											!showRawTx
 												? "bg-indigo-600 text-white"
 												: "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
@@ -406,7 +406,7 @@ export default function UserPage() {
 									<button
 										type="button"
 										onClick={() => setShowRawTx(true)}
-										className={`inline-flex items-center px-2 py-1 text-[11px] font-semibold rounded-full transition ${
+										className={`inline-flex items-center justify-center rounded-md px-2.5 py-1 text-[11px] sm:text-xs leading-none transition ${
 											showRawTx
 												? "bg-indigo-600 text-white"
 												: "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
@@ -420,7 +420,7 @@ export default function UserPage() {
 							</div>
 						</div>
 
-						<div className="mt-4 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50/80 dark:bg-white/5 p-4">
+						<div className="mt-4 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50/80 dark:bg-white/5 p-4 shadow-md shadow-slate-300/80 dark:shadow-black/50">
 							<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 								<div className="flex-1">
 									<div className="flex items-center gap-2">
@@ -464,13 +464,13 @@ export default function UserPage() {
 														</div>
 													)
 												}
-												className="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 focus:outline-none"
+												className="inline-flex items-center justify-center rounded-full p-1 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 transition-colors"
 											>
-												<FiInfo className="h-4 w-4" />
+												<FiInfo className="h-[18px] w-[18px]" />
 											</button>
 											<div
 												role="tooltip"
-												className="pointer-events-none absolute left-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl sm:group-hover:block sm:group-focus-within:block"
+											className="pointer-events-none absolute left-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#111827] p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl sm:group-hover:block sm:group-focus-within:block"
 											>
 												<p className="mb-1 font-medium">
 													{tr({
@@ -659,7 +659,7 @@ export default function UserPage() {
 															}
 															options={options}
 															buttonClassName="inline-flex w-full sm:w-auto items-center justify-between gap-2 rounded-lg bg-white/90 ring-1 ring-black/10 px-3 py-1 text-xs text-slate-700 shadow-sm transition hover:bg-white dark:bg-white/5 dark:text-slate-200 dark:ring-white/10 dark:hover:bg-white/10"
-															menuClassName="w-full sm:w-auto rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 overflow-hidden"
+															menuClassName="w-full sm:w-auto rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden"
 															optionClassName="flex items-center gap-2 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 whitespace-nowrap"
 															labelClassName="truncate whitespace-nowrap"
 															ariaLabel={tr({
@@ -766,11 +766,11 @@ export default function UserPage() {
 				<div className="fixed inset-0 z-50 flex items-center justify-center px-4">
 					<button
 						type="button"
-						className="absolute inset-0 bg-slate-900/50"
+						className="absolute inset-0 bg-slate-900/60"
 						onClick={() => !deleting && setDeleteOpen(false)}
 						aria-label={tr({ no: "Lukk", en: "Close" })}
 					/>
-					<div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-[#0e1729] border border-slate-200 dark:border-white/10 shadow-xl p-6">
+					<div className="relative w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1F2937] shadow-xl p-6">
 						<h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
 							{tr({ no: "Slette konto?", en: "Delete account?" })}
 						</h3>
@@ -817,11 +817,11 @@ export default function UserPage() {
 				<div className="fixed inset-0 z-50 flex items-center justify-center px-4">
 					<button
 						type="button"
-						className="absolute inset-0 bg-slate-900/50"
+						className="absolute inset-0 bg-slate-900/60"
 						onClick={() => !csvDeleting && setCsvDeleteOpen(false)}
 						aria-label={tr({ no: "Lukk", en: "Close" })}
 					/>
-					<div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-[#0e1729] border border-slate-200 dark:border-white/10 shadow-xl p-6">
+					<div className="relative w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1F2937] shadow-xl p-6">
 						<h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
 							{tr({ no: "Slette CSV?", en: "Delete CSV?" })}
 						</h3>
@@ -896,7 +896,7 @@ export default function UserPage() {
 
 			{infoModal && (
 				<div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/40 p-4">
-					<div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-2xl">
+					<div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-2xl">
 						<div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 px-4 py-3">
 							<p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
 								{infoModal.title}

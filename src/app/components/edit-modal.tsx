@@ -532,10 +532,10 @@ export default function ModalEditor({
 		>
 			<div
 				ref={modalCardRef}
-				className="w-full sm:max-w-2xl rounded-2xl overflow-hidden bg-white shadow-2xl ring-1 ring-slate-200 dark:bg-[linear-gradient(180deg,#0e1729_0%,#0b1220_100%)] dark:ring-white/10 flex flex-col max-h[90vh]"
+				className="w-full sm:max-w-2xl rounded-2xl overflow-hidden bg-white shadow-2xl ring-1 ring-slate-200 dark:bg-[#2B3345] dark:ring-white/10 flex flex-col max-h[90vh]"
 				onClick={(e) => e.stopPropagation()}
 			>
-				<div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#0e1729]/80">
+				<div className="sticky top-0 z-10 flex items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#2B3345]">
 					<h3
 						id="edit-dialog-title"
 						className="text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-100"
@@ -615,7 +615,7 @@ export default function ModalEditor({
 								onChange={(v) => setEditDraft(v)}
 								usePortal
 								placement="bottom"
-								buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 bg-white shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+								buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 bg-white shadow-sm dark:shadow-black/50 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 								options={typeOptions.map((t) => ({ value: t, label: t }))}
 								ariaLabel="Velg type"
 							/>
@@ -629,7 +629,7 @@ export default function ModalEditor({
 										<StyledSelect
 											value={textEditMode}
 											onChange={(v) => setTextEditMode(v as TextEditMode)}
-											buttonClassName="min-w-[9.5rem] inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+											buttonClassName="min-w-[9.5rem] inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm dark:shadow-black/50 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 											options={[
 												{ value: "replace", label: "Erstatt" },
 												{ value: "prefix", label: "Prefiks" },
@@ -649,7 +649,7 @@ export default function ModalEditor({
 													autoFocus
 													value={editDraft}
 													onChange={(e) => setEditDraft(e.target.value)}
-													className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+													className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/50 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 													placeholder="Skriv prefiks (ny tekst før)…"
 												/>
 												<textarea
@@ -657,7 +657,7 @@ export default function ModalEditor({
 													readOnly
 													tabIndex={-1}
 													value={notatPreviewValue}
-													className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono text-slate-500 shadow-sm dark:shadow-black/25 dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
+													className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono text-slate-500 shadow-sm dark:shadow-black/50 dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
 													aria-readonly="true"
 												/>
 											</>
@@ -668,7 +668,7 @@ export default function ModalEditor({
 													readOnly
 													tabIndex={-1}
 													value={notatPreviewValue}
-													className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono text-slate-500 shadow-sm dark:shadow-black/25 dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
+													className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono text-slate-500 shadow-sm dark:shadow-black/50 dark:border-white/10 dark:bg-white/5 dark:text-slate-400"
 													aria-readonly="true"
 												/>
 												<textarea
@@ -676,7 +676,7 @@ export default function ModalEditor({
 													autoFocus
 													value={editDraft}
 													onChange={(e) => setEditDraft(e.target.value)}
-													className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+													className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/50 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 													placeholder="Skriv suffiks (ny tekst etter)…"
 												/>
 											</>
@@ -688,7 +688,7 @@ export default function ModalEditor({
 										autoFocus
 										value={editDraft}
 										onChange={(e) => setEditDraft(e.target.value)}
-										className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words min-h-[7rem] dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+										className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm dark:shadow-black/50 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 font-mono whitespace-pre-wrap break-words min-h-[7rem] dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 										placeholder="Ny verdi…"
 									/>
 								)}
@@ -850,7 +850,7 @@ function ModalActions({
 							width: coords.width,
 							zIndex: 100000
 						}}
-						className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-xl dark:border-white/10 dark:bg-[#0f172a] dark:text-slate-200"
+						className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-xl dark:border-white/10 dark:bg-[#111827] dark:text-slate-200"
 					>
 						<p className="mb-1 font-medium">
 							{tr({
@@ -960,8 +960,8 @@ function ModalActions({
 				)
 			: null;
 
-	return (
-		<div className="sticky bottom-0 z-10 px-3 sm:px-4 py-2.5 sm:py-3 border-t border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#0e1729]/80">
+		return (
+			<div className="sticky bottom-0 z-10 px-3 sm:px-4 py-2.5 sm:py-3 border-t border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#2B3345]">
 			<div className="flex flex-col gap-2">
 				<div className="flex items-center justify-between gap-3">
 					<div className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -978,9 +978,9 @@ function ModalActions({
 							en: "Explain options"
 						})}
 						onClick={() => setOpen((v) => !v)}
-						className="shrink-0 rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/10 dark:focus:bg-white/10"
+						className="shrink-0 inline-flex items-center justify-center rounded-full p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 transition-colors"
 					>
-						<IoInformationCircleOutline className="h-5 w-5" />
+							<IoInformationCircleOutline className="h-[18px] w-[18px]" />
 					</button>
 				</div>
 
@@ -990,7 +990,7 @@ function ModalActions({
 						onChange={(v) => setEditScope(v as EditScope)}
 						usePortal
 						placement="auto"
-						buttonClassName="w-full sm:flex-1 min-w-[280px] sm:min-w-[420px] inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm dark:shadow-black/25 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+						buttonClassName="w-full sm:flex-1 min-w-[280px] sm:min-w-[420px] inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm dark:shadow-black/50 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 						options={[
 							{ value: "one", label: "Bare dette feltet" },
 							{

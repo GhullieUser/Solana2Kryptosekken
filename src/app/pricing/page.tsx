@@ -7,7 +7,7 @@ import { BsCheckLg, BsXDiamondFill } from "react-icons/bs";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useLocale } from "@/app/components/locale-provider";
 
-type TierKey = "500" | "1000" | "10000" | "test";
+type TierKey = "500" | "1000" | "10000";
 
 type Tier = {
 	key: TierKey;
@@ -51,17 +51,6 @@ const tiers: Tier[] = [
 			en: "For advanced users and large portfolios."
 		},
 		tag: { no: "10% rabatt", en: "10% off" }
-	},
-	{
-		key: "test",
-		title: { no: "Test", en: "Test" },
-		price: { no: "5 kr", en: "5 NOK" },
-		credits: 750,
-		audience: {
-			no: "Kun for intern testing.",
-			en: "For internal testing only."
-		},
-		tag: { no: "Midlertidig", en: "Temporary" }
 	}
 ];
 
@@ -156,7 +145,7 @@ export default function PricingPage() {
 				</div>
 
 				<div className="mt-8 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
-					<div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-white/5 p-4 sm:p-5 flex flex-col min-h-[300px] sm:min-h-[360px] transition shadow-sm shadow-slate-900/5 dark:shadow-black/30 hover:border-indigo-200/80 hover:bg-white/95 dark:hover:border-indigo-400/30 dark:hover:bg-indigo-500/10">
+					<div className="rounded-2xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 p-4 sm:p-5 flex flex-col min-h-[300px] sm:min-h-[360px] transition shadow-md shadow-slate-300/80 dark:shadow-black/50 hover:shadow-lg hover:shadow-slate-350/90 hover:border-indigo-400 dark:hover:border-indigo-400/50 dark:hover:shadow-black/70">
 						<p className="text-xs sm:text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
 							{tr({ no: "50 TX", en: "50 TX" })}
 						</p>
@@ -186,7 +175,7 @@ export default function PricingPage() {
 								<button
 									type="button"
 									disabled
-									className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm sm:text-sm font-semibold border border-slate-200 dark:border-white/10 bg-slate-100/70 dark:bg-white/5 text-slate-500 dark:text-slate-400 cursor-not-allowed"
+										className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm sm:text-sm font-semibold border border-slate-300 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 cursor-not-allowed"
 								>
 									<BsCheckLg className="h-4 w-4" />
 									{tr({ no: "Aktiv", en: "Active" })}
@@ -198,11 +187,7 @@ export default function PricingPage() {
 					{tiers.map((tier) => (
 						<div
 							key={tier.key}
-							className={`rounded-2xl border p-4 sm:p-5 flex flex-col min-h-[300px] sm:min-h-[360px] border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-white/5 transition shadow-sm shadow-slate-900/5 dark:shadow-black/30 hover:border-indigo-200/80 hover:bg-white/95 dark:hover:border-indigo-400/30 dark:hover:bg-indigo-500/10 ${
-								tier.key === "test"
-									? "lg:col-span-2 lg:col-start-2 lg:justify-self-center lg:w-[min(100%,18rem)]"
-									: ""
-							}`}
+						className="rounded-2xl border p-4 sm:p-5 flex flex-col min-h-[300px] sm:min-h-[360px] border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 transition shadow-md shadow-slate-300/80 dark:shadow-black/50 hover:shadow-lg hover:shadow-slate-350/90 hover:border-indigo-400 dark:hover:border-indigo-400/50 dark:hover:shadow-black/70"
 						>
 							<div className="flex items-center justify-between">
 								<p className="text-xs sm:text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
@@ -250,7 +235,7 @@ export default function PricingPage() {
 				)}
 
 				{/* Payment Methods Section */}
-				<div className="mt-16 border-t border-slate-200/80 dark:border-white/10 pt-16">
+			<div className="mt-16 border-t border-slate-300 dark:border-white/10 pt-16">
 					<div className="text-center mb-10">
 						<h2 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white">
 							{tr({ no: "Betalingsmåter", en: "Payment Methods" })}
@@ -262,7 +247,7 @@ export default function PricingPage() {
 							})}
 						</p>
 					</div>
-					<div className="max-w-2xl mx-auto rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/50 dark:bg-white/5 p-6 sm:p-8">
+					<div className="max-w-2xl mx-auto rounded-2xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 p-6 sm:p-8 shadow-md shadow-slate-300/80 dark:shadow-black/50">
 						<div className="grid grid-cols-2 gap-6">
 							{/* Credit/Debit Card */}
 							<div className="flex flex-col items-center gap-3">

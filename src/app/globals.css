@@ -183,6 +183,53 @@ input[type="number"] {
 	appearance: textfield;
 }
 
+/* Unified native form fields across the app */
+@layer base {
+	input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+			[type="color"]
+		):not([type="file"]):not([type="hidden"]):not([type="submit"]):not(
+			[type="button"]
+		):not([type="reset"]),
+	select,
+	textarea {
+		background-color: #ffffff !important;
+		border-color: #e2e8f0 !important;
+		color: #0f172a;
+	}
+
+	input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+			[type="color"]
+		):not([type="file"]):not([type="hidden"]):not([type="submit"]):not(
+			[type="button"]
+		):not([type="reset"])::placeholder,
+	textarea::placeholder {
+		color: #64748b !important;
+	}
+
+	html.dark
+		input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+				[type="color"]
+			):not([type="file"]):not([type="hidden"]):not([type="submit"]):not(
+				[type="button"]
+			):not([type="reset"]),
+	html.dark select,
+	html.dark textarea {
+		background-color: #1f2937 !important;
+		border-color: rgba(255, 255, 255, 0.1) !important;
+		color: #e2e8f0;
+	}
+
+	html.dark
+		input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+				[type="color"]
+			):not([type="file"]):not([type="hidden"]):not([type="submit"]):not(
+				[type="button"]
+			):not([type="reset"])::placeholder,
+	html.dark textarea::placeholder {
+		color: #94a3b8 !important;
+	}
+}
+
 /* Optional helper if you ever want CSS-only surface */
 .card-surface {
 	background: var(--surface);

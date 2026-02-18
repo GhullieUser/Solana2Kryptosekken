@@ -231,9 +231,9 @@ const COL_ORDER: ColKey[] = [
 
 /** Unified select styling (match expanded counterpart; avoid bright white border) */
 const SELECT_STYLE =
-	"min-w-[140px] sm:min-w-[180px] rounded-xl border border-slate-200 bg-white px-3 pr-10 py-2 text-sm text-slate-800 shadow-sm dark:shadow-black/25 " +
+	"h-9 min-w-[140px] sm:min-w-[180px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 " +
 	"focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 " +
-	"dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40";
+	"dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:focus:ring-indigo-900/40";
 
 /* ---------- tiny utils ---------- */
 function normalizeLogoUrl(input?: string) {
@@ -354,7 +354,7 @@ function CellChrome({
 						e.stopPropagation();
 						onEdit();
 					}}
-					className="absolute right-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover:flex items-center justify-center h-5 w-5 rounded bg-white shadow ring-1 ring-slate-300 text-slate-600 hover:bg-slate-50 dark:bg-slate-900/60 dark:ring-white/10 dark:text-slate-300 dark:hover:bg-slate-800"
+					className="absolute right-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover:flex items-center justify-center h-5 w-5 rounded bg-white shadow ring-1 ring-slate-300 text-slate-600 hover:bg-slate-50 dark:bg-white/5 dark:ring-white/10 dark:text-slate-300 dark:hover:bg-white/10"
 					aria-label="Rediger"
 				>
 					<FiEdit className="h-3.5 w-3.5" />
@@ -1875,7 +1875,7 @@ export default function Preview({
 					{hasStretch && <col style={{ width: `${stretchWidth}px` }} />}
 				</colgroup>
 
-				<thead className="sticky top-0 z-20 bg-white dark:bg-[#0e1729] text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/35">
+				<thead className="sticky top-0 z-20 bg-white dark:bg-[#2B3345] text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50">
 					<tr>
 						<PlainHeader label="Tidspunkt" colKey="tidspunkt" />
 						<HeaderWithFilter label="Type" field="Type" colKey="type" />
@@ -2105,10 +2105,10 @@ export default function Preview({
 											<button
 												type="button"
 												onClick={() => setDebugRow(r)}
-												className="inline-flex items-center justify-center rounded-full p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
+												className="inline-flex items-center justify-center rounded-full p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 transition-colors"
 												title="Vis metadata"
 											>
-												<FiInfo className="h-4 w-4" />
+												<FiInfo className="h-[18px] w-[18px]" />
 											</button>
 										</CellPad>
 									</td>
@@ -2191,7 +2191,7 @@ export default function Preview({
 			<section className="mt-6">
 				<div
 					className={[
-						"rounded-3xl bg-white dark:bg-[#0e1729] shadow-xl shadow-slate-900/10 dark:shadow-black/35 ring-1 ring-slate-300/80 dark:ring-white/10",
+						"rounded-3xl bg-white dark:bg-[#2B3345] shadow-xl shadow-slate-900/10 dark:shadow-black/50 ring-1 ring-slate-300/80 dark:ring-white/10",
 						isResizingCol ? "select-none cursor-col-resize" : ""
 					].join(" ")}
 				>
@@ -2244,7 +2244,7 @@ export default function Preview({
 										"px-2 pr-8 py-1.5 text-[11px] leading-5 sm:px-3 sm:py-2 sm:text-sm",
 										"-mb-px border-b-2 transition-colors",
 										activeTab === "attention"
-											? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
+											? "border-amber-600 text-amber-700 dark:border-amber-400 dark:text-amber-300"
 											: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
 									].join(" ")}
 								>
@@ -2263,7 +2263,7 @@ export default function Preview({
 										<span
 											className={[
 												"absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center rounded-full",
-												"bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0.5 dark:bg-amber-500/20 dark:text-amber-300",
+												"bg-slate-200 text-slate-700 text-[10px] px-1.5 py-0.5 dark:bg-white/10 dark:text-slate-200",
 												pendingIssuesCount > 0 && activeTab !== "attention"
 													? "animate-pulse motion-reduce:animate-none"
 													: ""
@@ -2288,7 +2288,7 @@ export default function Preview({
 										"px-2 pr-6 py-1.5 text-[11px] leading-5 sm:px-3 sm:py-2 sm:text-sm",
 										"-mb-px border-b-2 transition-colors",
 										activeTab === "summary"
-											? "border-indigo-600 text-indigo-700 dark:border-indigo-500 dark:text-indigo-400"
+											? "border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300"
 											: "border-transparent text-slate-600 hover:text-slate-800 dark:text-slate-300 dark:hover:text-slate-100"
 									].join(" ")}
 								>
@@ -2299,7 +2299,7 @@ export default function Preview({
 
 						{/* Tabs content */}
 						{activeTab === "attention" ? (
-							<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/40 p-3 max-h-[80vh] sm:max-h-none overflow-y-auto overscroll-contain dark:border-amber-900/40 dark:bg-amber-500/10">
+							<div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 max-h-[80vh] sm:max-h-none overflow-y-auto overscroll-contain dark:border-white/10 dark:bg-[#1F2937]">
 								{issues.length === 0 ? (
 									<div className="text-sm text-emerald-700 dark:text-emerald-400">
 										{tr({
@@ -2315,7 +2315,7 @@ export default function Preview({
 												type="button"
 												onClick={ignoreAllPending}
 												disabled={!issues.some((i) => i.status === "pending")}
-												className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm dark:shadow-black/25 hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+												className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm dark:shadow-black/50 hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
 												title={tr({
 													no: "Ignorer alle uavklarte elementer",
 													en: "Ignore all unresolved items"
@@ -2363,7 +2363,7 @@ export default function Preview({
 												return (
 													<li
 														key={`${it.kind}:${it.key}`}
-														className="rounded-lg bg-white p-3 ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
+														className="rounded-lg bg-white p-3 ring-1 ring-slate-200 dark:bg-white/5 dark:ring-white/10"
 													>
 														<div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
 															<div className="space-y-1">
@@ -2403,7 +2403,7 @@ export default function Preview({
 																					en: "New market name"
 																				})
 																	}
-																	className="w-full sm:w-56 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+																	className="w-full sm:w-56 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-white/5 dark:text-slate-100"
 																/>
 																<button
 																	type="button"
@@ -2422,7 +2422,7 @@ export default function Preview({
 																<button
 																	type="button"
 																	onClick={() => ignoreIssue(it.kind, it.key)}
-																	className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+																	className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-white/5 dark:text-slate-100"
 																	title={
 																		it.status === "ignored"
 																			? tr({
@@ -2447,7 +2447,7 @@ export default function Preview({
 																			return next;
 																		})
 																	}
-																	className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+																	className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-white/10 dark:bg-white/5 dark:text-slate-100"
 																>
 																	{isOpen
 																		? tr({
@@ -2486,7 +2486,7 @@ export default function Preview({
 																			return (
 																				<li key={`${sig ?? "x"}-${idx}`}>
 																					<div
-																						className="w-full rounded-md bg-white px-2 py-1.5 text-xs shadow-sm dark:shadow-black/25 ring-1 ring-slate-200 dark:bg-slate-900/60 dark:ring-white/10"
+																						className="w-full rounded-md bg-white px-2 py-1.5 text-xs shadow-sm dark:shadow-black/50 ring-1 ring-slate-200 dark:bg-white/5 dark:ring-white/10"
 																						title={
 																							sig
 																								? tr({
@@ -2596,7 +2596,7 @@ export default function Preview({
 										})}
 									</div>
 								) : (
-									<div className="rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900/60">
+									<div className="rounded-xl overflow-hidden border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937]">
 										<table className="w-full text-sm">
 											<thead className="sr-only">
 												<tr>
@@ -2638,7 +2638,7 @@ export default function Preview({
 																className={[
 																	idx === 0
 																		? ""
-																		: "border-t border-slate-200 dark:border-slate-800",
+																		: "border-t border-slate-200 dark:border-white/10",
 																	"block sm:table-row"
 																].join(" ")}
 															>
@@ -2672,9 +2672,10 @@ export default function Preview({
 																					}
 																					options={marketOptions as any}
 																					buttonClassName={
-																						"w-full sm:w-auto inline-flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 shadow-sm dark:shadow-black/25 " +
-																						"focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:focus:ring-indigo-900/40"
+																						"w-full sm:w-auto inline-flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 " +
+																						"focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:focus:ring-indigo-900/40"
 																					}
+																					menuClassName="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937]"
 																					ariaLabel={tr({
 																						no: `Velg marked for ${currency}`,
 																						en: `Select market for ${currency}`
@@ -2732,7 +2733,7 @@ export default function Preview({
 											<button
 												type="button"
 												onClick={clearAllFilters}
-												className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+												className="inline-flex items-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-2 py-1 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10"
 												title={tr({
 													no: "Nullstill alle filtre",
 													en: "Reset all filters"
@@ -2753,6 +2754,7 @@ export default function Preview({
 												"w-full sm:w-auto inline-flex items-center justify-between gap-2 " +
 												SELECT_STYLE
 											}
+											labelClassName="flex-1 truncate text-left"
 											options={[
 												{
 													value: "desc",
@@ -2770,7 +2772,7 @@ export default function Preview({
 											type="button"
 											onClick={undo}
 											disabled={!canUndo}
-											className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+											className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm disabled:opacity-50 dark:shadow-black/50 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-white/10"
 											title={tr({
 												no: "Angre (Ctrl/⌘+Z)",
 												en: "Undo (Ctrl/⌘+Z)"
@@ -2782,7 +2784,7 @@ export default function Preview({
 											type="button"
 											onClick={redo}
 											disabled={!canRedo}
-											className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+											className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm disabled:opacity-50 dark:shadow-black/50 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-white/10"
 											title={tr({
 												no: "Gjør om (Ctrl/⌘+Shift+Z eller Ctrl/⌘+Y)",
 												en: "Redo (Ctrl/⌘+Shift+Z or Ctrl/⌘+Y)"
@@ -2794,7 +2796,7 @@ export default function Preview({
 										<button
 											type="button"
 											onClick={toggleMaximize}
-											className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+											className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 dark:text-slate-100"
 											title={
 												isMaximized
 													? tr({ no: "Lukk maksimering", en: "Exit maximize" })
@@ -2842,7 +2844,7 @@ export default function Preview({
 								{/* Maximized overlay */}
 								{isMaximized && (
 									<div
-										className="fixed inset-0 z-40 bg-white dark:bg-[#0b1220]"
+										className="fixed inset-0 z-40 bg-white dark:bg-[#1F2937]"
 										onClick={() => setOpenFilter(null)}
 									>
 										<div className="h-full flex flex-col p-4 sm:p-6">
@@ -2862,7 +2864,7 @@ export default function Preview({
 														<button
 															type="button"
 															onClick={clearAllFilters}
-															className="rounded-md border border-slate-200 bg-white px-2 py-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+															className="rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-2 py-1.5 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 dark:text-slate-100"
 															title={tr({
 																no: "Nullstill alle filtre",
 																en: "Reset all filters"
@@ -2884,6 +2886,7 @@ export default function Preview({
 															"w-full sm:w-auto inline-flex items-center justify-between gap-2 " +
 															SELECT_STYLE
 														}
+														labelClassName="flex-1 truncate text-left"
 														options={[
 															{
 																value: "desc",
@@ -2907,7 +2910,7 @@ export default function Preview({
 														type="button"
 														onClick={undo}
 														disabled={!canUndo}
-														className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+														className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm disabled:opacity-50 dark:shadow-black/50 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-white/10"
 														title={tr({
 															no: "Angre (Ctrl/⌘+Z)",
 															en: "Undo (Ctrl/⌘+Z)"
@@ -2919,7 +2922,7 @@ export default function Preview({
 														type="button"
 														onClick={redo}
 														disabled={!canRedo}
-														className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm disabled:opacity-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100"
+														className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm disabled:opacity-50 dark:shadow-black/50 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-white/10"
 														title={tr({
 															no: "Gjør om (Ctrl/⌘+Shift+Z eller Ctrl/⌘+Y)",
 															en: "Redo (Ctrl/⌘+Shift+Z or Ctrl/⌘+Y)"
@@ -2931,7 +2934,7 @@ export default function Preview({
 													<button
 														type="button"
 														onClick={toggleMaximize}
-														className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm dark:shadow-black/25 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+														className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 dark:text-slate-100"
 														title={tr({
 															no: "Lukk maksimering",
 															en: "Exit maximize"

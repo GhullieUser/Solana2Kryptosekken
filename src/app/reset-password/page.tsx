@@ -71,7 +71,7 @@ function ResetPasswordInner() {
 
 	return (
 		<main className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
-			<div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] p-6 shadow-xl shadow-slate-900/10 dark:shadow-black/35">
+			<div className="w-full max-w-md rounded-2xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 p-6 shadow-md shadow-slate-300/80 dark:shadow-black/50">
 				<h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
 					{tr({ no: "Nullstill passord", en: "Reset password" })}
 				</h1>
@@ -89,7 +89,7 @@ function ResetPasswordInner() {
 						placeholder={tr({ no: "E-post", en: "Email" })}
 						value={email}
 						onChange={(e) => setEmail(e.target.value)}
-						className="block w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+						className="block w-full rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-md shadow-slate-300/80 dark:shadow-black/50"
 					/>
 					<button
 						type="submit"
