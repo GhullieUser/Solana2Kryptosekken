@@ -183,7 +183,7 @@ export default function ResetNewPasswordPage() {
 							value={password}
 							onChange={(e) => setPassword(e.target.value)}
 							autoComplete="new-password"
-						className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+							className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
 						/>
 						<button
 							type="button"

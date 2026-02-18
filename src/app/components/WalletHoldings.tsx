@@ -401,7 +401,7 @@ export default function WalletHoldings({
 										: tr({
 												no: `${shown.length} tokens`,
 												en: `${shown.length} tokens`
-										  })}
+											})}
 								</span>
 							</div>
 						</div>
@@ -428,7 +428,7 @@ export default function WalletHoldings({
 						<button
 							type="button"
 							onClick={() => setCollapsed((v) => !v)}
-						className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto shrink-0"
+							className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto shrink-0"
 							aria-expanded={!collapsed}
 							aria-controls="wallet-holdings-content"
 						>
@@ -592,8 +592,8 @@ export default function WalletHoldings({
 											h.amountText.length > 0
 												? h.amountText
 												: typeof h.amount === "number"
-												? fmt.format(h.amount)
-												: "0";
+													? fmt.format(h.amount)
+													: "0";
 
 										const vNum = valueNumber(h);
 										const valueKnown = Number.isFinite(vNum) && vNum > 0;

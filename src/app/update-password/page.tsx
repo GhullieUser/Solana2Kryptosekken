@@ -196,7 +196,7 @@ export default function UpdatePasswordPage() {
 								value={currentPassword}
 								onChange={(e) => setCurrentPassword(e.target.value)}
 								autoComplete="current-password"
-					className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+								className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
 							/>
 							<button
 								type="button"
@@ -222,7 +222,7 @@ export default function UpdatePasswordPage() {
 							placeholder={tr({ no: "Nytt passord", en: "New password" })}
 							value={password}
 							onChange={(e) => setPassword(e.target.value)}
-					className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+							className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
 						/>
 						<button
 							type="button"
@@ -250,7 +250,7 @@ export default function UpdatePasswordPage() {
 							})}
 							value={confirmPassword}
 							onChange={(e) => setConfirmPassword(e.target.value)}
-					className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+							className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 pr-10 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
 						/>
 						<button
 							type="button"

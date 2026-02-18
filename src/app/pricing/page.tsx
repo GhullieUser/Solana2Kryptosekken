@@ -175,7 +175,7 @@ export default function PricingPage() {
 								<button
 									type="button"
 									disabled
-										className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm sm:text-sm font-semibold border border-slate-300 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 cursor-not-allowed"
+									className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm sm:text-sm font-semibold border border-slate-300 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 cursor-not-allowed"
 								>
 									<BsCheckLg className="h-4 w-4" />
 									{tr({ no: "Aktiv", en: "Active" })}
@@ -187,7 +187,7 @@ export default function PricingPage() {
 					{tiers.map((tier) => (
 						<div
 							key={tier.key}
-						className="rounded-2xl border p-4 sm:p-5 flex flex-col min-h-[300px] sm:min-h-[360px] border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 transition shadow-md shadow-slate-300/80 dark:shadow-black/50 hover:shadow-lg hover:shadow-slate-350/90 hover:border-indigo-400 dark:hover:border-indigo-400/50 dark:hover:shadow-black/70"
+							className="rounded-2xl border p-4 sm:p-5 flex flex-col min-h-[300px] sm:min-h-[360px] border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 transition shadow-md shadow-slate-300/80 dark:shadow-black/50 hover:shadow-lg hover:shadow-slate-350/90 hover:border-indigo-400 dark:hover:border-indigo-400/50 dark:hover:shadow-black/70"
 						>
 							<div className="flex items-center justify-between">
 								<p className="text-xs sm:text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
@@ -235,7 +235,7 @@ export default function PricingPage() {
 				)}
 
 				{/* Payment Methods Section */}
-			<div className="mt-16 border-t border-slate-300 dark:border-white/10 pt-16">
+				<div className="mt-16 border-t border-slate-300 dark:border-white/10 pt-16">
 					<div className="text-center mb-10">
 						<h2 className="text-2xl sm:text-3xl font-semibold text-slate-900 dark:text-white">
 							{tr({ no: "Betalingsmåter", en: "Payment Methods" })}

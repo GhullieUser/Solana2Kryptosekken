@@ -89,7 +89,7 @@ export default function SignUpPage() {
 						placeholder={tr({ no: "E-post", en: "Email" })}
 						value={email}
 						onChange={(e) => setEmail(e.target.value)}
-					className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
+						className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 shadow-sm"
 					/>
 					<div className="grid grid-cols-[140px_1fr] gap-3">
 						<input

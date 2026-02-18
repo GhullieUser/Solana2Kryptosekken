@@ -197,6 +197,21 @@ type ColKey =
 
 /** Single source of truth: default widths in px. */
 const DEFAULT_COL_WIDTHS: Record<ColKey, number> = {
+	tidspunkt: 112,
+	type: 148,
+	inn: 124,
+	innValuta: 112,
+	ut: 124,
+	utValuta: 112,
+	gebyr: 112,
+	gebyrValuta: 112,
+	marked: 124,
+	notat: 240,
+	explorer: 84,
+	metadata: 102
+};
+
+const LEGACY_DEFAULT_COL_WIDTHS: Record<ColKey, number> = {
 	tidspunkt: 95,
 	type: 115,
 	inn: 140,
@@ -243,6 +258,73 @@ function normalizeLogoUrl(input?: string) {
 		return `https://ipfs.io/ipfs/${cid}`;
 	}
 	return input;
+}
+
+function renderHighlightedJson(value: unknown) {
+	const json = JSON.stringify(value, null, 2);
+	if (!json) return null;
+
+	const tokenRe =
+		/("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*")(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?/g;
+
+	const out: React.ReactNode[] = [];
+	let last = 0;
+	let i = 0;
+	let m: RegExpExecArray | null;
+
+	while ((m = tokenRe.exec(json)) !== null) {
+		const start = m.index;
+		if (start > last) {
+			out.push(json.slice(last, start));
+		}
+
+		const full = m[0];
+		const stringToken = m[1];
+		const isKey = !!m[2];
+		const boolOrNull = m[3];
+
+		if (stringToken) {
+			out.push(
+				<span
+					key={`tok-${i}`}
+					className={
+						isKey
+							? "text-indigo-700 dark:text-indigo-300"
+							: "text-emerald-700 dark:text-emerald-300"
+					}
+				>
+					{isKey ? stringToken : full}
+				</span>
+			);
+			if (isKey) {
+				out.push(full.slice(stringToken.length));
+			}
+		} else if (boolOrNull) {
+			out.push(
+				<span
+					key={`tok-${i}`}
+					className="text-fuchsia-700 dark:text-fuchsia-300"
+				>
+					{full}
+				</span>
+			);
+		} else {
+			out.push(
+				<span key={`tok-${i}`} className="text-amber-700 dark:text-amber-300">
+					{full}
+				</span>
+			);
+		}
+
+		last = tokenRe.lastIndex;
+		i += 1;
+	}
+
+	if (last < json.length) {
+		out.push(json.slice(last));
+	}
+
+	return out;
 }
 
 function SummaryAvatar({
@@ -534,6 +616,24 @@ export default function Preview({
 			const raw = localStorage.getItem("ks_preview_colwidths");
 			if (!raw) return;
 			const saved = JSON.parse(raw) as Partial<Record<ColKey, number>>;
+			const legacyMatchCount = COL_ORDER.reduce((count, k) => {
+				const w = saved[k];
+				return typeof w === "number" &&
+					Math.abs(Math.round(w) - LEGACY_DEFAULT_COL_WIDTHS[k]) <= 2
+					? count + 1
+					: count;
+			}, 0);
+			const isLegacyDefaults = COL_ORDER.every((k) => {
+				const w = saved[k];
+				return (
+					typeof w === "number" &&
+					Math.round(w) === LEGACY_DEFAULT_COL_WIDTHS[k]
+				);
+			});
+			if (isLegacyDefaults || legacyMatchCount >= COL_ORDER.length - 2) {
+				setColWidths({ ...DEFAULT_COL_WIDTHS });
+				return;
+			}
 			const next: Record<ColKey, number> = { ...DEFAULT_COL_WIDTHS };
 			for (const k of COL_ORDER) {
 				const w = saved[k];
@@ -1905,28 +2005,16 @@ export default function Preview({
 						</th>
 						<HeaderWithFilter label="Marked" field="Marked" colKey="marked" />
 						<PlainHeader label="Notat" colKey="notat" />
-						<th
-							className="relative whitespace-nowrap text-center"
-							style={{ width: `${colWidths.explorer}px` }}
-						>
-							<CellPad>
-								<div className="select-none overflow-hidden truncate whitespace-nowrap">
-									Explorer
-								</div>
-							</CellPad>
-							<Resizer colKey="explorer" />
-						</th>
-						<th
-							className="relative whitespace-nowrap text-center"
-							style={{ width: `${colWidths.metadata}px` }}
-						>
-							<CellPad>
-								<div className="select-none overflow-hidden truncate whitespace-nowrap">
-									Metadata
-								</div>
-							</CellPad>
-							<Resizer colKey="metadata" />
-						</th>
+						<PlainHeader
+							label="Explorer"
+							colKey="explorer"
+							extraClass="text-center whitespace-nowrap"
+						/>
+						<PlainHeader
+							label="Metadata"
+							colKey="metadata"
+							extraClass="text-center whitespace-nowrap"
+						/>
 						{hasStretch && (
 							<th
 								style={{ width: stretchWidth, padding: 0 }}
@@ -2146,7 +2234,7 @@ export default function Preview({
 					role="dialog"
 					aria-modal="true"
 				>
-					<div className="w-full max-w-3xl rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-slate-200 dark:bg-[#0f172a] dark:ring-white/10">
+					<div className="w-full max-w-3xl rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-slate-200 dark:bg-[#1F2937] dark:ring-white/10">
 						<div className="mb-3 flex items-center justify-between gap-3">
 							<div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
 								Metadata JSON
@@ -2159,7 +2247,7 @@ export default function Preview({
 											.writeText(JSON.stringify(debugRow, null, 2))
 											.catch(() => {});
 									}}
-									className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-100 dark:hover:bg-slate-800"
+									className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-100 dark:hover:bg-white/10"
 									title="Kopier JSON"
 								>
 									<FiCopy className="h-4 w-4" />
@@ -2175,9 +2263,9 @@ export default function Preview({
 								</button>
 							</div>
 						</div>
-						<div className="max-h-[65vh] overflow-auto rounded-xl bg-slate-50 p-3 font-mono text-[11px] text-slate-800 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-100 dark:ring-white/10">
+						<div className="max-h-[65vh] overflow-auto rounded-xl bg-slate-50 p-3 font-mono text-[11px] text-slate-700 ring-1 ring-slate-200 dark:bg-white/5 dark:text-slate-200 dark:ring-white/10">
 							<pre className="whitespace-pre-wrap break-all">
-								{JSON.stringify(debugRow, null, 2)}
+								{renderHighlightedJson(debugRow)}
 							</pre>
 						</div>
 					</div>

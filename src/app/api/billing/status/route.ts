@@ -89,13 +89,26 @@ export async function GET() {
 		.select("credits_remaining")
 		.eq("user_id", userId)
 		.maybeSingle();
+	const { data: adminUsage } = await admin
+		.from("billing_user_usage")
+		.select("raw_tx_used")
+		.eq("user_id", userId)
+		.maybeSingle();
+	const { data: adminCredits } = await admin
+		.from("billing_user_credits")
+		.select("credits_remaining")
+		.eq("user_id", userId)
+		.maybeSingle();
 
-	const rawUsed = usage?.raw_tx_used ?? 0;
+	const rawUsed = Math.max(usage?.raw_tx_used ?? 0, adminUsage?.raw_tx_used ?? 0);
 	const totalBilled = Array.isArray(usageEvents)
 		? usageEvents.reduce((sum, row) => sum + (row.raw_count ?? 0), 0)
 		: 0;
 	const effectiveRawUsed = Math.max(rawUsed, totalBilled);
-	const creditsRemaining = credits?.credits_remaining ?? 0;
+	const creditsRemaining = Math.max(
+		credits?.credits_remaining ?? 0,
+		adminCredits?.credits_remaining ?? 0
+	);
 	const {
 		grant: freeGrant,
 		rawUsed: freeUsed,

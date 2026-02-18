@@ -136,7 +136,6 @@ export default function AppHeader() {
 	const creditsAnimRef = useRef<number | null>(null);
 	const animatedCreditsRef = useRef<number | null>(null);
 
-
 	useEffect(() => {
 		animatedCreditsRef.current = animatedCredits;
 	}, [animatedCredits]);
@@ -398,7 +397,7 @@ export default function AppHeader() {
 								<FiChevronDown className="h-4 w-4 sm:h-4 sm:w-4 opacity-70" />
 							</button>
 							{userMenuOpen && (
-								<div className="absolute right-0 mt-2 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden z-50 hidden md:block">
+								<div className="absolute right-0 mt-2 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937] shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden z-50 hidden md:block">
 									<div className="lg:hidden px-3 py-2 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 border-b border-slate-100/70 dark:border-white/10 truncate">
 										{userEmail ?? tr({ no: "Bruker", en: "User" })}
 									</div>
@@ -503,7 +502,7 @@ export default function AppHeader() {
 							<FiMenu className="h-4 w-4 sm:h-4 sm:w-4" />
 						</button>
 						{mobileMenuOpen && (
-							<div className="md:hidden fixed inset-x-0 top-[60px] rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden z-50">
+							<div className="md:hidden fixed inset-x-0 top-[60px] rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937] shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden z-50">
 								<Link
 									href="/"
 									className="block px-4 py-3 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:text-slate-900 dark:hover:text-white"

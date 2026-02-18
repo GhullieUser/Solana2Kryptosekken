@@ -63,6 +63,7 @@ create table if not exists public.generated_csvs (
 	dust_mode text,
 	dust_threshold numeric,
 	dust_interval text,
+	tx_meta jsonb,
 	created_at timestamptz not null default now(),
 	updated_at timestamptz not null default now()
 );
@@ -114,6 +115,15 @@ add column if not exists partial boolean not null default false;
 
 alter table public.generated_csvs
 add column if not exists scan_session_id text;
+
+alter table public.generated_csvs
+add column if not exists tx_meta jsonb;
+
+drop policy if exists "select_own_csv_tx_meta" on public.generated_csv_tx_meta;
+drop policy if exists "insert_own_csv_tx_meta" on public.generated_csv_tx_meta;
+drop policy if exists "update_own_csv_tx_meta" on public.generated_csv_tx_meta;
+drop policy if exists "delete_own_csv_tx_meta" on public.generated_csv_tx_meta;
+drop table if exists public.generated_csv_tx_meta;
 
 -- ================= Billing: prepaid credits + usage =================
 create table if not exists public.billing_user_usage (

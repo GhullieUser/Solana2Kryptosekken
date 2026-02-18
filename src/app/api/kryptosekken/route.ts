@@ -123,48 +123,97 @@ async function ensureFreeGrant(
 
 async function ensureUsageRow(
 	supabase: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
+	admin: ReturnType<typeof createSupabaseAdminClient>,
 	userId: string
 ) {
-	const { data } = await supabase
+	const { data, error } = await supabase
 		.from("billing_user_usage")
 		.select("raw_tx_used")
 		.eq("user_id", userId)
 		.maybeSingle();
 	if (data) return data.raw_tx_used ?? 0;
-	const { data: inserted } = await supabase
+	const { data: inserted, error: insertError } = await supabase
 		.from("billing_user_usage")
 		.insert({ user_id: userId })
 		.select("raw_tx_used")
 		.single();
-	return inserted?.raw_tx_used ?? 0;
+	if (inserted && !insertError) return inserted.raw_tx_used ?? 0;
+
+	const { data: adminExisting } = await admin
+		.from("billing_user_usage")
+		.select("raw_tx_used")
+		.eq("user_id", userId)
+		.maybeSingle();
+	if (adminExisting) return adminExisting.raw_tx_used ?? 0;
+
+	const { data: adminInserted } = await admin
+		.from("billing_user_usage")
+		.upsert({ user_id: userId }, { onConflict: "user_id" })
+		.select("raw_tx_used")
+		.single();
+
+	if (process.env.NODE_ENV === "development" && (error || insertError)) {
+		console.log("[billing] usage fallback path", {
+			selectError: error?.message,
+			insertError: insertError?.message,
+			userId
+		});
+	}
+
+	return adminInserted?.raw_tx_used ?? 0;
 }
 
 async function ensureCreditsRow(
 	supabase: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
+	admin: ReturnType<typeof createSupabaseAdminClient>,
 	userId: string
 ) {
-	const { data } = await supabase
+	const { data, error } = await supabase
 		.from("billing_user_credits")
 		.select("credits_remaining")
 		.eq("user_id", userId)
 		.maybeSingle();
 	if (data) return data.credits_remaining ?? 0;
-	const { data: inserted } = await supabase
+	const { data: inserted, error: insertError } = await supabase
 		.from("billing_user_credits")
 		.insert({ user_id: userId })
 		.select("credits_remaining")
 		.single();
-	return inserted?.credits_remaining ?? 0;
+	if (inserted && !insertError) return inserted.credits_remaining ?? 0;
+
+	const { data: adminExisting } = await admin
+		.from("billing_user_credits")
+		.select("credits_remaining")
+		.eq("user_id", userId)
+		.maybeSingle();
+	if (adminExisting) return adminExisting.credits_remaining ?? 0;
+
+	const { data: adminInserted } = await admin
+		.from("billing_user_credits")
+		.upsert({ user_id: userId }, { onConflict: "user_id" })
+		.select("credits_remaining")
+		.single();
+
+	if (process.env.NODE_ENV === "development" && (error || insertError)) {
+		console.log("[billing] credits fallback path", {
+			selectError: error?.message,
+			insertError: insertError?.message,
+			userId
+		});
+	}
+
+	return adminInserted?.credits_remaining ?? 0;
 }
 
 async function getAvailableRawTx(
 	supabase: Awaited<ReturnType<typeof createSupabaseRouteClient>>,
+	admin: ReturnType<typeof createSupabaseAdminClient>,
 	userId: string,
 	freeGrant: number,
 	freeUsed: number
 ) {
-	const rawUsed = await ensureUsageRow(supabase, userId);
-	const creditsRemaining = await ensureCreditsRow(supabase, userId);
+	const rawUsed = await ensureUsageRow(supabase, admin, userId);
+	const creditsRemaining = await ensureCreditsRow(supabase, admin, userId);
 	const { data: usageEvents } = await supabase
 		.from("billing_usage_events")
 		.select("raw_count")
@@ -204,8 +253,8 @@ async function consumeRawUsage(
 		.eq("cache_key", cacheKey)
 		.maybeSingle();
 	const alreadyBilled = existing?.raw_count ?? 0;
-	const rawUsed = await ensureUsageRow(supabase, userId);
-	const creditsRemaining = await ensureCreditsRow(supabase, userId);
+	const rawUsed = await ensureUsageRow(supabase, admin, userId);
+	const creditsRemaining = await ensureCreditsRow(supabase, admin, userId);
 	const { data: usageEvents } = await supabase
 		.from("billing_usage_events")
 		.select("raw_count")
@@ -3668,6 +3717,7 @@ export async function POST(req: NextRequest) {
 
 		const creditState = await getAvailableRawTx(
 			supabase,
+			admin,
 			userId,
 			freeGrant,
 			freeUsed
@@ -3916,9 +3966,12 @@ export async function POST(req: NextRequest) {
 							.eq("cache_key", chargeKey)
 							.maybeSingle();
 						const alreadyBilled = billedEvent?.raw_count ?? 0;
-						const billedRawCount = shouldResume
+						const maxBillableRaw = alreadyBilled + availableRawTx;
+						const billedRawCountBase = shouldResume
 							? alreadyBilled + newRaw
-							: Math.min(billedRawCountRaw, alreadyBilled + availableRawTx);
+							: billedRawCountRaw;
+						const billedRawCount = Math.min(billedRawCountBase, maxBillableRaw);
+						const chargedRaw = Math.max(0, billedRawCount - alreadyBilled);
 						const billing = await consumeRawUsage(
 							supabase,
 							admin,
@@ -3961,7 +4014,7 @@ export async function POST(req: NextRequest) {
 								newLogged,
 								cacheKey: ckey,
 								partial: result.partial,
-								chargedCredits: newRaw
+								chargedCredits: chargedRaw
 							}
 						});
 					} catch (err: any) {
@@ -4182,9 +4235,11 @@ export async function POST(req: NextRequest) {
 				.eq("cache_key", chargeKey)
 				.maybeSingle();
 			const alreadyBilled = billedEvent?.raw_count ?? 0;
-			const billedRawCount = shouldResume
+			const maxBillableRaw = alreadyBilled + availableRawTx;
+			const billedRawCountBase = shouldResume
 				? alreadyBilled + newRaw
-				: Math.min(billedRawCountRaw, alreadyBilled + availableRawTx);
+				: billedRawCountRaw;
+			const billedRawCount = Math.min(billedRawCountBase, maxBillableRaw);
 			const billing = await consumeRawUsage(
 				supabase,
 				admin,

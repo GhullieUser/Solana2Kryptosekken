@@ -455,17 +455,17 @@ function CustomCalendar({
 							disabled={disabled}
 							className={[
 								"aspect-square w-full rounded-md text-[11px] font-medium transition-all relative",
-									disabled
-										? "text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-70"
-										: !rangeStart && !rangeEnd
-											? "hover:bg-slate-100 dark:hover:bg-slate-700/80"
+								disabled
+									? "text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-70"
+									: !rangeStart && !rangeEnd
+										? "hover:bg-slate-100 dark:hover:bg-slate-700/80"
 										: "",
 								rangeStart
 									? "bg-indigo-600 text-white hover:brightness-110 rounded-l-full"
 									: rangeEnd
 										? "bg-emerald-600 text-white hover:brightness-110 rounded-r-full"
 										: inRange
-												? "bg-indigo-50 text-indigo-900 dark:bg-indigo-500/20 dark:text-indigo-100"
+											? "bg-indigo-50 text-indigo-900 dark:bg-indigo-500/20 dark:text-indigo-100"
 											: "text-slate-700 dark:text-slate-300"
 							].join(" ")}
 						>
@@ -525,6 +525,18 @@ type CsvVersion = {
 	from_iso?: string | null;
 	to_iso?: string | null;
 	updated_at?: string | null;
+};
+
+type StoredTxMetaRow = {
+	index: number;
+	signature?: string | null;
+	signer?: string | null;
+	sender?: string | null;
+	recipient?: string | null;
+	programId?: string | null;
+	programName?: string | null;
+	rowId?: string | null;
+	debugTx?: HeliusTx | null;
 };
 
 function CSVGeneratorPageInner() {
@@ -783,6 +795,140 @@ function CSVGeneratorPageInner() {
 		return out;
 	}, []);
 
+	const buildStoredTxMeta = useCallback(
+		(inputRows: KSPreviewRow[]) => {
+			const out: StoredTxMetaRow[] = [];
+			for (let index = 0; index < inputRows.length; index += 1) {
+				const row = inputRows[index];
+				const sig = row.signature ?? extractSigFromNotat(row.Notat);
+				const entry: StoredTxMetaRow = {
+					index,
+					signature: sig ?? null,
+					signer: row.signer ?? null,
+					sender: row.sender ?? null,
+					recipient: row.recipient ?? null,
+					programId: row.programId ?? null,
+					programName: row.programName ?? null,
+					rowId: row.rowId ?? null,
+					debugTx: row.debugTx ?? null
+				};
+				if (
+					entry.signature ||
+					entry.signer ||
+					entry.sender ||
+					entry.recipient ||
+					entry.programId ||
+					entry.programName ||
+					entry.rowId ||
+					entry.debugTx
+				) {
+					out.push(entry);
+				}
+			}
+			return out.length > 0 ? out : null;
+		},
+		[extractSigFromNotat]
+	);
+
+	const applyStoredTxMeta = useCallback(
+		(baseRows: KSPreviewRow[], rawTxMeta: unknown): KSPreviewRow[] => {
+			if (!Array.isArray(rawTxMeta) || rawTxMeta.length === 0) return baseRows;
+			const byIndex = new Map<number, StoredTxMetaRow>();
+			const bySignature = new Map<string, StoredTxMetaRow>();
+			const orderedFallback: StoredTxMetaRow[] = [];
+
+			for (const item of rawTxMeta) {
+				if (!item || typeof item !== "object") continue;
+				const meta = item as Record<string, unknown>;
+				const indexCandidate = meta.index ?? meta.row_index ?? meta.rowIndex;
+				const index =
+					typeof indexCandidate === "number" &&
+					Number.isFinite(indexCandidate) &&
+					indexCandidate >= 0
+						? Math.floor(indexCandidate)
+						: null;
+				const signature =
+					typeof meta.signature === "string" && meta.signature.trim().length > 0
+						? meta.signature.trim()
+						: null;
+				const rowMeta: StoredTxMetaRow = {
+					index: index ?? -1,
+					signature,
+					signer:
+						typeof meta.signer === "string" ? meta.signer : (meta.Signer as
+								|string
+								| undefined),
+					sender:
+						typeof meta.sender === "string"
+							? meta.sender
+							: (meta.avsender as string | undefined) ??
+								(meta.Avsender as string | undefined),
+					programId:
+						typeof meta.programId === "string"
+							? meta.programId
+							: (meta.program_id as string | undefined) ??
+								(meta.ProgramId as string | undefined),
+					recipient:
+						typeof meta.recipient === "string"
+							? meta.recipient
+							: (meta.mottaker as string | undefined) ??
+								(meta.Recipient as string | undefined),
+					programName:
+						typeof meta.programName === "string"
+							? meta.programName
+							: (meta.program_name as string | undefined) ??
+								(meta.ProgramName as string | undefined),
+					rowId:
+						typeof meta.rowId === "string"
+							? meta.rowId
+							: (meta.row_id as string | undefined),
+					debugTx:
+						meta.debugTx && typeof meta.debugTx === "object"
+							? (meta.debugTx as HeliusTx)
+							: (meta.debug_tx as HeliusTx | undefined)
+				};
+
+				if (index !== null) {
+					byIndex.set(index, rowMeta);
+				} else {
+					orderedFallback.push(rowMeta);
+				}
+				if (signature) {
+					bySignature.set(signature, rowMeta);
+				}
+			}
+
+			if (
+				byIndex.size === 0 &&
+				bySignature.size === 0 &&
+				orderedFallback.length === 0
+			) {
+				return baseRows;
+			}
+
+			return baseRows.map((row, index) => {
+				const rowSig = row.signature ?? extractSigFromNotat(row.Notat);
+				const meta =
+					byIndex.get(index) ??
+					(rowSig ? bySignature.get(rowSig) : undefined) ??
+					orderedFallback[index];
+				if (!meta) return row;
+				return {
+					...row,
+					signature: meta.signature ?? rowSig ?? row.signature,
+					signer: meta.signer ?? row.signer,
+					sender: meta.sender ?? row.sender,
+					recipient: meta.recipient ?? row.recipient,
+					programId: meta.programId ?? row.programId,
+					programName: meta.programName ?? row.programName,
+					rowId: meta.rowId ?? row.rowId,
+					debugTx: meta.debugTx ?? row.debugTx
+				};
+			});
+		},
+		[extractSigFromNotat]
+	);
+
 	// Settings
 	const [includeNFT, setIncludeNFT] = useState(false);
 	const [useOslo, setUseOslo] = useState(false);
@@ -941,17 +1087,20 @@ function CSVGeneratorPageInner() {
 		async (
 			csvText: string,
 			partialOverride?: boolean,
-			scanSessionOverride?: string | null
+			scanSessionOverride?: string | null,
+			rowsOverride?: KSPreviewRow[]
 		) => {
 			if (!isAuthed || !lastPayloadRef.current) return;
 			const payload = lastPayloadRef.current;
+			const rowsForMeta = rowsOverride ?? rows ?? [];
+			const txMeta = buildStoredTxMeta(rowsForMeta);
 			const counts = lastCountsRef.current;
 			const rawCount = counts?.rawCount ?? (rows ? rows.length : undefined);
 			const processedCount =
 				counts?.processedCount ?? (rows ? rows.length : undefined);
 			const partialValue =
 				typeof partialOverride === "boolean" ? partialOverride : partialResult;
-			await fetch("/api/csvs", {
+			let res = await fetch("/api/csvs", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -971,12 +1120,62 @@ function CSVGeneratorPageInner() {
 					useOslo: payload.useOslo ?? false,
 					dustMode: payload.dustMode ?? null,
 					dustThreshold: payload.dustThreshold ?? null,
-					dustInterval: payload.dustInterval ?? null
+					dustInterval: payload.dustInterval ?? null,
+					txMeta
 				})
 			}).catch(() => undefined);
+
+			if ((!res || !res.ok) && txMeta) {
+				let shouldRetryWithoutTxMeta = !res;
+				if (res) {
+					const errJson = await res.json().catch(() => null);
+					const errMsg = String(errJson?.error ?? "").toLowerCase();
+					const txMetaSchemaMissing =
+						errMsg.includes("tx_meta") &&
+						(errMsg.includes("column") || errMsg.includes("does not exist"));
+					shouldRetryWithoutTxMeta = txMetaSchemaMissing;
+				}
+
+				if (!shouldRetryWithoutTxMeta) {
+					await fetchCsvVersionsForAddress(payload.address);
+					return;
+				}
+
+				res = await fetch("/api/csvs", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						address: payload.address,
+						label: payload.walletName ?? null,
+						csv: csvText,
+						rawCount,
+						processedCount,
+						partial: partialValue,
+						scanSessionId:
+							scanSessionOverride !== undefined
+								? scanSessionOverride
+								: scanSessionId,
+						fromISO: payload.fromISO ?? null,
+						toISO: payload.toISO ?? null,
+						includeNFT: payload.includeNFT ?? false,
+						useOslo: payload.useOslo ?? false,
+						dustMode: payload.dustMode ?? null,
+						dustThreshold: payload.dustThreshold ?? null,
+						dustInterval: payload.dustInterval ?? null,
+						txMeta: null
+					})
+				}).catch(() => undefined);
+			}
 			await fetchCsvVersionsForAddress(payload.address);
 		},
-		[isAuthed, partialResult, rows, scanSessionId, fetchCsvVersionsForAddress]
+		[
+			isAuthed,
+			partialResult,
+			rows,
+			scanSessionId,
+			fetchCsvVersionsForAddress,
+			buildStoredTxMeta
+		]
 	);
 
 	const getScanSessionId = useCallback(() => {
@@ -999,7 +1198,8 @@ function CSVGeneratorPageInner() {
 			setError(null);
 			setErrorCta(null);
 			const parsedRows = parseCsvToRows(j.csv);
-			setRows(parsedRows);
+			const hydratedRows = applyStoredTxMeta(parsedRows, j.txMeta);
+			setRows(hydratedRows);
 			setOk(true);
 			const dustModeRaw = (j.meta?.dust_mode ?? "off") as
 				| DustMode
@@ -1035,7 +1235,7 @@ function CSVGeneratorPageInner() {
 			if (j.meta?.partial && !j.meta?.scan_session_id) {
 				const newSessionId = getScanSessionId();
 				setScanSessionIdSafe(newSessionId);
-				await saveGeneratedCsv(j.csv, true, newSessionId);
+				await saveGeneratedCsv(j.csv, true, newSessionId, hydratedRows);
 			} else {
 				setScanSessionIdSafe(j.meta?.scan_session_id ?? null);
 			}
@@ -1145,6 +1345,7 @@ function CSVGeneratorPageInner() {
 		},
 		[
 			address,
+			applyStoredTxMeta,
 			extractSigFromNotat,
 			parseCsvToRows,
 			saveGeneratedCsv,
@@ -1667,7 +1868,8 @@ function CSVGeneratorPageInner() {
 									await saveGeneratedCsv(
 										csvAuto,
 										Boolean(j.partial),
-										j.partial ? nextSessionId : null
+										j.partial ? nextSessionId : null,
+										j.rowsPreview || []
 									);
 								}
 								setOk(true);
@@ -1729,6 +1931,18 @@ function CSVGeneratorPageInner() {
 											en: `TX Credits spent ${j.chargedCredits}.`
 										})
 									);
+									if (j.partial && hasKnownCredits && availableCredits > 0) {
+										const spentNow = Math.max(
+											0,
+											Math.min(j.chargedCredits, availableCredits)
+										);
+										pushLogUnique(
+											tr({
+												no: `Delvis skann: brukte ${spentNow} av ${availableCredits} tilgjengelige TX Credits i denne kjøringen.`,
+												en: `Partial scan: used ${spentNow} of ${availableCredits} available TX Credits in this run.`
+											})
+										);
+									}
 								}
 							}
 						} catch {
@@ -2224,7 +2438,7 @@ function CSVGeneratorPageInner() {
 											onBlur={() =>
 												setTimeout(() => setAddrMenuOpen(false), 120)
 											}
-											className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937] pl-11 pr-24 py-2.5 text-sm text-slate-800 dark:text-slate-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+											className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937] shadow-sm dark:shadow-none pl-11 pr-24 py-2.5 text-sm text-slate-800 dark:text-slate-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
 										/>
 
 										{/* right-side actions: clear, history */}
@@ -2291,22 +2505,33 @@ function CSVGeneratorPageInner() {
 													}
 												/>
 												{selectedCsv?.partial ? (
-													<button
-														type="button"
-														onClick={continueSelectedCsv}
-														className="inline-flex items-center gap-2 rounded-lg px-2 py-1 text-xs font-semibold transition bg-indigo-600 text-white hover:bg-indigo-500"
-														title={tr({
-															no: "Fortsett skann",
-															en: "Continue scan"
-														})}
-														aria-label={tr({
-															no: "Fortsett skann",
-															en: "Continue scan"
-														})}
-													>
-														<FiEye className="h-3.5 w-3.5" />
-														{tr({ no: "Fortsett skann", en: "Continue scan" })}
-													</button>
+													<>
+														<button
+															type="button"
+															onClick={openSelectedCsv}
+															className="inline-flex items-center justify-center rounded-lg border border-indigo-200 bg-white px-2 py-1 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-[#2B3345] dark:text-indigo-200 dark:hover:bg-indigo-600/30"
+															title={tr({ no: "Vis CSV", en: "View CSV" })}
+															aria-label={tr({ no: "Vis CSV", en: "View CSV" })}
+														>
+															<FiEye className="h-4 w-4" />
+														</button>
+														<button
+															type="button"
+															onClick={continueSelectedCsv}
+															className="inline-flex items-center gap-2 rounded-lg px-2 py-1 text-xs font-semibold transition bg-indigo-600 text-white hover:bg-indigo-500"
+															title={tr({
+																no: "Fortsett skann",
+																en: "Continue scan"
+															})}
+															aria-label={tr({
+																no: "Fortsett skann",
+																en: "Continue scan"
+															})}
+														>
+															<FiActivity className="h-3.5 w-3.5" />
+															{tr({ no: "Fortsett skann", en: "Continue scan" })}
+														</button>
+													</>
 												) : (
 													<button
 														type="button"
@@ -2330,7 +2555,7 @@ function CSVGeneratorPageInner() {
 													{filteredHistory.map((item) => (
 														<li
 															key={item.address}
-															className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700/80"
+															className="flex items-center justify-between gap-2 px-3 py-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700/80"
 														>
 															<button
 																type="button"
@@ -2403,8 +2628,8 @@ function CSVGeneratorPageInner() {
 											})}
 											value={walletName}
 											onChange={(e) => setWalletName(e.target.value)}
-											className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937] pl-11 pr-3 py-2.5 text-sm text-slate-800 dark:text-slate-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
-									/>
+											className="block w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937] shadow-sm dark:shadow-none pl-11 pr-3 py-2.5 text-sm text-slate-800 dark:text-slate-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+										/>
 
 										{/* Solscan button */}
 										{hasAddressInput && (
@@ -2425,11 +2650,14 @@ function CSVGeneratorPageInner() {
 												}`}
 												title={
 													canOpenExplorer
-														? tr({ no: "Åpne i Solscan", en: "Open in Solscan" })
+														? tr({
+																no: "Åpne i Solscan",
+																en: "Open in Solscan"
+															})
 														: tr({
 																no: "Ugyldig adresse",
 																en: "Invalid address"
-														  })
+															})
 												}
 											>
 												<IoOpenOutline className="h-[18px] w-[18px]" />
@@ -2477,7 +2705,7 @@ function CSVGeneratorPageInner() {
 												setCalMonth(range?.to ?? new Date());
 											}}
 											aria-expanded={calOpen}
-											className="group w-full overflow-hidden rounded-xl border border-slate-200 dark:border-white/10 bg-gradient-to-br from-slate-50 to-white dark:from-white/5 dark:to-white/5 hover:border-indigo-300 dark:hover:border-indigo-600 transition-all duration-200"
+											className="group w-full overflow-hidden rounded-xl border border-slate-200 dark:border-white/10 bg-gradient-to-br from-slate-50 to-white dark:from-white/5 dark:to-white/5 shadow-sm dark:shadow-none hover:border-indigo-300 dark:hover:border-indigo-600 transition-all duration-200"
 										>
 											<div className="flex items-center justify-between px-3 py-2.5 sm:px-4 sm:py-3">
 												<div className="flex items-center gap-3">
@@ -2656,7 +2884,7 @@ function CSVGeneratorPageInner() {
 
 								{/* Timezone + NFT */}
 								<div className="mt-4 grid gap-4 lg:grid-cols-2">
-									<div className="rounded-2xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-[#1F2937] p-4">
+									<div className="rounded-2xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-[#1F2937] shadow-sm dark:shadow-none p-4">
 										<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
 											<div className="flex items-center gap-3">
 												<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2.5">
@@ -2679,7 +2907,7 @@ function CSVGeneratorPageInner() {
 																? tr({
 																		no: "Europe/Oslo (UTC+01:00)",
 																		en: "Europe/Oslo"
-																  })
+																	})
 																: "UTC"}
 														</span>
 													</div>
@@ -2696,7 +2924,7 @@ function CSVGeneratorPageInner() {
 										</div>
 									</div>
 
-									<div className="rounded-2xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-[#1F2937] p-4">
+									<div className="rounded-2xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-[#1F2937] shadow-sm dark:shadow-none p-4">
 										<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
 											<div className="flex items-center gap-3">
 												<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2.5">
@@ -2729,630 +2957,651 @@ function CSVGeneratorPageInner() {
 									</div>
 								</div>
 
-							{/* Dust section */}
-							<div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-[#1F2937] p-4">
-								<div
-									className={`${dustOpen ? "mb-4" : ""} flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3`}
-								>
-									<div className="flex items-center gap-3">
-										<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2.5">
-											<MdOutlineCleaningServices className="h-5 w-5 text-slate-600 dark:text-slate-400" />
-										</div>
-										<div>
-											<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-												{tr({
-													no: "Støvbehandling",
-													en: "Dust processing"
-												})}
+								{/* Dust section */}
+								<div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-[#1F2937] shadow-sm dark:shadow-none p-4">
+									<div
+										className={`${dustOpen ? "mb-4" : ""} flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3`}
+									>
+										<div className="flex items-center gap-3">
+											<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2.5">
+												<MdOutlineCleaningServices className="h-5 w-5 text-slate-600 dark:text-slate-400" />
 											</div>
-											<div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-												{tr({
-													no: "Håndter små transaksjoner",
-													en: "Handle small transactions"
-												})}
+											<div>
+												<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+													{tr({
+														no: "Støvbehandling",
+														en: "Dust processing"
+													})}
+												</div>
+												<div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+													{tr({
+														no: "Håndter små transaksjoner",
+														en: "Handle small transactions"
+													})}
+												</div>
 											</div>
 										</div>
-									</div>
-									<div className="flex h-8 items-center gap-6 sm:gap-8 self-start sm:self-center">
-										<div className="relative group flex h-8 items-center">
-										<button
-											type="button"
-											aria-label={tr({
-												no: "Hvorfor får jeg så mye støv i SOL?",
-												en: "Why am I getting so much SOL dust?"
-											})}
-											onClick={() =>
-												openInfoModal(
-													tr({
-														no: "Hvorfor så mye “støv” i SOL?",
-														en: "Why so much SOL “dust”?"
-													}),
-													<div>
-														<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
-															<li>
-																<b>Spam / dusting:</b>{" "}
-																{tr({
-																	no: "små innbetalinger for å lokke klikk eller spore lommebøker.",
-																	en: "tiny deposits used to lure clicks or track wallets."
-																})}
-															</li>
-															<li>
-																<b>DEX/protocol refunds:</b>{" "}
-																{tr({
-																	no: "bitte små rest-lamports/fee-reverseringer etter swaps/tx.",
-																	en: "tiny leftover lamports/fee reversals after swaps/tx."
-																})}
-															</li>
-															<li>
-																<b>
-																	{tr({
-																		no: "Konto-livssyklus",
-																		en: "Account lifecycle"
-																	})}
-																	:
-																</b>{" "}
-																{tr({
-																	no: "opprettelse/lukking og ",
-																	en: "creation/closure and "
-																})}
-																<i>rent-exempt</i>{" "}
-																{tr({
-																	no: "topp-ups kan sende/returnere små SOL-beløp.",
-																	en: "top-ups can send/return small SOL amounts."
-																})}
-															</li>
-															<li>
-																<b>
-																	{tr({
-																		no: "Program-interaksjoner",
-																		en: "Program interactions"
-																	})}
-																	:
-																</b>{" "}
-																{tr({
-																	no: "claim/reward/airdrop-skript som sender små beløp for å trigge varsler eller dekke minutt-gebyr.",
-																	en: "claim/reward/airdrop scripts that send tiny amounts to trigger notifications or cover min-fees."
-																})}
-															</li>
-															<li>
-																<b>
-																	{tr({
-																		no: "NFT/WSOL-håndtering",
-																		en: "NFT/WSOL handling"
-																	})}
-																	:
-																</b>{" "}
-																{tr({
-																	no: "wrapping/unwrapping og ATA-endringer kan etterlate mikrobeløp.",
-																	en: "wrapping/unwrapping and ATA changes can leave micro-amounts."
-																})}
-															</li>
-														</ul>
-													</div>
-												)
-											}
-											className="inline-flex h-8 w-8 items-center justify-center rounded-full p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 transition-colors"
-										>
-											<FiInfo className="h-[18px] w-[18px]" />
-										</button>
-										<div
-											role="tooltip"
-											className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#111827] p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl sm:group-hover:block sm:group-focus-within:block"
-										>
-											<p className="mb-1 font-medium">
-												{tr({
-													no: "Hvorfor så mye “støv” i SOL?",
-													en: "Why so much SOL “dust”?"
-												})}
-											</p>
-											<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
-												<li>
-													<b>Spam / dusting:</b>{" "}
-													{tr({
-														no: "små innbetalinger for å lokke klikk eller spore lommebøker.",
-														en: "tiny deposits used to lure clicks or track wallets."
+										<div className="flex h-8 items-center gap-6 sm:gap-8 self-start sm:self-center">
+											<div className="relative group flex h-8 items-center">
+												<button
+													type="button"
+													aria-label={tr({
+														no: "Hvorfor får jeg så mye støv i SOL?",
+														en: "Why am I getting so much SOL dust?"
 													})}
-												</li>
-												<li>
-													<b>DEX/protocol refunds:</b>{" "}
-													{tr({
-														no: "bitte små rest-lamports/fee-reverseringer etter swaps/tx.",
-														en: "tiny leftover lamports/fee reversals after swaps/tx."
-													})}
-												</li>
-												<li>
-													<b>
-														{tr({
-															no: "Konto-livssyklus",
-															en: "Account lifecycle"
-														})}
-														:
-													</b>{" "}
-													{tr({
-														no: "opprettelse/lukking og ",
-														en: "creation/closure and "
-													})}
-													<i>rent-exempt</i>{" "}
-													{tr({
-														no: "topp-ups kan sende/returnere små SOL-beløp.",
-														en: "top-ups can send/return small SOL amounts."
-													})}
-												</li>
-												<li>
-													<b>
-														{tr({
-															no: "Program-interaksjoner",
-															en: "Program interactions"
-														})}
-														:
-													</b>{" "}
-													{tr({
-														no: "claim/reward/airdrop-skript som sender små beløp for å trigge varsler eller dekke minutt-gebyr.",
-														en: "claim/reward/airdrop scripts that send tiny amounts to trigger notifications or cover min-fees."
-													})}
-												</li>
-												<li>
-													<b>
-														{tr({
-															no: "NFT/WSOL-håndtering",
-															en: "NFT/WSOL handling"
-														})}
-														:
-													</b>{" "}
-													{tr({
-														no: "wrapping/unwrapping og ATA-endringer kan etterlate mikrobeløp.",
-														en: "wrapping/unwrapping and ATA changes can leave micro-amounts."
-													})}
-												</li>
-											</ul>
-										</div>
-										<div className="ml-1 sm:ml-2 flex h-8 items-center">
-											<Switch
-												checked={dustOpen}
-												onChange={setDustOpen}
-												label={tr({
-													no: "Vis innstillinger",
-													en: "Show settings"
-												})}
-											/>
-										</div>
-									</div>
-									</div>
-								</div>
-
-								{dustOpen && (
-									<>
-									<div className="grid gap-3 sm:grid-cols-3">
-									{/* Mode */}
-									<div className="flex flex-col gap-1.5">
-										<label className="text-xs font-medium text-slate-600 dark:text-slate-400">
-											{tr({ no: "Modus", en: "Mode" })}
-										</label>
-										<StyledSelect
-											value={dustMode}
-											onChange={(v) => setDustMode(v)}
-											buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
-											options={
-												[
-													{
-														value: "off",
-														label: tr({ no: "Vis alle støvtransaksjoner", en: "Show all dust transactions" })
-													},
-													{
-														value: "remove",
-														label: tr({ no: "Skjul", en: "Hide" })
-													},
-													{
-														value: "aggregate-signer",
-														label: tr({
-															no: "Slå sammen fra samme sender",
-															en: "Aggregate by sender"
-														})
-													},
-													{
-														value: "aggregate-period",
-														label: tr({
-															no: "Slå sammen periodisk",
-															en: "Aggregate by period"
-														})
+													onClick={() =>
+														openInfoModal(
+															tr({
+																no: "Hvorfor så mye “støv” i SOL?",
+																en: "Why so much SOL “dust”?"
+															}),
+															<div>
+																<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
+																	<li>
+																		<b>Spam / dusting:</b>{" "}
+																		{tr({
+																			no: "små innbetalinger for å lokke klikk eller spore lommebøker.",
+																			en: "tiny deposits used to lure clicks or track wallets."
+																		})}
+																	</li>
+																	<li>
+																		<b>DEX/protocol refunds:</b>{" "}
+																		{tr({
+																			no: "bitte små rest-lamports/fee-reverseringer etter swaps/tx.",
+																			en: "tiny leftover lamports/fee reversals after swaps/tx."
+																		})}
+																	</li>
+																	<li>
+																		<b>
+																			{tr({
+																				no: "Konto-livssyklus",
+																				en: "Account lifecycle"
+																			})}
+																			:
+																		</b>{" "}
+																		{tr({
+																			no: "opprettelse/lukking og ",
+																			en: "creation/closure and "
+																		})}
+																		<i>rent-exempt</i>{" "}
+																		{tr({
+																			no: "topp-ups kan sende/returnere små SOL-beløp.",
+																			en: "top-ups can send/return small SOL amounts."
+																		})}
+																	</li>
+																	<li>
+																		<b>
+																			{tr({
+																				no: "Program-interaksjoner",
+																				en: "Program interactions"
+																			})}
+																			:
+																		</b>{" "}
+																		{tr({
+																			no: "claim/reward/airdrop-skript som sender små beløp for å trigge varsler eller dekke minutt-gebyr.",
+																			en: "claim/reward/airdrop scripts that send tiny amounts to trigger notifications or cover min-fees."
+																		})}
+																	</li>
+																	<li>
+																		<b>
+																			{tr({
+																				no: "NFT/WSOL-håndtering",
+																				en: "NFT/WSOL handling"
+																			})}
+																			:
+																		</b>{" "}
+																		{tr({
+																			no: "wrapping/unwrapping og ATA-endringer kan etterlate mikrobeløp.",
+																			en: "wrapping/unwrapping and ATA changes can leave micro-amounts."
+																		})}
+																	</li>
+																</ul>
+															</div>
+														)
 													}
-												] as const
-											}
-											ariaLabel={tr({
-												no: "Velg støvmodus",
-												en: "Choose dust mode"
-											})}
-										/>
-									</div>
-
-									{/* Threshold */}
-									{dustMode !== "off" && (
-										<div className="flex flex-col gap-1.5">
-											<label className="text-xs font-medium text-slate-600 dark:text-slate-400">
-												{tr({ no: "Grense (beløp)", en: "Threshold (amount)" })}
-											</label>
-											<input
-												type="number"
-												step="0.001"
-												inputMode="decimal"
-												value={dustThreshold}
-												onChange={(e) => setDustThreshold(e.target.value)}
-												className="rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 dark:focus:ring-emerald-900/40 transition-all"
-												placeholder="0.001"
-											/>
-										</div>
-									)}
-
-									{/* Interval — when aggregating */}
-									{(dustMode === "aggregate-period" ||
-										dustMode === "aggregate-signer") && (
-										<div className="flex flex-col gap-1.5">
-											<label className="text-xs font-medium text-slate-600 dark:text-slate-400">
-												{tr({ no: "Periode", en: "Period" })}
-											</label>
-											<StyledSelect
-												value={dustInterval}
-												onChange={(v) => setDustInterval(v)}
-												buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
-												options={
-													[
-														{
-															value: "day",
-															label: tr({ no: "Dag", en: "Day" })
-														},
-														{
-															value: "week",
-															label: tr({ no: "Uke", en: "Week" })
-														},
-														{
-															value: "month",
-															label: tr({ no: "Måned", en: "Month" })
-														},
-														{
-															value: "year",
-															label: tr({ no: "År", en: "Year" })
-														}
-													] as const
-												}
-												ariaLabel={tr({
-													no: "Velg periode",
-													en: "Choose period"
-												})}
-											/>
-										</div>
-									)}
-								</div>
-
-								{/* Info text – specific per mode */}
-								{dustMode === "remove" && (
-									<div className="mt-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 px-3 py-2.5 text-xs text-amber-900 dark:text-amber-200">
-										<span className="font-semibold">
-											{tr({ no: "Skjul", en: "Hide" })}:
-										</span>{" "}
-										{tr({
-											no: "Filtrerer vekk alle overføringer under grensen.",
-											en: "Filters out all transfers below the threshold."
-										})}{" "}
-										<span className="font-semibold">
-											({tr({ no: "Ikke anbefalt", en: "Not recommended" })})
-										</span>
-									</div>
-								)}
-								{dustMode === "aggregate-signer" && (
-									<div className="mt-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700/50 px-3 py-2.5 text-xs text-emerald-900 dark:text-emerald-200">
-										<span className="font-semibold">
-											{tr({
-												no: "Slå sammen fra samme sender",
-												en: "Aggregate by sender"
-											})}
-											:
-										</span>{" "}
-										{tr({ no: "Slår sammen små ", en: "Aggregates small " })}
-										<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
-											Overføring-Inn
-										</code>{" "}
-										og{" "}
-										<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
-											Overføring-Ut
-										</code>{" "}
-										fra hver{" "}
-										<i>{tr({ no: "signer-adresse", en: "signer address" })}</i>{" "}
-										{tr({
-											no: "per ",
-											en: "per "
-										})}
-										<span className="font-semibold">
-											{tr({
-												no: "valgt periode",
-												en: "selected period"
-											})}
-										</span>
-										.
-									</div>
-								)}
-								{dustMode === "aggregate-period" && (
-									<div className="mt-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700/50 px-3 py-2.5 text-xs text-emerald-900 dark:text-emerald-200">
-										<span className="font-semibold">
-											{tr({
-												no: "Slå sammen periodisk",
-												en: "Aggregate by period"
-											})}
-											:
-										</span>{" "}
-										{tr({ no: "Slår sammen små ", en: "Aggregates small " })}
-										<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
-											Overføring-Inn
-										</code>{" "}
-										og{" "}
-										<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
-											Overføring-Ut
-										</code>{" "}
-										per valgt periode
-										{tr({
-											no: " (uavhengig av sender).",
-											en: " (regardless of sender)."
-										})}
-									</div>
-								)}
-									</>
-								)}
-							</div>
-
-							{/* Actions */}
-							<div className="mt-6 flex flex-col sm:flex-row sm:items-center gap-3">
-								<div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3">
-									<button
-									type="submit"
-									disabled={loading || !isAuthed}
-									className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:shadow-lg hover:from-indigo-700 hover:to-emerald-700 focus:outline-none focus:ring-4 focus:ring-indigo-200/60 dark:focus:ring-indigo-900/40 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
-									>
-									{loading ? (
-										<FiLoader className="h-4 w-4 animate-spin" />
-									) : (
-										<FiEye className="h-4 w-4" />
-									)}
-									{tr({ no: "Sjekk lommebok", en: "Check wallet" })}
-									</button>
-								{loading && (
-									<button
-										type="button"
-										onClick={onCancel}
-										className="inline-flex  items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 shadow-sm dark:shadow-black/50 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300 active:scale-[0.99] w-full sm:w-auto"
-									>
-										<FiX className="h-4 w-4" />
-										{tr({ no: "Avbryt", en: "Cancel" })}
-									</button>
-								)}
-									<button
-									type="button"
-									onClick={onReset}
-									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] w-full sm:w-auto"
-									>
-									{tr({ no: "Nullstill", en: "Clear" })}
-									</button>
-								</div>
-								<div className="flex w-full sm:w-auto items-center justify-start sm:justify-end gap-3 sm:ml-auto shrink-0">
-									<div className="relative group w-auto shrink-0">
-									<button
-										type="button"
-										aria-label={tr({
-											no: "Hvorfor skanner generatoren bakover i tid?",
-											en: "Why does the generator scan backwards in time?"
-										})}
-										onClick={() =>
-											openInfoModal(
-												tr({
-													no: "Skanning bakover i tid",
-													en: "Scanning backwards in time"
-												}),
-												<div>
-													<p className="mb-2 text-slate-700 dark:text-slate-200">
+													className="inline-flex h-8 w-8 items-center justify-center rounded-full p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 transition-colors"
+												>
+													<FiInfo className="h-[18px] w-[18px]" />
+												</button>
+												<div
+													role="tooltip"
+													className="pointer-events-none absolute right-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#111827] p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl sm:group-hover:block sm:group-focus-within:block"
+												>
+													<p className="mb-1 font-medium">
 														{tr({
-															no: "Solana-APIet leverer transaksjoner i nyeste-rekkefølge. Derfor starter vi fra de nyeste og jobber oss bakover for å finne eldre transaksjoner.",
-															en: "The Solana API returns transactions newest-first. We start from the latest and page backwards to find older transactions."
+															no: "Hvorfor så mye “støv” i SOL?",
+															en: "Why so much SOL “dust”?"
 														})}
 													</p>
 													<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
 														<li>
+															<b>Spam / dusting:</b>{" "}
 															{tr({
-																no: "Dette gir raskere forhåndsvisning av nyere aktivitet.",
-																en: "This gives a faster preview of recent activity."
+																no: "små innbetalinger for å lokke klikk eller spore lommebøker.",
+																en: "tiny deposits used to lure clicks or track wallets."
 															})}
 														</li>
 														<li>
+															<b>DEX/protocol refunds:</b>{" "}
 															{tr({
-																no: "Ved delvis skann stopper vi når kredittgrensen nås, men kan fortsette senere fra samme punkt.",
-																en: "On partial scans we stop when credit limits are reached, and can continue later from the same point."
+																no: "bitte små rest-lamports/fee-reverseringer etter swaps/tx.",
+																en: "tiny leftover lamports/fee reversals after swaps/tx."
+															})}
+														</li>
+														<li>
+															<b>
+																{tr({
+																	no: "Konto-livssyklus",
+																	en: "Account lifecycle"
+																})}
+																:
+															</b>{" "}
+															{tr({
+																no: "opprettelse/lukking og ",
+																en: "creation/closure and "
+															})}
+															<i>rent-exempt</i>{" "}
+															{tr({
+																no: "topp-ups kan sende/returnere små SOL-beløp.",
+																en: "top-ups can send/return small SOL amounts."
+															})}
+														</li>
+														<li>
+															<b>
+																{tr({
+																	no: "Program-interaksjoner",
+																	en: "Program interactions"
+																})}
+																:
+															</b>{" "}
+															{tr({
+																no: "claim/reward/airdrop-skript som sender små beløp for å trigge varsler eller dekke minutt-gebyr.",
+																en: "claim/reward/airdrop scripts that send tiny amounts to trigger notifications or cover min-fees."
+															})}
+														</li>
+														<li>
+															<b>
+																{tr({
+																	no: "NFT/WSOL-håndtering",
+																	en: "NFT/WSOL handling"
+																})}
+																:
+															</b>{" "}
+															{tr({
+																no: "wrapping/unwrapping og ATA-endringer kan etterlate mikrobeløp.",
+																en: "wrapping/unwrapping and ATA changes can leave micro-amounts."
 															})}
 														</li>
 													</ul>
 												</div>
-											)
-										}
-										className="inline-flex items-center justify-center rounded-full p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 transition-colors"
-					>
-										<FiInfo className="h-[18px] w-[18px]" />
-									</button>
-									<div
-										role="tooltip"
-										className="pointer-events-none absolute right-0 top-8 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#111827] p-3 text-xs text-slate-700 dark:text-slate-300 sm:group-hover:block sm:group-focus-within:block"
-									>
-										<p className="mb-1 font-medium">
-											{tr({
-												no: "Skanning bakover i tid",
-												en: "Scanning backwards in time"
-											})}
-										</p>
-										<p className="mb-2 text-slate-600 dark:text-slate-300">
-											{tr({
-												no: "Solana-APIet leverer transaksjoner i nyeste-rekkefølge, så vi starter med de nyeste og går bakover.",
-												en: "The Solana API returns transactions newest-first, so we start at the latest and page backwards."
-											})}
-										</p>
-										<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
-											<li>
-												{tr({
-													no: "Raskere forhåndsvisning av nyere aktivitet.",
-													en: "Faster preview of recent activity."
-												})}
-											</li>
-											<li>
-												{tr({
-													no: "Delvis skann stopper ved kredittgrense og kan fortsette senere.",
-													en: "Partial scans stop at the credit limit and can be resumed later."
-												})}
-											</li>
-										</ul>
-									</div>
-								</div>
-									<button
-									type="button"
-									onClick={() => setLogOpen((v) => !v)}
-									className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto shrink-0"
-									title={tr({ no: "Vis/skjul logg", en: "Show/hide log" })}
-									>
-									<FiActivity className="h-4 w-4" />
-									{logOpen
-										? tr({ no: "Skjul logg", en: "Hide log" })
-										: tr({ no: "Vis logg", en: "Show log" })}
-									</button>
-								</div>
-							</div>
-
-							{/* Errors and info messages below buttons */}
-							<div className="space-y-2">
-								{error && !isCreditError && (
-									<div
-										role="status"
-										aria-live="polite"
-										className="text-sm text-red-600 flex flex-wrap items-center gap-2"
-									>
-										<span>{error}</span>
-										{errorCta && (
-											<Link
-												href={errorCta.href}
-												className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200 px-3 py-1 text-[11px] font-semibold hover:bg-amber-200/70 dark:hover:bg-amber-500/25"
-											>
-												{tr({ no: "Topp opp", en: "Top up" })}
-											</Link>
-										)}
-									</div>
-								)}
-								{!error && !isAuthed && (
-									<div className="text-sm text-slate-600 dark:text-slate-300">
-										<Link
-											href="/signin"
-											className="text-indigo-600 dark:text-indigo-400 hover:underline"
-										>
-											{tr({
-												no: "Logg inn for å sjekke lommebøker.",
-												en: "Sign in to check wallets."
-											})}
-										</Link>
-									</div>
-								)}
-							</div>
-
-							{isCreditError && (
-								<div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
-									<div className="flex flex-wrap items-center gap-2">
-										<span className="inline-flex items-center gap-1">
-											<FiAlertTriangle className="h-3.5 w-3.5" />
-											{error}
-										</span>
-										{errorCta && (
-											<Link
-												href={errorCta.href}
-												className="inline-flex items-center rounded-full bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200 px-3 py-1 text-[11px] font-semibold hover:bg-rose-200/70 dark:hover:bg-rose-500/25"
-											>
-												{tr({ no: "Topp opp", en: "Top up" })}
-											</Link>
-										)}
-									</div>
-								</div>
-							)}
-
-							{!error && partialResult && (
-								<div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-									<div className="flex flex-wrap items-center gap-2">
-										<span className="inline-flex items-center gap-1">
-											<FiAlertTriangle className="h-3.5 w-3.5" />
-											{(billingStatus?.freeRemaining ?? 0) +
-												(billingStatus?.creditsRemaining ?? 0) >
-											0
-												? tr({
-														no: "Ufullstendig skann. Klikk «Sjekk lommebok» for å fortsette skannet.",
-														en: "Incomplete scan. Click “Check wallet” to continue the scan."
-													})
-												: tr({
-														no: "Ufullstendig skann pga. ikke nok TX Credits. Topp opp for å fullføre.",
-														en: "Incomplete scan due to insufficient TX Credits. Top up to complete the scan."
-													})}
-										</span>
-										{(billingStatus?.freeRemaining ?? 0) +
-											(billingStatus?.creditsRemaining ?? 0) ===
-											0 && (
-											<Link
-												href="/pricing"
-												className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200 px-3 py-1 text-[11px] font-semibold hover:bg-amber-200/70 dark:hover:bg-amber-500/25"
-											>
-												{tr({ no: "Topp opp", en: "Top up" })}
-											</Link>
-										)}
-									</div>
-								</div>
-							)}
-
-							{/* Live log panel */}
-							{logOpen && (
-								<div
-									ref={logRef}
-									className="mt-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 p-3 text-xs text-slate-700 dark:text-slate-200 max-h-40 overflow-auto"
-								>
-									{logLines.length === 0 ? (
-										<div className="text-slate-500 dark:text-slate-400">
-											{tr({
-												no: "Ingen hendelser ennå.",
-												en: "No events yet."
-											})}
+												<div className="ml-1 sm:ml-2 flex h-8 items-center">
+													<Switch
+														checked={dustOpen}
+														onChange={setDustOpen}
+														label={tr({
+															no: "Vis innstillinger",
+															en: "Show settings"
+														})}
+													/>
+												</div>
+											</div>
 										</div>
-									) : (
-										<div className="space-y-2">
-											{logLines.length > 0 && (
-												<ul className="space-y-1 font-mono">
-													{logLines.map((ln, i) => {
-														const creditMatch = ln.match(
-															/(TX Credits (brukt|spent))\s*(\d+)(.*)$/
-														);
-														if (creditMatch) {
-															const label = creditMatch[1];
-															const value = creditMatch[3];
-															const tail = creditMatch[4] ?? "";
-															const prefix = ln
-																.slice(0, creditMatch.index ?? 0)
-																.trim();
-															return (
-																<li key={i} className="flex items-center gap-1">
-																	{prefix ? <span>{prefix}</span> : null}
-																	<BsXDiamondFill className="h-3.5 w-3.5 text-amber-500 ml-1" />
-																	<span className="tabular-nums">{value}</span>
-																	<span>{` ${label}${tail}`}</span>
-																</li>
-															);
+									</div>
+
+									{dustOpen && (
+										<>
+											<div className="grid gap-3 sm:grid-cols-3">
+												{/* Mode */}
+												<div className="flex flex-col gap-1.5">
+													<label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+														{tr({ no: "Modus", en: "Mode" })}
+													</label>
+													<StyledSelect
+														value={dustMode}
+														onChange={(v) => setDustMode(v)}
+														buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm dark:shadow-none px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+														options={
+															[
+																{
+																	value: "off",
+																	label: tr({
+																		no: "Vis alle støvtransaksjoner",
+																		en: "Show all dust transactions"
+																	})
+																},
+																{
+																	value: "remove",
+																	label: tr({ no: "Skjul", en: "Hide" })
+																},
+																{
+																	value: "aggregate-signer",
+																	label: tr({
+																		no: "Slå sammen fra samme sender",
+																		en: "Aggregate by sender"
+																	})
+																},
+																{
+																	value: "aggregate-period",
+																	label: tr({
+																		no: "Slå sammen periodisk",
+																		en: "Aggregate by period"
+																	})
+																}
+															] as const
 														}
-														return (
-															<li key={i} className="flex items-center gap-1">
-																<span>{ln}</span>
-															</li>
-														);
+														ariaLabel={tr({
+															no: "Velg støvmodus",
+															en: "Choose dust mode"
+														})}
+													/>
+												</div>
+
+												{/* Threshold */}
+												{dustMode !== "off" && (
+													<div className="flex flex-col gap-1.5">
+														<label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+															{tr({
+																no: "Grense (beløp)",
+																en: "Threshold (amount)"
+															})}
+														</label>
+														<input
+															type="number"
+															step="0.001"
+															inputMode="decimal"
+															value={dustThreshold}
+															onChange={(e) => setDustThreshold(e.target.value)}
+															className="rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm dark:shadow-none px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 dark:focus:ring-emerald-900/40 transition-all"
+															placeholder="0.001"
+														/>
+													</div>
+												)}
+
+												{/* Interval — when aggregating */}
+												{(dustMode === "aggregate-period" ||
+													dustMode === "aggregate-signer") && (
+													<div className="flex flex-col gap-1.5">
+														<label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+															{tr({ no: "Periode", en: "Period" })}
+														</label>
+														<StyledSelect
+															value={dustInterval}
+															onChange={(v) => setDustInterval(v)}
+															buttonClassName="w-full inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm dark:shadow-none px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/40"
+															options={
+																[
+																	{
+																		value: "day",
+																		label: tr({ no: "Dag", en: "Day" })
+																	},
+																	{
+																		value: "week",
+																		label: tr({ no: "Uke", en: "Week" })
+																	},
+																	{
+																		value: "month",
+																		label: tr({ no: "Måned", en: "Month" })
+																	},
+																	{
+																		value: "year",
+																		label: tr({ no: "År", en: "Year" })
+																	}
+																] as const
+															}
+															ariaLabel={tr({
+																no: "Velg periode",
+																en: "Choose period"
+															})}
+														/>
+													</div>
+												)}
+											</div>
+
+											{/* Info text – specific per mode */}
+											{dustMode === "remove" && (
+												<div className="mt-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 px-3 py-2.5 text-xs text-amber-900 dark:text-amber-200">
+													<span className="font-semibold">
+														{tr({ no: "Skjul", en: "Hide" })}:
+													</span>{" "}
+													{tr({
+														no: "Filtrerer vekk alle overføringer under grensen.",
+														en: "Filters out all transfers below the threshold."
+													})}{" "}
+													<span className="font-semibold">
+														(
+														{tr({ no: "Ikke anbefalt", en: "Not recommended" })}
+														)
+													</span>
+												</div>
+											)}
+											{dustMode === "aggregate-signer" && (
+												<div className="mt-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700/50 px-3 py-2.5 text-xs text-emerald-900 dark:text-emerald-200">
+													<span className="font-semibold">
+														{tr({
+															no: "Slå sammen fra samme sender",
+															en: "Aggregate by sender"
+														})}
+														:
+													</span>{" "}
+													{tr({
+														no: "Slår sammen små ",
+														en: "Aggregates small "
 													})}
+													<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
+														Overføring-Inn
+													</code>{" "}
+													og{" "}
+													<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
+														Overføring-Ut
+													</code>{" "}
+													fra hver{" "}
+													<i>
+														{tr({ no: "signer-adresse", en: "signer address" })}
+													</i>{" "}
+													{tr({
+														no: "per ",
+														en: "per "
+													})}
+													<span className="font-semibold">
+														{tr({
+															no: "valgt periode",
+															en: "selected period"
+														})}
+													</span>
+													.
+												</div>
+											)}
+											{dustMode === "aggregate-period" && (
+												<div className="mt-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700/50 px-3 py-2.5 text-xs text-emerald-900 dark:text-emerald-200">
+													<span className="font-semibold">
+														{tr({
+															no: "Slå sammen periodisk",
+															en: "Aggregate by period"
+														})}
+														:
+													</span>{" "}
+													{tr({
+														no: "Slår sammen små ",
+														en: "Aggregates small "
+													})}
+													<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
+														Overføring-Inn
+													</code>{" "}
+													og{" "}
+													<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
+														Overføring-Ut
+													</code>{" "}
+													per valgt periode
+													{tr({
+														no: " (uavhengig av sender).",
+														en: " (regardless of sender)."
+													})}
+												</div>
+											)}
+										</>
+									)}
+								</div>
+
+								{/* Actions */}
+								<div className="mt-6 flex flex-col sm:flex-row sm:items-center gap-3">
+									<div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3">
+										<button
+											type="submit"
+											disabled={loading || !isAuthed}
+											className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:shadow-lg hover:from-indigo-700 hover:to-emerald-700 focus:outline-none focus:ring-4 focus:ring-indigo-200/60 dark:focus:ring-indigo-900/40 active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed w-full sm:w-auto"
+										>
+											{loading ? (
+												<FiLoader className="h-4 w-4 animate-spin" />
+											) : (
+												<FiEye className="h-4 w-4" />
+											)}
+											{tr({ no: "Sjekk lommebok", en: "Check wallet" })}
+										</button>
+										{loading && (
+											<button
+												type="button"
+												onClick={onCancel}
+												className="inline-flex  items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 shadow-sm dark:shadow-black/50 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300 active:scale-[0.99] w-full sm:w-auto"
+											>
+												<FiX className="h-4 w-4" />
+												{tr({ no: "Avbryt", en: "Cancel" })}
+											</button>
+										)}
+										<button
+											type="button"
+											onClick={onReset}
+											className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] w-full sm:w-auto"
+										>
+											{tr({ no: "Nullstill", en: "Clear" })}
+										</button>
+									</div>
+									<div className="flex w-full sm:w-auto items-center justify-start sm:justify-end gap-3 sm:ml-auto shrink-0">
+										<div className="relative group w-auto shrink-0">
+											<button
+												type="button"
+												aria-label={tr({
+													no: "Hvorfor skanner generatoren bakover i tid?",
+													en: "Why does the generator scan backwards in time?"
+												})}
+												onClick={() =>
+													openInfoModal(
+														tr({
+															no: "Skanning bakover i tid",
+															en: "Scanning backwards in time"
+														}),
+														<div>
+															<p className="mb-2 text-slate-700 dark:text-slate-200">
+																{tr({
+																	no: "Solana-APIet leverer transaksjoner i nyeste-rekkefølge. Derfor starter vi fra de nyeste og jobber oss bakover for å finne eldre transaksjoner.",
+																	en: "The Solana API returns transactions newest-first. We start from the latest and page backwards to find older transactions."
+																})}
+															</p>
+															<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
+																<li>
+																	{tr({
+																		no: "Dette gir raskere forhåndsvisning av nyere aktivitet.",
+																		en: "This gives a faster preview of recent activity."
+																	})}
+																</li>
+																<li>
+																	{tr({
+																		no: "Ved delvis skann stopper vi når kredittgrensen nås, men kan fortsette senere fra samme punkt.",
+																		en: "On partial scans we stop when credit limits are reached, and can continue later from the same point."
+																	})}
+																</li>
+															</ul>
+														</div>
+													)
+												}
+												className="inline-flex items-center justify-center rounded-full p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 transition-colors"
+											>
+												<FiInfo className="h-[18px] w-[18px]" />
+											</button>
+											<div
+												role="tooltip"
+												className="pointer-events-none absolute right-0 top-8 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#111827] p-3 text-xs text-slate-700 dark:text-slate-300 sm:group-hover:block sm:group-focus-within:block"
+											>
+												<p className="mb-1 font-medium">
+													{tr({
+														no: "Skanning bakover i tid",
+														en: "Scanning backwards in time"
+													})}
+												</p>
+												<p className="mb-2 text-slate-600 dark:text-slate-300">
+													{tr({
+														no: "Solana-APIet leverer transaksjoner i nyeste-rekkefølge, så vi starter med de nyeste og går bakover.",
+														en: "The Solana API returns transactions newest-first, so we start at the latest and page backwards."
+													})}
+												</p>
+												<ul className="list-disc space-y-1 pl-4 text-slate-600 dark:text-slate-300">
+													<li>
+														{tr({
+															no: "Raskere forhåndsvisning av nyere aktivitet.",
+															en: "Faster preview of recent activity."
+														})}
+													</li>
+													<li>
+														{tr({
+															no: "Delvis skann stopper ved kredittgrense og kan fortsette senere.",
+															en: "Partial scans stop at the credit limit and can be resumed later."
+														})}
+													</li>
 												</ul>
+											</div>
+										</div>
+										<button
+											type="button"
+											onClick={() => setLogOpen((v) => !v)}
+											className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto shrink-0"
+											title={tr({ no: "Vis/skjul logg", en: "Show/hide log" })}
+										>
+											<FiActivity className="h-4 w-4" />
+											{logOpen
+												? tr({ no: "Skjul logg", en: "Hide log" })
+												: tr({ no: "Vis logg", en: "Show log" })}
+										</button>
+									</div>
+								</div>
+
+								{/* Errors and info messages below buttons */}
+								<div className="space-y-2">
+									{error && !isCreditError && (
+										<div
+											role="status"
+											aria-live="polite"
+											className="text-sm text-red-600 flex flex-wrap items-center gap-2"
+										>
+											<span>{error}</span>
+											{errorCta && (
+												<Link
+													href={errorCta.href}
+													className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200 px-3 py-1 text-[11px] font-semibold hover:bg-amber-200/70 dark:hover:bg-amber-500/25"
+												>
+													{tr({ no: "Topp opp", en: "Top up" })}
+												</Link>
 											)}
 										</div>
 									)}
+									{!error && !isAuthed && (
+										<div className="text-sm text-slate-600 dark:text-slate-300">
+											<Link
+												href="/signin"
+												className="text-indigo-600 dark:text-indigo-400 hover:underline"
+											>
+												{tr({
+													no: "Logg inn for å sjekke lommebøker.",
+													en: "Sign in to check wallets."
+												})}
+											</Link>
+										</div>
+									)}
 								</div>
-							)}
-						</div>
+
+								{isCreditError && (
+									<div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+										<div className="flex flex-wrap items-center gap-2">
+											<span className="inline-flex items-center gap-1">
+												<FiAlertTriangle className="h-3.5 w-3.5" />
+												{error}
+											</span>
+											{errorCta && (
+												<Link
+													href={errorCta.href}
+													className="inline-flex items-center rounded-full bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200 px-3 py-1 text-[11px] font-semibold hover:bg-rose-200/70 dark:hover:bg-rose-500/25"
+												>
+													{tr({ no: "Topp opp", en: "Top up" })}
+												</Link>
+											)}
+										</div>
+									</div>
+								)}
+
+								{!error && partialResult && (
+									<div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+										<div className="flex flex-wrap items-center gap-2">
+											<span className="inline-flex items-center gap-1">
+												<FiAlertTriangle className="h-3.5 w-3.5" />
+												{(billingStatus?.freeRemaining ?? 0) +
+													(billingStatus?.creditsRemaining ?? 0) >
+												0
+													? tr({
+															no: "Ufullstendig skann. Klikk «Sjekk lommebok» for å fortsette skannet.",
+															en: "Incomplete scan. Click “Check wallet” to continue the scan."
+														})
+													: tr({
+															no: "Ufullstendig skann pga. ikke nok TX Credits. Topp opp for å fullføre.",
+															en: "Incomplete scan due to insufficient TX Credits. Top up to complete the scan."
+														})}
+											</span>
+											{(billingStatus?.freeRemaining ?? 0) +
+												(billingStatus?.creditsRemaining ?? 0) ===
+												0 && (
+												<Link
+													href="/pricing"
+													className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200 px-3 py-1 text-[11px] font-semibold hover:bg-amber-200/70 dark:hover:bg-amber-500/25"
+												>
+													{tr({ no: "Topp opp", en: "Top up" })}
+												</Link>
+											)}
+										</div>
+									</div>
+								)}
+
+								{/* Live log panel */}
+								{logOpen && (
+									<div
+										ref={logRef}
+										className="mt-4 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 p-3 text-xs text-slate-700 dark:text-slate-200 max-h-40 overflow-auto"
+									>
+										{logLines.length === 0 ? (
+											<div className="text-slate-500 dark:text-slate-400">
+												{tr({
+													no: "Ingen hendelser ennå.",
+													en: "No events yet."
+												})}
+											</div>
+										) : (
+											<div className="space-y-2">
+												{logLines.length > 0 && (
+													<ul className="space-y-1 font-mono">
+														{logLines.map((ln, i) => {
+															const creditMatch = ln.match(
+																/(TX Credits (brukt|spent))\s*(\d+)(.*)$/
+															);
+															if (creditMatch) {
+																const label = creditMatch[1];
+																const value = creditMatch[3];
+																const tail = creditMatch[4] ?? "";
+																const prefix = ln
+																	.slice(0, creditMatch.index ?? 0)
+																	.trim();
+																return (
+																	<li
+																		key={i}
+																		className="flex items-center gap-1"
+																	>
+																		{prefix ? <span>{prefix}</span> : null}
+																		<BsXDiamondFill className="h-3.5 w-3.5 text-amber-500 ml-1" />
+																		<span className="tabular-nums">
+																			{value}
+																		</span>
+																		<span>{` ${label}${tail}`}</span>
+																	</li>
+																);
+															}
+															return (
+																<li key={i} className="flex items-center gap-1">
+																	<span>{ln}</span>
+																</li>
+															);
+														})}
+													</ul>
+												)}
+											</div>
+										)}
+									</div>
+								)}
+							</div>
 						</form>
 					</ClientOnly>
 				</div>
@@ -3428,7 +3677,7 @@ function CSVGeneratorPageInner() {
 
 				{partialScanModal && (
 					<div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/40 p-4">
-						<div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-2xl">
+						<div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937] shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 px-4 py-3">
 								<p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
 									{partialScanModal.isComplete
@@ -3444,7 +3693,7 @@ function CSVGeneratorPageInner() {
 								<button
 									type="button"
 									onClick={() => setPartialScanModal(null)}
-									className="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"
+									className="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10"
 									aria-label={tr({ no: "Lukk", en: "Close" })}
 								>
 									✕
@@ -3464,7 +3713,7 @@ function CSVGeneratorPageInner() {
 												})}
 									</p>
 									{partialScanModal && (
-										<div className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-lg px-3 py-2 space-y-1">
+										<div className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-white/5 rounded-lg px-3 py-2 space-y-1 border border-slate-200 dark:border-white/10">
 											<div>
 												<strong>{tr({ no: "Tidsrom:", en: "Period:" })}</strong>{" "}
 												{formatDateRange(
@@ -3504,7 +3753,7 @@ function CSVGeneratorPageInner() {
 										<button
 											type="button"
 											onClick={continuePartialScan}
-											className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white px-4 py-2.5 text-sm font-semibold shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:to-emerald-500 transition"
+											className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2.5 text-sm font-semibold shadow-sm dark:shadow-none hover:bg-indigo-700 dark:hover:bg-indigo-600 transition"
 										>
 											{tr({
 												no: "Fortsett forrige skann",
@@ -3517,8 +3766,8 @@ function CSVGeneratorPageInner() {
 										onClick={startFreshScan}
 										className={
 											partialScanModal.isComplete
-												? "flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 text-white px-4 py-2.5 text-sm font-semibold shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:to-emerald-500 transition"
-												: "flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+												? "flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-2.5 text-sm font-semibold shadow-sm dark:shadow-none hover:bg-indigo-700 dark:hover:bg-indigo-600 transition"
+												: "flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-slate-200 px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-white/10 transition"
 										}
 									>
 										{tr({ no: "Nytt skann", en: "New scan" })}
@@ -3527,7 +3776,7 @@ function CSVGeneratorPageInner() {
 										<button
 											type="button"
 											onClick={() => setPartialScanModal(null)}
-											className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+											className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-slate-200 px-4 py-2.5 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-white/10 transition"
 										>
 											{tr({ no: "Avbryt", en: "Cancel" })}
 										</button>

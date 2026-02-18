@@ -6,7 +6,7 @@ import { useLocale } from "@/app/components/locale-provider";
 export default function PersonvernPage() {
 	const { tr } = useLocale();
 	return (
-		<main className="min-h-screen bg-slate-50 dark:bg-[#0b1220] px-4 py-12 flex items-center">
+		<main className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 px-4 py-12 flex items-center">
 			<div className="mx-auto w-full max-w-3xl flex flex-col">
 				<h1 className="text-3xl md:text-4xl font-semibold text-slate-900 dark:text-white mb-6">
 					{tr({ no: "Personvern", en: "Privacy" })}

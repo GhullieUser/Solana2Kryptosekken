@@ -88,10 +88,13 @@ export default function LandingPage() {
 						<section className="my-8 sm:my-0 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,240px)] items-center gap-8 sm:gap-4">
 							<div className="order-2 sm:order-1 min-w-0 text-center sm:text-left">
 								<h1 className="text-balance text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight max-w-[18ch] sm:max-w-[20ch] lg:max-w-[22ch] mx-auto sm:mx-0">
-									<span className="bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent" style={{ whiteSpace: 'pre-line' }}>
+									<span
+										className="bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent"
+										style={{ whiteSpace: "pre-line" }}
+									>
 										{tr({
-										no: "Solana-lommebok til skattemelding",
-										en: "Solana wallet address\nto tax report"
+											no: "Solana-lommebok til skattemelding",
+											en: "Solana wallet address\nto tax report"
 										})}
 									</span>
 								</h1>

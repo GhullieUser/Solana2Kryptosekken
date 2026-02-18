@@ -355,15 +355,15 @@ export default function UserPage() {
 
 					<div className="p-6 sm:p-10">
 						<div className="grid gap-3 sm:grid-cols-3">
-						<div className="rounded-2xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3 shadow-md shadow-slate-300/80 dark:shadow-black/50">
-							<p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-								{tr({ no: "CSV-er", en: "CSVs" })}
-							</p>
-							<p className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">
-								{stats.csvCount}
-							</p>
-						</div>
-						<div className="rounded-2xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3 shadow-md shadow-slate-300/80 dark:shadow-black/50">
+							<div className="rounded-2xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3 shadow-md shadow-slate-300/80 dark:shadow-black/50">
+								<p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+									{tr({ no: "CSV-er", en: "CSVs" })}
+								</p>
+								<p className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">
+									{stats.csvCount}
+								</p>
+							</div>
+							<div className="rounded-2xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3 shadow-md shadow-slate-300/80 dark:shadow-black/50">
 								<p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
 									{tr({ no: "Adresser", en: "Addresses" })}
 								</p>
@@ -371,7 +371,7 @@ export default function UserPage() {
 									{stats.addressCount}
 								</p>
 							</div>
-						<div className="relative rounded-2xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3 shadow-md shadow-slate-300/80 dark:shadow-black/50">
+							<div className="relative rounded-2xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3 shadow-md shadow-slate-300/80 dark:shadow-black/50">
 								<p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
 									{tr({ no: "Totale TX", en: "Total TX" })}
 								</p>
@@ -470,7 +470,7 @@ export default function UserPage() {
 											</button>
 											<div
 												role="tooltip"
-											className="pointer-events-none absolute left-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#111827] p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl sm:group-hover:block sm:group-focus-within:block"
+												className="pointer-events-none absolute left-0 top-7 z-30 hidden w-[min(92vw,22rem)] rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#111827] p-3 text-xs text-slate-700 dark:text-slate-300 shadow-xl sm:group-hover:block sm:group-focus-within:block"
 											>
 												<p className="mb-1 font-medium">
 													{tr({

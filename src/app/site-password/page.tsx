@@ -37,7 +37,7 @@ export default function SitePasswordPage() {
 	}
 
 	return (
-		<div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-[#0b1220] px-4">
+		<div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 px-4">
 			<div className="w-full max-w-md">
 				<div className="text-center mb-8">
 					<div className="flex flex-col items-center gap-3 mb-4">

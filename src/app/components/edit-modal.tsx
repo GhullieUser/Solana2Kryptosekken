@@ -960,8 +960,8 @@ function ModalActions({
 				)
 			: null;
 
-		return (
-			<div className="sticky bottom-0 z-10 px-3 sm:px-4 py-2.5 sm:py-3 border-t border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#2B3345]">
+	return (
+		<div className="sticky bottom-0 z-10 px-3 sm:px-4 py-2.5 sm:py-3 border-t border-slate-200/80 bg-white/90 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-white/10 dark:bg-[#2B3345]">
 			<div className="flex flex-col gap-2">
 				<div className="flex items-center justify-between gap-3">
 					<div className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -980,7 +980,7 @@ function ModalActions({
 						onClick={() => setOpen((v) => !v)}
 						className="shrink-0 inline-flex items-center justify-center rounded-full p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 transition-colors"
 					>
-							<IoInformationCircleOutline className="h-[18px] w-[18px]" />
+						<IoInformationCircleOutline className="h-[18px] w-[18px]" />
 					</button>
 				</div>
 

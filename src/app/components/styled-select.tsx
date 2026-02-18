@@ -95,8 +95,8 @@ export default function StyledSelect<T extends string>({
 				placement === "top"
 					? true
 					: placement === "bottom"
-					? false
-					: spaceBelow < SPACE_GUESS && spaceAbove > spaceBelow;
+						? false
+						: spaceBelow < SPACE_GUESS && spaceAbove > spaceBelow;
 
 			const width = Math.max(160, Math.floor(r.width));
 			const left =
@@ -170,7 +170,7 @@ export default function StyledSelect<T extends string>({
 													? "translateY(-100%)"
 													: undefined,
 												zIndex: portalZIndex
-										  }
+											}
 										: undefined
 								}
 								className={[
@@ -181,7 +181,7 @@ export default function StyledSelect<T extends string>({
 										: [
 												"absolute z-[10000] mt-2 min-w-full",
 												align === "right" ? "right-0" : "left-0"
-										  ].join(" "),
+											].join(" "),
 									menuClassName ?? ""
 								].join(" ")}
 							>
@@ -220,7 +220,7 @@ export default function StyledSelect<T extends string>({
 						return usePortal && typeof document !== "undefined"
 							? createPortal(menuNode, document.body)
 							: menuNode;
-				  })()
+					})()
 				: null}
 		</div>
 	);
