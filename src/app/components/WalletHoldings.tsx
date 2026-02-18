@@ -224,8 +224,7 @@ export default function WalletHoldings({
 	const fmtUSD = useMemo(
 		() =>
 			new Intl.NumberFormat("no-NO", {
-				style: "currency",
-				currency: "USD",
+				minimumFractionDigits: 2,
 				maximumFractionDigits: 2
 			}),
 		[]
@@ -233,8 +232,7 @@ export default function WalletHoldings({
 	const fmtNOK = useMemo(
 		() =>
 			new Intl.NumberFormat("no-NO", {
-				style: "currency",
-				currency: "NOK",
+				minimumFractionDigits: 2,
 				maximumFractionDigits: 2
 			}),
 		[]
@@ -347,10 +345,7 @@ export default function WalletHoldings({
 			<span className="inline-block w-4" />
 		);
 
-	const valueHeaderLabel =
-		currency === "USD"
-			? tr({ no: "Verdi (USD)", en: "Value (USD)" })
-			: tr({ no: "Verdi (NOK)", en: "Value (NOK)" });
+	const valueHeaderLabel = tr({ no: "Verdi", en: "Value" });
 
 	return (
 		<section

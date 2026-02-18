@@ -667,7 +667,18 @@ function CSVGeneratorPageInner() {
 	const normalizeCreditError = useCallback(
 		(message: string) => {
 			if (!message) return message;
-			if (message.toLowerCase().includes("not enough tx credits")) {
+			const lower = message.toLowerCase();
+			if (
+				lower.includes("helius 429") ||
+				lower.includes("rate limited") ||
+				lower.includes('"code":-32429')
+			) {
+				return tr({
+					no: "Helius er midlertidig overbelastet (rate limit). Prøv igjen om litt.",
+					en: "Helius is temporarily rate-limited. Please try again shortly."
+				});
+			}
+			if (lower.includes("not enough tx credits")) {
 				return tr({
 					no: "Ikke nok TX Credits til å utføre et søk.",
 					en: "Not enough TX Credits to perform a search."
@@ -1786,9 +1797,11 @@ function CSVGeneratorPageInner() {
 					} catch {
 						errMsg = text?.trim()?.slice(0, 300) || errMsg;
 					}
+					const errMsgForLog = errMsg;
 					errMsg = normalizeCreditError(errMsg);
 					pushLog(
-						tr({ no: "❌ API-feil:", en: "❌ API error:" }) + ` ${errMsg}`
+						tr({ no: "❌ API-feil:", en: "❌ API error:" }) +
+							` ${errMsgForLog}`
 					);
 					throw new Error(errMsg);
 				}
@@ -1822,7 +1835,9 @@ function CSVGeneratorPageInner() {
 								if (msgRaw.toLowerCase().includes("not enough tx credits")) {
 									window.dispatchEvent(new Event("sol2ks:billing:update"));
 								}
-								pushLog(tr({ no: "❌ Feil:", en: "❌ Error:" }) + ` ${msg}`);
+								pushLog(
+									tr({ no: "❌ Feil:", en: "❌ Error:" }) + ` ${msgRaw}`
+								);
 							} else if (evt.type === "page") {
 								const prefix =
 									evt.kind === "main"
@@ -1931,18 +1946,6 @@ function CSVGeneratorPageInner() {
 											en: `TX Credits spent ${j.chargedCredits}.`
 										})
 									);
-									if (j.partial && hasKnownCredits && availableCredits > 0) {
-										const spentNow = Math.max(
-											0,
-											Math.min(j.chargedCredits, availableCredits)
-										);
-										pushLogUnique(
-											tr({
-												no: `Delvis skann: brukte ${spentNow} av ${availableCredits} tilgjengelige TX Credits i denne kjøringen.`,
-												en: `Partial scan: used ${spentNow} of ${availableCredits} available TX Credits in this run.`
-											})
-										);
-									}
 								}
 							}
 						} catch {
@@ -2869,35 +2872,37 @@ function CSVGeneratorPageInner() {
 												{tr({ no: "Fjoråret", en: "Last year" })}
 											</div>
 										</button>
-										<button
-											type="button"
-											onClick={clearDates}
-											className="group rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-2.5 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 hover:border-red-300 dark:hover:border-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-700 dark:hover:text-red-300 transition-all duration-150 hover:shadow-sm"
-										>
-											<div className="flex items-center justify-center gap-2">
-												<FiX className="h-3 w-3" />
-												{tr({ no: "Nullstill", en: "Clear" })}
-											</div>
-										</button>
+										{!loading && (
+											<button
+												type="button"
+												onClick={clearDates}
+												className="group rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-2.5 py-2 text-xs font-medium text-slate-500 dark:text-slate-400 hover:border-red-300 dark:hover:border-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-700 dark:hover:text-red-300 transition-all duration-150 hover:shadow-sm"
+											>
+												<div className="flex items-center justify-center gap-2">
+													<FiX className="h-3 w-3" />
+													{tr({ no: "Nullstill", en: "Clear" })}
+												</div>
+											</button>
+										)}
 									</div>
 								</div>
 
 								{/* Timezone + NFT */}
 								<div className="mt-4 grid gap-4 lg:grid-cols-2">
 									<div className="rounded-2xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-[#1F2937] shadow-sm dark:shadow-none p-4">
-										<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-											<div className="flex items-center gap-3">
-												<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2.5">
+										<div className="flex flex-nowrap items-center justify-between gap-2 sm:gap-3">
+											<div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+												<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2 sm:p-2.5">
 													<FiClock className="h-5 w-5 text-slate-600 dark:text-slate-400" />
 												</div>
-												<div>
-													<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+												<div className="min-w-0">
+													<div className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
 														{tr({
 															no: "Tidssone for CSV",
 															en: "CSV timezone"
 														})}
 													</div>
-													<div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+													<div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
 														{tr({
 															no: "Tidsstempler skrives som ",
 															en: "Timestamps written as "
@@ -2913,31 +2918,33 @@ function CSVGeneratorPageInner() {
 													</div>
 												</div>
 											</div>
-											<Switch
-												checked={useOslo}
-												onChange={setUseOslo}
-												label={tr({
-													no: "Bruk norsk tid",
-													en: "Use Norway time"
-												})}
-											/>
+											<div className="shrink-0 pl-1 sm:pl-0">
+												<Switch
+													checked={useOslo}
+													onChange={setUseOslo}
+													label={tr({
+														no: "Bruk norsk tid",
+														en: "Use Norway time"
+													})}
+												/>
+											</div>
 										</div>
 									</div>
 
 									<div className="rounded-2xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-[#1F2937] shadow-sm dark:shadow-none p-4">
-										<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-											<div className="flex items-center gap-3">
-												<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2.5">
+										<div className="flex flex-nowrap items-center justify-between gap-2 sm:gap-3">
+											<div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+												<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2 sm:p-2.5">
 													<FiImage className="h-5 w-5 text-slate-600 dark:text-slate-400" />
 												</div>
-												<div>
-													<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+												<div className="min-w-0">
+													<div className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
 														{tr({
 															no: "NFT-overføringer",
 															en: "NFT transfers"
 														})}
 													</div>
-													<div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+													<div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
 														{tr({
 															no: "Ingen prising, kun overføringer",
 															en: "No pricing, transfers only"
@@ -2945,14 +2952,16 @@ function CSVGeneratorPageInner() {
 													</div>
 												</div>
 											</div>
-											<Switch
-												checked={includeNFT}
-												onChange={setIncludeNFT}
-												label={tr({
-													no: "Inkluder NFT-er",
-													en: "Include NFTs"
-												})}
-											/>
+											<div className="shrink-0 pl-1 sm:pl-0">
+												<Switch
+													checked={includeNFT}
+													onChange={setIncludeNFT}
+													label={tr({
+														no: "Inkluder NFT-er",
+														en: "Include NFTs"
+													})}
+												/>
+											</div>
 										</div>
 									</div>
 								</div>
@@ -2960,20 +2969,20 @@ function CSVGeneratorPageInner() {
 								{/* Dust section */}
 								<div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-700/50 bg-white dark:bg-[#1F2937] shadow-sm dark:shadow-none p-4">
 									<div
-										className={`${dustOpen ? "mb-4" : ""} flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3`}
+										className={`${dustOpen ? "mb-4" : ""} flex flex-nowrap items-center justify-between gap-2 sm:gap-3`}
 									>
-										<div className="flex items-center gap-3">
-											<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2.5">
+											<div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+												<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2 sm:p-2.5">
 												<MdOutlineCleaningServices className="h-5 w-5 text-slate-600 dark:text-slate-400" />
 											</div>
-											<div>
-												<div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+												<div className="min-w-0">
+													<div className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
 													{tr({
 														no: "Støvbehandling",
 														en: "Dust processing"
 													})}
 												</div>
-												<div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+													<div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
 													{tr({
 														no: "Håndter små transaksjoner",
 														en: "Handle small transactions"
@@ -2981,7 +2990,7 @@ function CSVGeneratorPageInner() {
 												</div>
 											</div>
 										</div>
-										<div className="flex h-8 items-center gap-6 sm:gap-8 self-start sm:self-center">
+										<div className="flex h-8 shrink-0 items-center gap-3 sm:gap-8 pl-1 sm:pl-0">
 											<div className="relative group flex h-8 items-center">
 												<button
 													type="button"
@@ -3367,15 +3376,17 @@ function CSVGeneratorPageInner() {
 												{tr({ no: "Avbryt", en: "Cancel" })}
 											</button>
 										)}
-										<button
-											type="button"
-											onClick={onReset}
-											className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] w-full sm:w-auto"
-										>
-											{tr({ no: "Nullstill", en: "Clear" })}
-										</button>
+										{!loading && (
+											<button
+												type="button"
+												onClick={onReset}
+												className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 active:scale-[0.99] w-full sm:w-auto"
+											>
+												{tr({ no: "Nullstill", en: "Clear" })}
+											</button>
+										)}
 									</div>
-									<div className="flex w-full sm:w-auto items-center justify-start sm:justify-end gap-3 sm:ml-auto shrink-0">
+									<div className="flex w-full sm:w-auto items-center justify-start sm:justify-end gap-2 sm:gap-3 sm:ml-auto shrink-0">
 										<div className="relative group w-auto shrink-0">
 											<button
 												type="button"
@@ -3452,13 +3463,15 @@ function CSVGeneratorPageInner() {
 										<button
 											type="button"
 											onClick={() => setLogOpen((v) => !v)}
-											className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 w-full sm:w-auto shrink-0"
+											className="inline-flex flex-1 min-w-0 max-w-full overflow-hidden sm:flex-none items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-2.5 sm:px-3 py-2 text-xs text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-slate-50 dark:hover:bg-white/10 sm:w-auto"
 											title={tr({ no: "Vis/skjul logg", en: "Show/hide log" })}
 										>
-											<FiActivity className="h-4 w-4" />
-											{logOpen
-												? tr({ no: "Skjul logg", en: "Hide log" })
-												: tr({ no: "Vis logg", en: "Show log" })}
+											<FiActivity className="h-4 w-4 shrink-0" />
+											<span className="block min-w-0 truncate">
+												{logOpen
+													? tr({ no: "Skjul logg", en: "Hide log" })
+													: tr({ no: "Vis logg", en: "Show log" })}
+											</span>
 										</button>
 									</div>
 								</div>
