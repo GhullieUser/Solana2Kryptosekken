@@ -557,7 +557,7 @@ function CSVGeneratorPageInner() {
 
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	const [errorCta, setErrorCta] = useState<{
+	const [, setErrorCta] = useState<{
 		label: string;
 		href: string;
 	} | null>(null);
@@ -640,6 +640,8 @@ function CSVGeneratorPageInner() {
 	const [addrMenuOpen, setAddrMenuOpen] = useState(false);
 	const [csvVersions, setCsvVersions] = useState<CsvVersion[]>([]);
 	const [csvVersionId, setCsvVersionId] = useState<string | null>(null);
+	const lastAppliedVersionIdRef = useRef<string | null>(null);
+	const shouldApplyVersionSettingsRef = useRef(false);
 
 	// Live log
 	const [logOpen, setLogOpen] = useState(false);
@@ -866,29 +868,29 @@ function CSVGeneratorPageInner() {
 					index: index ?? -1,
 					signature,
 					signer:
-						typeof meta.signer === "string" ? meta.signer : (meta.Signer as
-								|string
-								| undefined),
+						typeof meta.signer === "string"
+							? meta.signer
+							: (meta.Signer as string | undefined),
 					sender:
 						typeof meta.sender === "string"
 							? meta.sender
-							: (meta.avsender as string | undefined) ??
-								(meta.Avsender as string | undefined),
+							: ((meta.avsender as string | undefined) ??
+								(meta.Avsender as string | undefined)),
 					programId:
 						typeof meta.programId === "string"
 							? meta.programId
-							: (meta.program_id as string | undefined) ??
-								(meta.ProgramId as string | undefined),
+							: ((meta.program_id as string | undefined) ??
+								(meta.ProgramId as string | undefined)),
 					recipient:
 						typeof meta.recipient === "string"
 							? meta.recipient
-							: (meta.mottaker as string | undefined) ??
-								(meta.Recipient as string | undefined),
+							: ((meta.mottaker as string | undefined) ??
+								(meta.Recipient as string | undefined)),
 					programName:
 						typeof meta.programName === "string"
 							? meta.programName
-							: (meta.program_name as string | undefined) ??
-								(meta.ProgramName as string | undefined),
+							: ((meta.program_name as string | undefined) ??
+								(meta.ProgramName as string | undefined)),
 					rowId:
 						typeof meta.rowId === "string"
 							? meta.rowId
@@ -1031,6 +1033,7 @@ function CSVGeneratorPageInner() {
 			if (!isAuthed || !isProbablySolanaAddress(addr)) {
 				setCsvVersions([]);
 				setCsvVersionId(null);
+				lastAppliedVersionIdRef.current = null;
 				return [];
 			}
 			const res = await fetch(
@@ -1040,7 +1043,10 @@ function CSVGeneratorPageInner() {
 			const j = await res.json();
 			const list: CsvVersion[] = Array.isArray(j?.data) ? j.data : [];
 			setCsvVersions(list);
-			setCsvVersionId(list[0]?.id ?? null);
+			setCsvVersionId((prev) => {
+				if (prev && list.some((v) => v.id === prev)) return prev;
+				return list[0]?.id ?? null;
+			});
 			return list;
 		},
 		[isAuthed]
@@ -1060,7 +1066,12 @@ function CSVGeneratorPageInner() {
 
 	// When a CSV version is selected, populate form fields with its parameters
 	useEffect(() => {
-		if (!csvVersionId || csvVersions.length === 0) return;
+		if (!csvVersionId || csvVersions.length === 0) {
+			if (!csvVersionId) lastAppliedVersionIdRef.current = null;
+			return;
+		}
+		if (!shouldApplyVersionSettingsRef.current) return;
+		if (lastAppliedVersionIdRef.current === csvVersionId) return;
 		const selectedVersion = csvVersions.find((v) => v.id === csvVersionId);
 		if (!selectedVersion) return;
 
@@ -1092,6 +1103,8 @@ function CSVGeneratorPageInner() {
 		} else {
 			setRange(undefined);
 		}
+		lastAppliedVersionIdRef.current = csvVersionId;
+		shouldApplyVersionSettingsRef.current = false;
 	}, [csvVersionId, csvVersions]);
 
 	const saveGeneratedCsv = useCallback(
@@ -1385,11 +1398,6 @@ function CSVGeneratorPageInner() {
 		}));
 	}, [rows, overrides]);
 
-	const isCreditError =
-		typeof error === "string" &&
-		(error.toLowerCase().includes("not enough tx credits") ||
-			error.toLowerCase().includes("ikke nok tx credits"));
-
 	const localizeStreamLog = useCallback(
 		(msg: string) => {
 			if (locale !== "en") return msg;
@@ -1413,6 +1421,23 @@ function CSVGeneratorPageInner() {
 				/Fant (\d+) tilknyttede token-kontoer \(ATAer\)\. Skanner alle for å få med SPL-bevegelser\./,
 				"Found $1 associated token accounts (ATAs). Scanning all to include SPL movements."
 			);
+			out = out.replace(
+				/\+(\d+) ekstra transaksjoner lagt til \(staking rewards\)\./,
+				"+$1 extra transactions added (staking rewards)."
+			);
+			out = out.replace(
+				/Henter norsk kurs \(NOK\) for (\d+) inntektsrader …/,
+				"Fetching NOK rates for $1 income rows …"
+			);
+			out = out.replace(
+				/NOK-kurs lagt til på (\d+) inntektsrader\./,
+				"NOK rates added to $1 income rows."
+			);
+			out = out.replace(
+				"⚠️ Ikke nok TX Credits. Topp opp for å fortsette.",
+				"⚠️ Not enough TX Credits. Top up to continue."
+			);
+			out = out.replace(/^❌ Feil:/, "❌ Error:");
 			return out;
 		},
 		[locale]
@@ -1800,8 +1825,7 @@ function CSVGeneratorPageInner() {
 					const errMsgForLog = errMsg;
 					errMsg = normalizeCreditError(errMsg);
 					pushLog(
-						tr({ no: "❌ API-feil:", en: "❌ API error:" }) +
-							` ${errMsgForLog}`
+						tr({ no: "❌ API-feil:", en: "❌ API error:" }) + ` ${errMsgForLog}`
 					);
 					throw new Error(errMsg);
 				}
@@ -1835,9 +1859,7 @@ function CSVGeneratorPageInner() {
 								if (msgRaw.toLowerCase().includes("not enough tx credits")) {
 									window.dispatchEvent(new Event("sol2ks:billing:update"));
 								}
-								pushLog(
-									tr({ no: "❌ Feil:", en: "❌ Error:" }) + ` ${msgRaw}`
-								);
+								pushLog(tr({ no: "❌ Feil:", en: "❌ Error:" }) + ` ${msgRaw}`);
 							} else if (evt.type === "page") {
 								const prefix =
 									evt.kind === "main"
@@ -1901,19 +1923,33 @@ function CSVGeneratorPageInner() {
 								const totalLogged = j.totalLogged ?? j.count;
 								const newRaw = j.newRaw ?? totalRaw;
 								const newLogged = j.newLogged ?? totalLogged;
+								const combinedByDust = Math.max(0, totalRaw - totalLogged);
+								const requestDustMode =
+									(parsed.data.dustMode as DustMode | undefined) ?? "off";
 								if (totalRaw !== totalLogged || newRaw !== totalRaw) {
 									pushLog(
 										tr({
-											no: `Rå transaksjoner - Nye: ${newRaw} | Totalt: ${totalRaw}`,
-											en: `Raw transactions - New: ${newRaw} | Total: ${totalRaw}`
+											no: `📥 Rå transaksjoner - Nye: ${newRaw} | Totalt: ${totalRaw}`,
+											en: `📥 Raw transactions - New: ${newRaw} | Total: ${totalRaw}`
 										})
 									);
-									pushLog(
-										tr({
-											no: `Loggførte transaksjoner - Nye: ${newLogged} | Totalt: ${totalLogged}`,
-											en: `Logged transactions - New: ${newLogged} | Total: ${totalLogged}`
-										})
-									);
+									if (combinedByDust > 0) {
+										if (requestDustMode !== "off") {
+											pushLog(
+												tr({
+													no: `🧹 Støvbehandling slo sammen ${combinedByDust} transaksjoner.`,
+													en: `🧹 Dust processing combined ${combinedByDust} transactions.`
+												})
+											);
+										} else {
+											pushLog(
+												tr({
+													no: `🔀 ${combinedByDust} transaksjoner ble slått sammen/filtrert av øvrig prosessering.`,
+													en: `🔀 ${combinedByDust} transactions were merged/filtered by non-dust processing.`
+												})
+											);
+										}
+									}
 								} else {
 									pushLog(
 										tr({
@@ -1922,18 +1958,25 @@ function CSVGeneratorPageInner() {
 										})
 									);
 								}
-								pushLog(
-									tr({
-										no: `✅ ${j.count} transaksjoner loggført.`,
-										en: `✅ ${j.count} transactions logged.`
-									})
-								);
-								if (!j.partial) {
+								if (!(newLogged === 0 && totalLogged === 0)) {
 									pushLog(
 										tr({
-											no: "Alle transaksjoner i perioden er funnet. Full rapport er generert.",
-											en: "All transactions in the period have been found. A full report has been generated."
+											no: `✅ Loggførte transaksjoner - Nye: ${newLogged} | Totalt: ${totalLogged}`,
+											en: `✅ Logged transactions - New: ${newLogged} | Total: ${totalLogged}`
 										})
+									);
+								}
+								if (!j.partial) {
+									pushLog(
+										j.count === 0
+											? tr({
+													no: "🤷 Ingen transaksjoner i valgt periode.",
+													en: "🤷 No transactions in the selected period."
+												})
+											: tr({
+													no: "Alle transaksjoner i perioden er funnet. Full rapport er generert.",
+													en: "All transactions in the period have been found. A full report has been generated."
+												})
 									);
 								}
 								if (
@@ -2262,6 +2305,28 @@ function CSVGeneratorPageInner() {
 
 			if (!res.ok) {
 				const j = await res.json().catch(() => ({ error: "Feil" }));
+				if (res.status === 412) {
+					const csvFallback = buildCsvFromRows(rows, currentOverrides);
+					await saveGeneratedCsv(csvFallback);
+					const fallbackBlob = new Blob([csvFallback], {
+						type: "text/csv; charset=utf-8"
+					});
+					const fallbackUrl = URL.createObjectURL(fallbackBlob);
+					const a = document.createElement("a");
+					a.href = fallbackUrl;
+					a.download = `sol2ks_${lastPayloadRef.current.address}.csv`;
+					document.body.appendChild(a);
+					a.click();
+					a.remove();
+					URL.revokeObjectURL(fallbackUrl);
+					pushLog(
+						tr({
+							no: "ℹ️ Lastet ned fra åpnet CSV (ingen server-cache).",
+							en: "ℹ️ Downloaded from opened CSV (no server cache)."
+						})
+					);
+					return;
+				}
 				throw new Error(j.error || res.statusText);
 			}
 			const blob = await res.blob();
@@ -2277,8 +2342,8 @@ function CSVGeneratorPageInner() {
 			URL.revokeObjectURL(dlUrl);
 			pushLog(
 				tr({
-					no: "✅ CSV klar (med redigeringer).",
-					en: "✅ CSV ready (with edits)."
+					no: "✅ CSV lastet ned.",
+					en: "✅ CSV downloaded."
 				})
 			);
 		} catch (err: unknown) {
@@ -2322,7 +2387,7 @@ function CSVGeneratorPageInner() {
 
 	const nice = (d?: Date) => (d ? d.toLocaleDateString("no-NO") : "—");
 
-	const hasRows = rows !== null;
+	const hasRows = Array.isArray(rows) && rows.length > 0;
 	const csvOptions = useMemo(
 		() =>
 			csvVersions.map((v) => {
@@ -2495,7 +2560,10 @@ function CSVGeneratorPageInner() {
 											<div className="ml-auto flex items-center gap-2">
 												<StyledSelect
 													value={csvVersionId}
-													onChange={(next) => setCsvVersionId(next)}
+													onChange={(next) => {
+														shouldApplyVersionSettingsRef.current = true;
+														setCsvVersionId(next);
+													}}
 													options={csvOptions}
 													buttonClassName="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-xs text-indigo-700 transition hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-[#2B3345] dark:text-indigo-200 dark:hover:bg-indigo-600/30"
 													menuClassName="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1F2937] overflow-hidden"
@@ -2532,7 +2600,10 @@ function CSVGeneratorPageInner() {
 															})}
 														>
 															<FiActivity className="h-3.5 w-3.5" />
-															{tr({ no: "Fortsett skann", en: "Continue scan" })}
+															{tr({
+																no: "Fortsett skann",
+																en: "Continue scan"
+															})}
 														</button>
 													</>
 												) : (
@@ -2971,18 +3042,18 @@ function CSVGeneratorPageInner() {
 									<div
 										className={`${dustOpen ? "mb-4" : ""} flex flex-nowrap items-center justify-between gap-2 sm:gap-3`}
 									>
-											<div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-												<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2 sm:p-2.5">
+										<div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+											<div className="rounded-xl bg-slate-100 dark:bg-slate-700 p-2 sm:p-2.5">
 												<MdOutlineCleaningServices className="h-5 w-5 text-slate-600 dark:text-slate-400" />
 											</div>
-												<div className="min-w-0">
-													<div className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
+											<div className="min-w-0">
+												<div className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
 													{tr({
 														no: "Støvbehandling",
 														en: "Dust processing"
 													})}
 												</div>
-													<div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+												<div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
 													{tr({
 														no: "Håndter små transaksjoner",
 														en: "Handle small transactions"
@@ -3303,6 +3374,14 @@ function CSVGeneratorPageInner() {
 													<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
 														Overføring-Ut
 													</code>{" "}
+													,{" "}
+													<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
+														Erverv
+													</code>{" "}
+													og{" "}
+													<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
+														Tap
+													</code>{" "}
 													fra hver{" "}
 													<i>
 														{tr({ no: "signer-adresse", en: "signer address" })}
@@ -3340,6 +3419,14 @@ function CSVGeneratorPageInner() {
 													<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
 														Overføring-Ut
 													</code>{" "}
+													,{" "}
+													<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
+														Erverv
+													</code>{" "}
+													og{" "}
+													<code className="bg-emerald-100 dark:bg-emerald-800/30 px-1 py-0.5 rounded">
+														Tap
+													</code>{" "}
 													per valgt periode
 													{tr({
 														no: " (uavhengig av sender).",
@@ -3370,7 +3457,7 @@ function CSVGeneratorPageInner() {
 											<button
 												type="button"
 												onClick={onCancel}
-												className="inline-flex  items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 shadow-sm dark:shadow-black/50 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300 active:scale-[0.99] w-full sm:w-auto"
+												className="inline-flex  items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 shadow-sm dark:shadow-black/50 hover:bg-red-100 dark:hover:bg-red-900/30 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300 active:scale-[0.99] w-full sm:w-auto"
 											>
 												<FiX className="h-4 w-4" />
 												{tr({ no: "Avbryt", en: "Cancel" })}
@@ -3476,25 +3563,8 @@ function CSVGeneratorPageInner() {
 									</div>
 								</div>
 
-								{/* Errors and info messages below buttons */}
+								{/* Info messages below buttons */}
 								<div className="space-y-2">
-									{error && !isCreditError && (
-										<div
-											role="status"
-											aria-live="polite"
-											className="text-sm text-red-600 flex flex-wrap items-center gap-2"
-										>
-											<span>{error}</span>
-											{errorCta && (
-												<Link
-													href={errorCta.href}
-													className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200 px-3 py-1 text-[11px] font-semibold hover:bg-amber-200/70 dark:hover:bg-amber-500/25"
-												>
-													{tr({ no: "Topp opp", en: "Top up" })}
-												</Link>
-											)}
-										</div>
-									)}
 									{!error && !isAuthed && (
 										<div className="text-sm text-slate-600 dark:text-slate-300">
 											<Link
@@ -3509,25 +3579,6 @@ function CSVGeneratorPageInner() {
 										</div>
 									)}
 								</div>
-
-								{isCreditError && (
-									<div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
-										<div className="flex flex-wrap items-center gap-2">
-											<span className="inline-flex items-center gap-1">
-												<FiAlertTriangle className="h-3.5 w-3.5" />
-												{error}
-											</span>
-											{errorCta && (
-												<Link
-													href={errorCta.href}
-													className="inline-flex items-center rounded-full bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200 px-3 py-1 text-[11px] font-semibold hover:bg-rose-200/70 dark:hover:bg-rose-500/25"
-												>
-													{tr({ no: "Topp opp", en: "Top up" })}
-												</Link>
-											)}
-										</div>
-									</div>
-								)}
 
 								{!error && partialResult && (
 									<div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">

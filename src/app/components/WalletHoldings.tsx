@@ -409,7 +409,7 @@ export default function WalletHoldings({
 								{tr({ no: "Total verdi", en: "Total value" })}
 							</div>
 							<div className="text-base sm:text-lg font-semibold text-emerald-700 dark:text-emerald-400">
-								{totalValueText}
+								{totalValueText} {currency}
 							</div>
 							{currency === "NOK" && fxErr && (
 								<div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
@@ -593,7 +593,7 @@ export default function WalletHoldings({
 										const vNum = valueNumber(h);
 										const valueKnown = Number.isFinite(vNum) && vNum > 0;
 										const valueText = valueKnown
-											? fmtCurrency.format(vNum)
+											? `${fmtCurrency.format(vNum)} ${currency}`
 											: "—";
 
 										return (

@@ -206,7 +206,7 @@ const DEFAULT_COL_WIDTHS: Record<ColKey, number> = {
 	gebyr: 112,
 	gebyrValuta: 112,
 	marked: 124,
-	notat: 240,
+	notat: 480,
 	explorer: 84,
 	metadata: 102
 };
@@ -221,13 +221,17 @@ const LEGACY_DEFAULT_COL_WIDTHS: Record<ColKey, number> = {
 	gebyr: 140,
 	gebyrValuta: 120,
 	marked: 140,
-	notat: 300,
+	notat: 600,
 	explorer: 45,
 	metadata: 70
 };
 
 const MIN_COL_WIDTH = 60;
 const MAX_COL_WIDTH = 700;
+
+function getMaxColWidth(colKey: ColKey) {
+	return colKey === "notat" ? 10000 : MAX_COL_WIDTH;
+}
 
 const COL_ORDER: ColKey[] = [
 	"tidspunkt",
@@ -369,9 +373,19 @@ function SummaryAvatar({
 }
 
 /* ---------- Shared padded wrapper for cells (padding here, td/th are padding:0) ---------- */
-function CellPad({ children }: { children: React.ReactNode }) {
+function CellPad({
+	children,
+	overflowVisible = false
+}: {
+	children: React.ReactNode;
+	overflowVisible?: boolean;
+}) {
 	return (
-		<div className="relative px-2 sm:px-3 py-2 overflow-hidden">{children}</div>
+		<div
+			className={`relative px-2 sm:px-3 py-2 ${overflowVisible ? "overflow-visible" : "overflow-hidden"}`}
+		>
+			{children}
+		</div>
 	);
 }
 
@@ -394,12 +408,83 @@ function CellChrome({
 	showButton?: boolean;
 }) {
 	const clickable = canEdit && clickToEdit;
+	const rootRef = useRef<HTMLDivElement | null>(null);
+	const mousePosRef = useRef<{ x: number; y: number } | null>(null);
+	const [tooltipOpen, setTooltipOpen] = useState(false);
+	const [tooltipPos, setTooltipPos] = useState<{
+		top: number;
+		left: number;
+	} | null>(null);
+
+	const tooltipText = String(title ?? "").trim();
+
+	const placeTooltip = useCallback(
+		(clientX?: number, clientY?: number) => {
+			if (!rootRef.current || !tooltipText) return;
+			const rect = rootRef.current.getBoundingClientRect();
+			const margin = 8;
+			const maxWidth = Math.min(480, Math.floor(window.innerWidth * 0.65));
+			const pointerX = clientX ?? rect.left;
+			const pointerY = clientY ?? rect.bottom;
+			let left = pointerX + 12;
+			if (left + maxWidth > window.innerWidth - margin) {
+				left = Math.max(margin, window.innerWidth - margin - maxWidth);
+			}
+			let top = pointerY + 14;
+			if (top > window.innerHeight - 40) {
+				top = Math.max(margin, pointerY - 36);
+			}
+			setTooltipPos({ top, left });
+		},
+		[tooltipText]
+	);
+
+	useEffect(() => {
+		if (!tooltipOpen) return;
+		const update = () => {
+			const mousePos = mousePosRef.current;
+			if (mousePos) {
+				placeTooltip(mousePos.x, mousePos.y);
+				return;
+			}
+			placeTooltip();
+		};
+		update();
+		window.addEventListener("scroll", update, true);
+		window.addEventListener("resize", update);
+		return () => {
+			window.removeEventListener("scroll", update, true);
+			window.removeEventListener("resize", update);
+		};
+	}, [tooltipOpen, placeTooltip]);
 	return (
 		<div
+			ref={rootRef}
 			className={`group relative block w-full h-full ${
 				align === "right" ? "text-right" : "text-left"
 			}`}
-			title={title}
+			onMouseEnter={(e) => {
+				if (!tooltipText) return;
+				mousePosRef.current = { x: e.clientX, y: e.clientY };
+				setTooltipOpen(true);
+				placeTooltip(e.clientX, e.clientY);
+			}}
+			onMouseMove={(e) => {
+				if (!tooltipText) return;
+				mousePosRef.current = { x: e.clientX, y: e.clientY };
+				placeTooltip(e.clientX, e.clientY);
+			}}
+			onMouseLeave={() => {
+				mousePosRef.current = null;
+				setTooltipOpen(false);
+			}}
+			onFocusCapture={() => {
+				if (!tooltipText) return;
+				mousePosRef.current = null;
+				setTooltipOpen(true);
+				placeTooltip();
+			}}
+			onBlurCapture={() => setTooltipOpen(false)}
 			onClick={
 				clickable
 					? (e) => {
@@ -429,6 +514,18 @@ function CellChrome({
 			>
 				{children}
 			</div>
+			{tooltipOpen && tooltipPos && tooltipText
+				? createPortal(
+						<div
+							role="tooltip"
+							className="pointer-events-none fixed z-[13000] max-w-[min(30rem,65vw)] whitespace-pre-wrap break-words rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#111827] px-2 py-1 text-xs text-slate-700 dark:text-slate-200 shadow-2xl"
+							style={{ top: tooltipPos.top, left: tooltipPos.left }}
+						>
+							{tooltipText}
+						</div>,
+						document.body
+					)
+				: null}
 			{canEdit && showButton && (
 				<button
 					type="button"
@@ -436,7 +533,7 @@ function CellChrome({
 						e.stopPropagation();
 						onEdit();
 					}}
-					className="absolute right-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover:flex items-center justify-center h-5 w-5 rounded bg-white shadow ring-1 ring-slate-300 text-slate-600 hover:bg-slate-50 dark:bg-white/5 dark:ring-white/10 dark:text-slate-300 dark:hover:bg-white/10"
+					className="absolute right-0 top-1/2 -translate-y-1/2 z-20 hidden group-hover:flex items-center justify-center h-5 w-5 rounded bg-white shadow ring-1 ring-slate-300 text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:ring-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
 					aria-label="Rediger"
 				>
 					<FiEdit className="h-3.5 w-3.5" />
@@ -502,6 +599,7 @@ function EditableCell({
 }) {
 	const isValutaField =
 		field === "Inn-Valuta" || field === "Ut-Valuta" || field === "Gebyr-Valuta";
+	const isNotesField = field === "Notat";
 	const isEmpty = !String(value ?? "").trim();
 
 	if (isValutaField && isEmpty) {
@@ -525,7 +623,7 @@ function EditableCell({
 
 	const canEdit = !!String(value ?? "").trim();
 	return (
-		<CellPad>
+		<CellPad overflowVisible={isNotesField}>
 			<CellChrome
 				onEdit={() => openEditCell(idxOriginal, field, value ?? "")}
 				align={align}
@@ -581,7 +679,7 @@ export default function Preview({
 	);
 
 	const ensureMinWidth = useCallback((key: ColKey, px: number) => {
-		const want = Math.min(MAX_COL_WIDTH, Math.ceil(px));
+		const want = Math.min(getMaxColWidth(key), Math.ceil(px));
 		setHeaderMinW((prev) => {
 			if (prev[key] === want) return prev;
 			const next = { ...prev, [key]: want };
@@ -639,7 +737,7 @@ export default function Preview({
 				const w = saved[k];
 				if (typeof w === "number" && isFinite(w)) {
 					// don't allow below (yet unknown) dynamic header min; clamp later when measured
-					next[k] = Math.min(MAX_COL_WIDTH, Math.max(MIN_COL_WIDTH, w));
+					next[k] = Math.min(getMaxColWidth(k), Math.max(MIN_COL_WIDTH, w));
 				}
 			}
 			setColWidths(next);
@@ -678,7 +776,10 @@ export default function Preview({
 			if (!r) return;
 			const dx = e.clientX - r.startX;
 			const minForThis = Math.max(MIN_COL_WIDTH, headerMinW[r.key] || 0);
-			const next = Math.min(MAX_COL_WIDTH, Math.max(minForThis, r.startW + dx));
+			const next = Math.min(
+				getMaxColWidth(r.key),
+				Math.max(minForThis, r.startW + dx)
+			);
 			setColWidths((prev) => ({ ...prev, [r.key]: next }));
 			e.preventDefault();
 		}

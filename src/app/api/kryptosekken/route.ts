@@ -7,8 +7,10 @@ import {
 	fetchEnhancedTxs,
 	fetchTokenMetadataMap,
 	fetchJupiterTokenMetadataMap,
+	fetchFailedSignaturesByAddress,
 	getTokenAccountsByOwner,
 	HeliusTx,
+	FailedSignatureInfo,
 	NativeTransfer,
 	TokenTransfer,
 	fetchFeePayer,
@@ -52,11 +54,361 @@ type CacheVal = {
 
 const CACHE = new Map<string, CacheVal>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const CLASSIFIER_CACHE_VERSION = "2026-02-19-orderbook-v11";
+const SOL_NOK_DAILY_CACHE = new Map<string, number>();
+const SOL_USD_DAILY_CACHE = new Map<string, number>();
+const USD_NOK_DAILY_CACHE = new Map<string, number>();
 
 const DEFAULT_FREE_GRANT = 50;
 
 function normalizeEmail(email: string) {
 	return email.trim().toLowerCase();
+}
+
+function parseRowDateKey(ts: string): string | null {
+	const m = /^(\d{4})-(\d{2})-(\d{2})\s/.exec(String(ts || ""));
+	if (!m) return null;
+	return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
+type RpcResp<T> = { result?: T; error?: { message?: string } };
+
+async function heliusRpc<T>(method: string, params: any[]): Promise<T | null> {
+	const apiKey = process.env.HELIUS_API_KEY;
+	if (!apiKey) return null;
+	try {
+		const r = await fetch(`https://mainnet.helius-rpc.com/?api-key=${apiKey}`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+			cache: "no-store"
+		});
+		if (!r.ok) return null;
+		const j = (await r.json()) as RpcResp<T>;
+		if (j?.error) return null;
+		return (j?.result ?? null) as T | null;
+	} catch {
+		return null;
+	}
+}
+
+function extractStakeAccountsFromTxs(
+	txs: HeliusTx[],
+	address: string
+): string[] {
+	const out = new Set<string>();
+	const self = address.toLowerCase();
+	for (const tx of txs) {
+		const typeU = String(tx.type || "").toUpperCase();
+		if (!typeU.includes("STAKE") && !typeU.includes("UNSTAKE")) continue;
+		const desc = String(tx.description || "");
+		if (!desc.toLowerCase().includes(self)) {
+			// description often includes the wallet address; still try regex if stake-ish
+		}
+		const m = /\b(?:to|from)\s+([1-9A-HJ-NP-Za-km-z]{32,44})\b/g;
+		let hit: RegExpExecArray | null = null;
+		while ((hit = m.exec(desc)) !== null) {
+			const acc = String(hit[1] || "").trim();
+			if (acc && acc !== address) out.add(acc);
+		}
+	}
+	return [...out];
+}
+
+async function fetchSyntheticStakeIncomeRows(opts: {
+	allTxs: HeliusTx[];
+	address: string;
+	fromISO?: string;
+	toISO?: string;
+	useOslo: boolean;
+	walletTag: string;
+}): Promise<KSRow[]> {
+	const { allTxs, address, fromISO, toISO, useOslo, walletTag } = opts;
+	const hasIncomeAlready = allTxs.some((tx) => {
+		const typeU = String(tx.type || "").toUpperCase();
+		return typeU.includes("REWARD") || typeU.includes("INCOME");
+	});
+	if (hasIncomeAlready) return [];
+
+	const stakeAccounts = extractStakeAccountsFromTxs(allTxs, address);
+	if (!stakeAccounts.length) return [];
+
+	const epochInfo = await heliusRpc<{ epoch: number }>("getEpochInfo", []);
+	const currentEpoch = Number(epochInfo?.epoch ?? NaN);
+	if (!Number.isFinite(currentEpoch)) return [];
+
+	const nowMs = Date.now();
+	const fromMs = fromISO ? new Date(fromISO).getTime() : undefined;
+	const toMs = toISO ? new Date(toISO).getTime() : undefined;
+	const minMs = Number.isFinite(fromMs) ? (fromMs as number) : undefined;
+	const maxMs = Number.isFinite(toMs) ? (toMs as number) : nowMs;
+
+	const horizonMs =
+		minMs !== undefined
+			? Math.max(0, nowMs - minMs)
+			: 370 * 24 * 60 * 60 * 1000;
+	const approxEpochDays = 2;
+	const lookbackEpochs = Math.min(
+		480,
+		Math.max(
+			60,
+			Math.ceil(horizonMs / (approxEpochDays * 24 * 60 * 60 * 1000)) + 30
+		)
+	);
+	const startEpoch = Math.max(0, currentEpoch - lookbackEpochs);
+
+	const rows: KSRow[] = [];
+	for (let epoch = startEpoch; epoch <= currentEpoch; epoch++) {
+		const rewards = await heliusRpc<
+			Array<{
+				amount?: number;
+				effectiveSlot?: number;
+			} | null>
+		>("getInflationReward", [
+			stakeAccounts,
+			{ epoch, commitment: "confirmed" }
+		]);
+		if (!Array.isArray(rewards) || !rewards.length) continue;
+
+		for (const rw of rewards) {
+			if (!rw) continue;
+			const lamports = Number(rw.amount ?? 0);
+			const slot = Number(rw.effectiveSlot ?? 0);
+			if (!Number.isFinite(lamports) || lamports <= 0) continue;
+			if (!Number.isFinite(slot) || slot <= 0) continue;
+
+			const bt = await heliusRpc<number>("getBlockTime", [slot]);
+			if (!Number.isFinite(bt) || (bt as number) <= 0) continue;
+			const tsMs = (bt as number) * 1000;
+			if (minMs !== undefined && tsMs < minMs) continue;
+			if (maxMs !== undefined && tsMs > maxMs) continue;
+
+			const solAmt = lamportsToSol(lamports);
+			if (!(solAmt > 0)) continue;
+
+			rows.push({
+				Tidspunkt: toNorwayTimeString(tsMs, useOslo),
+				Type: "Inntekt",
+				Inn: toAmountString(solAmt.toFixed(9)),
+				"Inn-Valuta": "SOL",
+				Ut: "0",
+				"Ut-Valuta": "",
+				Gebyr: "0",
+				"Gebyr-Valuta": "",
+				Marked: "SOLANA",
+				Notat: `${walletTag} - SYNTHETIC_STAKING_REWARD epoch:${epoch}`
+			});
+		}
+	}
+
+	rows.sort((a, b) =>
+		a.Tidspunkt < b.Tidspunkt ? -1 : a.Tidspunkt > b.Tidspunkt ? 1 : 0
+	);
+	return rows;
+}
+
+function toCoinGeckoDate(dateKey: string): string | null {
+	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+	if (!m) return null;
+	return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+async function fetchSolNokRateByDate(dateKey: string): Promise<number | null> {
+	if (SOL_NOK_DAILY_CACHE.has(dateKey)) {
+		return SOL_NOK_DAILY_CACHE.get(dateKey) ?? null;
+	}
+	const cgDate = toCoinGeckoDate(dateKey);
+	if (!cgDate) return null;
+	const tryFetch = async () => {
+		const r = await fetch(
+			`https://api.coingecko.com/api/v3/coins/solana/history?date=${cgDate}&localization=false`,
+			{ cache: "no-store" }
+		);
+		if (!r.ok) return null;
+		const j = await r.json();
+		const nok = Number(j?.market_data?.current_price?.nok);
+		if (!Number.isFinite(nok) || nok <= 0) return null;
+		SOL_NOK_DAILY_CACHE.set(dateKey, nok);
+		return nok;
+	};
+
+	for (let i = 0; i < 3; i++) {
+		try {
+			const nok = await tryFetch();
+			if (nok) return nok;
+		} catch {}
+		await new Promise((resolve) => setTimeout(resolve, 250 * (i + 1)));
+	}
+
+	// Fallback path when CoinGecko is unavailable (e.g. 401/rate-limited):
+	// derive SOL/NOK from SOL/USD (Binance daily close) * USD/NOK (Frankfurter).
+	const [solUsd, usdNok] = await Promise.all([
+		fetchSolUsdCloseByDate(dateKey),
+		fetchUsdNokRateByDate(dateKey)
+	]);
+	if (solUsd && usdNok) {
+		const nok = solUsd * usdNok;
+		if (Number.isFinite(nok) && nok > 0) {
+			SOL_NOK_DAILY_CACHE.set(dateKey, nok);
+			return nok;
+		}
+	}
+	return null;
+}
+
+async function fetchSolUsdCloseByDate(dateKey: string): Promise<number | null> {
+	if (SOL_USD_DAILY_CACHE.has(dateKey)) {
+		return SOL_USD_DAILY_CACHE.get(dateKey) ?? null;
+	}
+	const startMs = new Date(`${dateKey}T00:00:00Z`).getTime();
+	const endMs = new Date(`${dateKey}T23:59:59Z`).getTime();
+	if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
+	try {
+		const u = `https://api.binance.com/api/v3/klines?symbol=SOLUSDT&interval=1d&startTime=${startMs}&endTime=${endMs}&limit=1`;
+		const r = await fetch(u, { cache: "no-store" });
+		if (!r.ok) return null;
+		const arr = await r.json();
+		if (!Array.isArray(arr) || !arr.length || !Array.isArray(arr[0]))
+			return null;
+		const close = Number(arr[0][4]);
+		if (!Number.isFinite(close) || close <= 0) return null;
+		SOL_USD_DAILY_CACHE.set(dateKey, close);
+		return close;
+	} catch {
+		return null;
+	}
+}
+
+async function fetchUsdNokRateByDate(dateKey: string): Promise<number | null> {
+	if (USD_NOK_DAILY_CACHE.has(dateKey)) {
+		return USD_NOK_DAILY_CACHE.get(dateKey) ?? null;
+	}
+	try {
+		const r = await fetch(
+			`https://api.frankfurter.app/${dateKey}?from=USD&to=NOK`,
+			{ cache: "force-cache" }
+		);
+		if (!r.ok) return null;
+		const j = await r.json();
+		const rate = Number(j?.rates?.NOK);
+		if (!Number.isFinite(rate) || rate <= 0) return null;
+		USD_NOK_DAILY_CACHE.set(dateKey, rate);
+		return rate;
+	} catch {
+		return null;
+	}
+}
+
+async function prefetchSolNokRatesByRange(dateKeys: string[]): Promise<void> {
+	const missing = [...new Set(dateKeys)].filter(
+		(k) => !SOL_NOK_DAILY_CACHE.has(k)
+	);
+	if (!missing.length) return;
+
+	const sorted = [...missing].sort();
+	const minKey = sorted[0];
+	const maxKey = sorted[sorted.length - 1];
+	if (!minKey || !maxKey) return;
+
+	const minStartMs = new Date(`${minKey}T00:00:00Z`).getTime();
+	const maxEndMs = new Date(`${maxKey}T23:59:59Z`).getTime();
+	if (!Number.isFinite(minStartMs) || !Number.isFinite(maxEndMs)) return;
+
+	const fromSec = Math.floor(minStartMs / 1000);
+	const toSec = Math.floor(maxEndMs / 1000);
+
+	try {
+		const r = await fetch(
+			`https://api.coingecko.com/api/v3/coins/solana/market_chart/range?vs_currency=nok&from=${fromSec}&to=${toSec}`,
+			{ cache: "force-cache" }
+		);
+		if (!r.ok) return;
+		const j = await r.json();
+		const prices = Array.isArray(j?.prices) ? j.prices : [];
+		if (!prices.length) return;
+
+		const latestByDay = new Map<string, { ts: number; price: number }>();
+		for (const p of prices) {
+			if (!Array.isArray(p) || p.length < 2) continue;
+			const ts = Number(p[0]);
+			const price = Number(p[1]);
+			if (!Number.isFinite(ts) || !Number.isFinite(price) || price <= 0)
+				continue;
+			const key = new Date(ts).toISOString().slice(0, 10);
+			const prev = latestByDay.get(key);
+			if (!prev || ts > prev.ts) latestByDay.set(key, { ts, price });
+		}
+
+		for (const [k, v] of latestByDay.entries()) {
+			if (!SOL_NOK_DAILY_CACHE.has(k)) SOL_NOK_DAILY_CACHE.set(k, v.price);
+		}
+
+		// Retry exact per-day history lookup for any still-missing keys.
+		for (const key of missing) {
+			if (SOL_NOK_DAILY_CACHE.has(key)) continue;
+			await fetchSolNokRateByDate(key);
+		}
+	} catch {
+		return;
+	}
+}
+
+async function enrichIncomeRowsWithNok(rows: KSRow[]): Promise<KSRow[]> {
+	const dec = (s: string) => {
+		const n = parseFloat((s || "0").replace(/,/g, ""));
+		return Number.isFinite(n) ? n : 0;
+	};
+
+	const neededDateKeys = rows
+		.filter(
+			(r) =>
+				r.Type === "Inntekt" &&
+				currencyCode(r["Inn-Valuta"] || "") === "SOL" &&
+				dec(r.Inn) > 0 &&
+				currencyCode(r["Ut-Valuta"] || "") !== "NOK"
+		)
+		.map((r) => parseRowDateKey(r.Tidspunkt))
+		.filter((k): k is string => Boolean(k));
+
+	await prefetchSolNokRatesByRange(neededDateKeys);
+
+	const out: KSRow[] = [];
+	for (const r of rows) {
+		if (
+			r.Type !== "Inntekt" ||
+			currencyCode(r["Inn-Valuta"] || "") !== "SOL" ||
+			dec(r.Inn) <= 0 ||
+			currencyCode(r["Ut-Valuta"] || "") === "NOK"
+		) {
+			out.push(r);
+			continue;
+		}
+
+		const dateKey = parseRowDateKey(r.Tidspunkt);
+		if (!dateKey) {
+			out.push(r);
+			continue;
+		}
+
+		let nokRate = SOL_NOK_DAILY_CACHE.get(dateKey) ?? null;
+		if (!nokRate) {
+			nokRate = await fetchSolNokRateByDate(dateKey);
+		}
+		if (!nokRate) {
+			out.push(r);
+			continue;
+		}
+
+		const nokValue = dec(r.Inn) * nokRate;
+		const roundedNokValue = Math.round((nokValue + Number.EPSILON) * 100) / 100;
+		out.push({
+			...r,
+			Ut: toAmountString(roundedNokValue.toFixed(2)),
+			"Ut-Valuta": "NOK"
+		});
+	}
+
+	return out;
 }
 
 function sha256Hex(value: string) {
@@ -414,7 +766,10 @@ function mkCacheKey(input: {
 	dustInterval: string;
 	useOslo: boolean;
 }) {
-	const s = JSON.stringify(input);
+	const s = JSON.stringify({
+		...input,
+		classifierVersion: CLASSIFIER_CACHE_VERSION
+	});
 	return crypto.createHash("sha256").update(s).digest("hex");
 }
 
@@ -1167,7 +1522,12 @@ function decStrToNum(s: string): number {
 }
 
 function isTransferRow(r: KSRow): boolean {
-	return r.Type === "Overføring-Inn" || r.Type === "Overføring-Ut";
+	return (
+		r.Type === "Overføring-Inn" ||
+		r.Type === "Overføring-Ut" ||
+		r.Type === "Erverv" ||
+		r.Type === "Tap"
+	);
 }
 
 function directionAndCurrency(
@@ -1525,10 +1885,170 @@ function consolidateRowsBySignature(
 		return Number.isFinite(n) ? n : 0;
 	};
 
+	const STABLE_SYMBOLS = new Set([
+		"USDC",
+		"USDT",
+		"USDS",
+		"PYUSD",
+		"FDUSD",
+		"DAI"
+	]);
+
+	const preferTradeSymbol = (
+		candidates: Array<{ symbol: string; amount: number }>
+	): { symbol: string; amount: number } | null => {
+		if (!candidates.length) return null;
+		const nonStable = candidates.filter((c) => !STABLE_SYMBOLS.has(c.symbol));
+		const source = nonStable.length ? nonStable : candidates;
+		let best: { symbol: string; amount: number } | null = null;
+		for (const cand of source) {
+			if (!best || cand.amount > best.amount) best = cand;
+		}
+		return best;
+	};
+
+	const swapSymbolsFromDescription = (
+		tx: HeliusTx | undefined
+	): { inSym?: string; outSym?: string } => {
+		const text = String((tx as any)?.description || "").trim();
+		if (!text) return {};
+		const m =
+			/swapped\s+[0-9.]+\s+([A-Za-z0-9._-]+)\s+for\s+[0-9.]+\s+([A-Za-z0-9._-]+)/i.exec(
+				text
+			);
+		if (!m) return {};
+		const outSym = currencyCode(m[1]);
+		const inSym = currencyCode(m[2]);
+		return {
+			inSym: inSym || undefined,
+			outSym: outSym || undefined
+		};
+	};
+
+	const swapSymbolsFromEvents = (
+		tx: HeliusTx | undefined
+	): { inSym?: string; outSym?: string } => {
+		const swap = (tx as any)?.events?.swap;
+		if (!swap) return {};
+
+		const pickLargest = (arr: any[]): any | null => {
+			if (!Array.isArray(arr) || arr.length === 0) return null;
+			let best: any | null = null;
+			for (const item of arr) {
+				const amt = tokenAmountFromTxTransfer(item);
+				if (!Number.isFinite(amt) || amt <= 0) continue;
+				if (!best || amt > tokenAmountFromTxTransfer(best)) best = item;
+			}
+			return best;
+		};
+
+		const symbolFromTransfer = (t: any): string | undefined => {
+			const hinted = t?.mint ? hintFor(String(t.mint))?.symbol : undefined;
+			const sym = currencyCode(String(t?.tokenSymbol || hinted || ""));
+			if (!sym || sym === "UNKNOWN") return undefined;
+			return sym;
+		};
+
+		const outToken = symbolFromTransfer(pickLargest(swap?.tokenInputs || []));
+		const inToken = symbolFromTransfer(pickLargest(swap?.tokenOutputs || []));
+
+		const hasNativeInput =
+			swap?.nativeInput && Number(String(swap.nativeInput.amount || 0)) > 0;
+		const hasNativeOutput =
+			swap?.nativeOutput && Number(String(swap.nativeOutput.amount || 0)) > 0;
+
+		return {
+			inSym: inToken || (hasNativeOutput ? "SOL" : undefined),
+			outSym: outToken || (hasNativeInput ? "SOL" : undefined)
+		};
+	};
+
+	const tokenAmountFromTxTransfer = (t: any): number => {
+		const raw = t?.rawTokenAmount?.tokenAmount;
+		const decs =
+			typeof t?.rawTokenAmount?.decimals === "number"
+				? t.rawTokenAmount.decimals
+				: typeof t?.decimals === "number"
+					? t.decimals
+					: 0;
+		if (typeof raw === "string" && raw.length > 0) {
+			const n = Number(raw);
+			if (Number.isFinite(n)) return n / Math.pow(10, decs);
+		}
+		const fallback = Number(t?.tokenAmount ?? 0);
+		return Number.isFinite(fallback) ? fallback : 0;
+	};
+
+	const bestTokenFromTx = (
+		tx: HeliusTx | undefined,
+		direction: "IN" | "OUT"
+	): { symbol: string; amount: number } | null => {
+		if (!tx || !Array.isArray(tx.tokenTransfers)) return null;
+		const directedCandidates: Array<{ symbol: string; amount: number }> = [];
+		const anyCandidates: Array<{ symbol: string; amount: number }> = [];
+		for (const t of tx.tokenTransfers as any[]) {
+			const amount = tokenAmountFromTxTransfer(t);
+			if (!Number.isFinite(amount) || amount <= 0) continue;
+
+			const hinted = t?.mint ? hintFor(String(t.mint))?.symbol : undefined;
+			const symbol = currencyCode(String(t?.tokenSymbol || hinted || ""));
+			if (!symbol || symbol === "SOL") continue;
+			anyCandidates.push({ symbol, amount });
+
+			const toSelf =
+				typeof t?.toUserAccount === "string" &&
+				t.toUserAccount.toLowerCase() === address.toLowerCase();
+			const fromSelf =
+				typeof t?.fromUserAccount === "string" &&
+				t.fromUserAccount.toLowerCase() === address.toLowerCase();
+			if (direction === "IN" && !toSelf) continue;
+			if (direction === "OUT" && !fromSelf) continue;
+			directedCandidates.push({ symbol, amount });
+		}
+		return (
+			preferTradeSymbol(directedCandidates) || preferTradeSymbol(anyCandidates)
+		);
+	};
+
+	const bestSolFromTxAnyDirection = (
+		tx: HeliusTx | undefined
+	): { amount: number } | null => {
+		if (!tx || !Array.isArray(tx.tokenTransfers)) return null;
+		let best = 0;
+		for (const t of tx.tokenTransfers as any[]) {
+			const amount = tokenAmountFromTxTransfer(t);
+			if (!Number.isFinite(amount) || amount <= 0) continue;
+			const hinted = t?.mint ? hintFor(String(t.mint))?.symbol : undefined;
+			const symbol = currencyCode(String(t?.tokenSymbol || hinted || ""));
+			if (symbol !== "SOL") continue;
+			if (amount > best) best = amount;
+		}
+		return best > 0 ? { amount: best } : null;
+	};
+
+	const operationalNativeOutFromTx = (
+		tx: HeliusTx | undefined,
+		maxLegSOL = 0.02
+	): number => {
+		if (!tx || !Array.isArray((tx as any).nativeTransfers)) return 0;
+		return (tx as any).nativeTransfers
+			.filter(
+				(n: any) =>
+					String(n?.fromUserAccount || "") === address &&
+					String(n?.toUserAccount || "") !== address
+			)
+			.map((n: any) => lamportsToSol(Number(n?.amount ?? 0)))
+			.filter(
+				(amt: number) => Number.isFinite(amt) && amt > 0 && amt <= maxLegSOL
+			)
+			.reduce((sum: number, amt: number) => sum + amt, 0);
+	};
+
 	const preferMarket = (cands: string[]): string => {
 		// preference order
 		const rank = (mkt: string) => {
-			const u = (mkt || "").toUpperCase();
+			const u = normalizeMarketLabel(mkt);
+			if (u === "STAKE") return 11;
 			if (u.includes("LIQUIDITY")) return 10;
 			if (u.includes("PUMP")) return 9;
 			if (u.includes("GMGN")) return 8;
@@ -1545,15 +2065,18 @@ function consolidateRowsBySignature(
 		let bestScore = -1;
 		// most frequent, then by rank
 		const freq = new Map<string, number>();
-		for (const m of cands) freq.set(m, (freq.get(m) || 0) + 1);
+		for (const m of cands) {
+			const normalized = normalizeMarketLabel(m);
+			freq.set(normalized, (freq.get(normalized) || 0) + 1);
+		}
 		for (const [m, f] of freq.entries()) {
-			const s = f * 100 + rank(m);
+			const s = rank(m) * 100 + f;
 			if (s > bestScore) {
 				bestScore = s;
 				best = m;
 			}
 		}
-		return best || (cands[0] ?? "");
+		return best || normalizeMarketLabel(cands[0] ?? "SOLANA");
 	};
 
 	const isDexy = (m: string) => {
@@ -1575,7 +2098,240 @@ function consolidateRowsBySignature(
 
 	for (const [sig, arr] of groups.entries()) {
 		if (arr.length === 1) {
-			out.push(arr[0]);
+			const single = { ...arr[0] };
+			const tx = txBySig ? txBySig.get(sig) : undefined;
+			const flags = txEventFlags(tx);
+			const txText = txEventTextUpper(tx);
+			const descSwap = swapSymbolsFromDescription(tx);
+			const eventSwap = swapSymbolsFromEvents(tx);
+			const swapInSym = eventSwap.inSym || descSwap.inSym;
+			const swapOutSym = eventSwap.outSym || descSwap.outSym;
+			const nativeDelta = tx ? getUserLamportsDeltaSOL(tx, address) : null;
+			const bestInToken = bestTokenFromTx(tx, "IN");
+			const bestOutToken = bestTokenFromTx(tx, "OUT");
+			const singleIn = dec(single.Inn);
+			const singleOut = dec(single.Ut);
+			const singleFee = dec(single.Gebyr);
+			const isStakeLike =
+				txText.includes("STAKE") ||
+				txText.includes("UNSTAKE") ||
+				txText.includes("DELEGAT") ||
+				String(single.Marked || "")
+					.toUpperCase()
+					.includes("STAKE");
+			const marketNorm = normalizeMarketLabel(single.Marked);
+			const looksTradeLikeMarket =
+				marketNorm === "JUPITER" ||
+				marketNorm === "SOLANA DEX" ||
+				marketNorm === "SOLANA";
+
+			if (
+				flags.isOrderTrade &&
+				single.Type === "Overføring-Inn" &&
+				singleIn > 0
+			) {
+				if (
+					(single["Inn-Valuta"] || "") !== "SOL" &&
+					nativeDelta != null &&
+					nativeDelta < 0
+				) {
+					single.Type = "Handel";
+					single.Ut = toAmountString(
+						numberToPlain(Math.max(0, -nativeDelta - singleFee))
+					);
+					single["Ut-Valuta"] = "SOL";
+				} else if ((single["Inn-Valuta"] || "") === "SOL" && bestOutToken) {
+					single.Type = "Handel";
+					single.Ut = toAmountString(numberToPlain(bestOutToken.amount));
+					single["Ut-Valuta"] = bestOutToken.symbol;
+				}
+			}
+
+			if (
+				flags.isOrderTrade &&
+				single.Type === "Overføring-Ut" &&
+				singleOut > 0
+			) {
+				if (
+					(single["Ut-Valuta"] || "") !== "SOL" &&
+					nativeDelta != null &&
+					nativeDelta > 0
+				) {
+					single.Type = "Handel";
+					single.Inn = toAmountString(numberToPlain(nativeDelta + singleFee));
+					single["Inn-Valuta"] = "SOL";
+				} else if ((single["Ut-Valuta"] || "") === "SOL" && bestInToken) {
+					single.Type = "Handel";
+					single.Inn = toAmountString(numberToPlain(bestInToken.amount));
+					single["Inn-Valuta"] = bestInToken.symbol;
+				}
+			}
+
+			if (
+				single.Type === "Overføring-Inn" &&
+				singleIn > 0 &&
+				singleOut === 0 &&
+				looksTradeLikeMarket &&
+				!isStakeLike
+			) {
+				if (
+					(single["Inn-Valuta"] || "") !== "SOL" &&
+					nativeDelta != null &&
+					nativeDelta < -1e-9
+				) {
+					const inferredOutSOL = Math.max(0, -nativeDelta - singleFee);
+					if (inferredOutSOL > 0) {
+						single.Type = "Handel";
+						single.Ut = toAmountString(numberToPlain(inferredOutSOL));
+						single["Ut-Valuta"] = "SOL";
+					}
+				} else if ((single["Inn-Valuta"] || "") !== "SOL") {
+					const solLeg = bestSolFromTxAnyDirection(tx);
+					if (solLeg && solLeg.amount > 0) {
+						single.Type = "Handel";
+						single.Ut = toAmountString(numberToPlain(solLeg.amount));
+						single["Ut-Valuta"] =
+							swapOutSym && swapOutSym !== "SOL" ? swapOutSym : "SOL";
+					}
+				} else if ((single["Inn-Valuta"] || "") === "SOL" && bestOutToken) {
+					single.Type = "Handel";
+					single.Ut = toAmountString(numberToPlain(bestOutToken.amount));
+					single["Ut-Valuta"] = bestOutToken.symbol;
+				} else if ((single["Inn-Valuta"] || "") === "SOL" && swapOutSym) {
+					single.Type = "Handel";
+					single["Ut-Valuta"] = swapOutSym;
+				}
+			}
+
+			if (
+				single.Type === "Overføring-Ut" &&
+				singleOut > 0 &&
+				singleIn === 0 &&
+				looksTradeLikeMarket &&
+				!isStakeLike
+			) {
+				if (
+					(single["Ut-Valuta"] || "") !== "SOL" &&
+					nativeDelta != null &&
+					nativeDelta > 1e-9
+				) {
+					const inferredInSOL = nativeDelta + singleFee;
+					if (inferredInSOL > 0) {
+						single.Type = "Handel";
+						single.Inn = toAmountString(numberToPlain(inferredInSOL));
+						single["Inn-Valuta"] = "SOL";
+					}
+				} else if ((single["Ut-Valuta"] || "") === "SOL" && bestInToken) {
+					single.Type = "Handel";
+					single.Inn = toAmountString(numberToPlain(bestInToken.amount));
+					single["Inn-Valuta"] = bestInToken.symbol;
+				}
+			}
+
+			if (
+				flags.isSplCreateAccount &&
+				single.Type === "Overføring-Ut" &&
+				(single["Ut-Valuta"] || "") === "SOL" &&
+				singleIn === 0 &&
+				singleFee >= 0
+			) {
+				const opOut = operationalNativeOutFromTx(tx, 0.02) + singleFee;
+				if (opOut > 0 && (nativeDelta == null || nativeDelta <= 0)) {
+					single.Type = "Tap";
+					single.Ut = toAmountString(numberToPlain(opOut));
+					single["Ut-Valuta"] = "SOL";
+					single.Gebyr = "0";
+					single["Gebyr-Valuta"] = "";
+				}
+			}
+
+			if (
+				flags.isSplCloseAccount &&
+				single.Type === "Overføring-Inn" &&
+				(single["Inn-Valuta"] || "") === "SOL" &&
+				singleIn > 0
+			) {
+				const grossIn = singleIn;
+				const fee = singleFee;
+				const netIn = Math.max(0, grossIn - fee);
+				single.Type = "Erverv";
+				single.Inn = toAmountString(numberToPlain(netIn));
+				single.Gebyr = "0";
+				single["Gebyr-Valuta"] = "";
+			}
+
+			if (
+				single.Type === "Overføring-Ut" &&
+				(single["Ut-Valuta"] || "") === "SOL" &&
+				singleOut === 0 &&
+				singleFee > 0 &&
+				isStakeLike
+			) {
+				single.Type = "Tap";
+				single.Ut = toAmountString(numberToPlain(singleFee));
+				single["Ut-Valuta"] = "SOL";
+				single.Gebyr = "0";
+				single["Gebyr-Valuta"] = "";
+			}
+
+			if (
+				single.Type === "Overføring-Inn" &&
+				(single["Inn-Valuta"] || "") === "SOL" &&
+				singleOut === 0 &&
+				singleFee === 0 &&
+				singleIn > 0 &&
+				singleIn <= 0.00000011
+			) {
+				single.Type = "Erverv";
+			}
+
+			if (
+				single.Type === "Overføring-Inn" &&
+				(single["Inn-Valuta"] || "") === "SOL" &&
+				singleOut === 0 &&
+				singleIn > 0 &&
+				singleFee > 0 &&
+				singleIn <= 0.0035
+			) {
+				const netIn = Math.max(0, singleIn - singleFee);
+				if (netIn > 0) {
+					single.Type = "Erverv";
+					single.Inn = toAmountString(numberToPlain(netIn));
+					single.Gebyr = "0";
+					single["Gebyr-Valuta"] = "";
+				}
+			}
+
+			if (
+				flags.isOrderPlace &&
+				single.Type === "Overføring-Ut" &&
+				dec(single.Ut) > 0
+			) {
+				const opOut = operationalNativeOutFromTx(tx, 0.02) + singleFee;
+				if (opOut > 0) {
+					single.Type = "Tap";
+					single.Ut = toAmountString(numberToPlain(opOut));
+					single["Ut-Valuta"] = "SOL";
+					single.Gebyr = "0";
+					single["Gebyr-Valuta"] = "";
+				} else {
+					single.Type = "Tap";
+				}
+			}
+
+			if (single.Type === "Handel") {
+				const innVal = currencyCode(String(single["Inn-Valuta"] || ""));
+				const utVal = currencyCode(String(single["Ut-Valuta"] || ""));
+				if (innVal === "UNKNOWN" && swapInSym) {
+					single["Inn-Valuta"] = swapInSym;
+				}
+				if (utVal === "UNKNOWN" && swapOutSym) {
+					single["Ut-Valuta"] = swapOutSym;
+				}
+			}
+
+			single.Marked = normalizeMarketLabel(single.Marked);
+			out.push(single);
 			continue;
 		}
 
@@ -1595,7 +2351,21 @@ function consolidateRowsBySignature(
 			continue;
 		}
 
-		// If this signature contains *only* transfer rows and all legs are below the dust threshold,
+		// Keep explicit supplemental tax rows as-is.
+		// These are intentionally separate rows in Kryptosekken semantics and
+		// should not be collapsed into a single signature net row.
+		if (
+			arr.some((r) => {
+				const note = String(r.Notat || "").toUpperCase();
+				return r.Type === "Inntekt" || note.includes("TRADE_CHANGE");
+			})
+		) {
+			for (const r of arr) out.push(r);
+			continue;
+		}
+
+		// If this signature contains *only* dust-eligible rows (transfer/erverv/tap)
+		// and all legs are below the dust threshold,
 		// keep them as separate IN/OUT rows (do not collapse into a single net row).
 		if (dustT > 0 && arr.every(isTransferRow)) {
 			const legs = arr.map((r) => directionAndCurrency(r));
@@ -1650,7 +2420,18 @@ function consolidateRowsBySignature(
 		const treatAsTransfer = !Array.from(new Set(markets)).some(isDexy);
 
 		const tx = txBySig ? txBySig.get(sig) : undefined;
+		const flags = txEventFlags(tx);
 		const nativeDelta = tx ? getUserLamportsDeltaSOL(tx, address) : null;
+		const operationalOut = operationalNativeOutFromTx(tx, 0.02);
+		const descSwap = swapSymbolsFromDescription(tx);
+		const eventSwap = swapSymbolsFromEvents(tx);
+		const swapInSym = eventSwap.inSym || descSwap.inSym;
+		const swapOutSym = eventSwap.outSym || descSwap.outSym;
+		const marketNorm = normalizeMarketLabel(market);
+		const looksTradeLikeMarket =
+			marketNorm === "JUPITER" ||
+			marketNorm === "SOLANA DEX" ||
+			marketNorm === "SOLANA";
 		const posHasNonSOL = [...pos.keys()].some((s) => s !== "SOL");
 		const negNonSolEntries = [...neg.entries()].filter(([s]) => s !== "SOL");
 
@@ -1744,16 +2525,79 @@ function consolidateRowsBySignature(
 			}
 		} else if (hasPos) {
 			const p = pickLargest(pos)!;
-			// 🔁 Changed: Overføring-Inn instead of Erverv
-			type = "Overføring-Inn";
-			innSym = p[0];
-			innAmt = p[1];
+			if (flags.isOrderTrade || looksTradeLikeMarket) {
+				const outToken = bestTokenFromTx(tx, "OUT");
+				const outSolAny = bestSolFromTxAnyDirection(tx);
+				const grossOutSOL =
+					nativeDelta != null && nativeDelta < 0
+						? Math.max(0, -nativeDelta - feeSOL)
+						: 0;
+
+				if (p[0] !== "SOL" && grossOutSOL > 0) {
+					type = "Handel";
+					innSym = p[0];
+					innAmt = p[1];
+					utSym = "SOL";
+					utAmt = grossOutSOL;
+				} else if (p[0] !== "SOL" && outSolAny && outSolAny.amount > 0) {
+					type = "Handel";
+					innSym = p[0];
+					innAmt = p[1];
+					utSym = "SOL";
+					utAmt = outSolAny.amount;
+				} else if (p[0] === "SOL" && outToken) {
+					type = "Handel";
+					innSym = "SOL";
+					innAmt = p[1];
+					utSym = outToken.symbol;
+					utAmt = outToken.amount;
+				} else {
+					type = "Overføring-Inn";
+					innSym = p[0];
+					innAmt = p[1];
+				}
+			} else {
+				// 🔁 Changed: Overføring-Inn instead of Erverv
+				type = "Overføring-Inn";
+				innSym = p[0];
+				innAmt = p[1];
+			}
 		} else if (hasNeg) {
 			const n = pickLargest(neg)!;
-			// 🔁 Changed: Overføring-Ut instead of Tap
-			type = "Overføring-Ut";
-			utSym = n[0];
-			utAmt = n[1];
+			if (flags.isOrderTrade || looksTradeLikeMarket) {
+				const inToken = bestTokenFromTx(tx, "IN");
+				const grossInSOL =
+					nativeDelta != null && nativeDelta > 0 ? nativeDelta + feeSOL : 0;
+
+				if (n[0] !== "SOL" && grossInSOL > 0) {
+					type = "Handel";
+					innSym = "SOL";
+					innAmt = grossInSOL;
+					utSym = n[0] === "UNKNOWN" && swapOutSym ? swapOutSym : n[0];
+					utAmt = n[1];
+				} else if (n[0] === "SOL" && inToken) {
+					type = "Handel";
+					innSym = inToken.symbol;
+					innAmt = inToken.amount;
+					utSym = "SOL";
+					utAmt = n[1];
+				} else if (n[0] === "UNKNOWN" && swapOutSym && grossInSOL > 0) {
+					type = "Handel";
+					innSym = swapInSym || "SOL";
+					innAmt = grossInSOL;
+					utSym = swapOutSym;
+					utAmt = n[1];
+				} else {
+					type = "Overføring-Ut";
+					utSym = n[0];
+					utAmt = n[1];
+				}
+			} else {
+				// 🔁 Changed: Overføring-Ut instead of Tap
+				type = "Overføring-Ut";
+				utSym = n[0];
+				utAmt = n[1];
+			}
 		} else {
 			// nothing meaningful — keep first row
 			out.push(arr[0]);
@@ -1761,25 +2605,76 @@ function consolidateRowsBySignature(
 		}
 
 		const prefix = notePrefix ? notePrefix + " " : "";
+		let finalInnSym = innAmt > 0 ? currencyCode(innSym) : "";
+		let finalUtSym = utAmt > 0 ? currencyCode(utSym) : "";
+		if (type === "Handel") {
+			if (finalInnSym === "UNKNOWN" && swapInSym) finalInnSym = swapInSym;
+			if (finalUtSym === "UNKNOWN" && swapOutSym) finalUtSym = swapOutSym;
+		}
+
+		const hasNonSolIn = finalInnSym !== "" && finalInnSym !== "SOL";
+		if (
+			(flags.isOrderPlace || flags.isSplCreateAccount) &&
+			utSym === "SOL" &&
+			type !== "Handel" &&
+			!hasNonSolIn &&
+			(nativeDelta == null || nativeDelta <= 0)
+		) {
+			const opTap = operationalOut + feeSOL;
+			if (opTap > 0) {
+				type = "Tap";
+				innAmt = 0;
+				innSym = "";
+				utAmt = opTap;
+				utSym = "SOL";
+				feeSOL = 0;
+				finalInnSym = "";
+				finalUtSym = "SOL";
+			}
+		}
+
 		out.push({
 			Tidspunkt: time,
 			Type: type,
 			Inn: innAmt > 0 ? toAmountString(numberToPlain(innAmt)) : "0",
-			"Inn-Valuta": innAmt > 0 ? currencyCode(innSym) : "",
+			"Inn-Valuta": innAmt > 0 ? finalInnSym : "",
 			Ut: utAmt > 0 ? toAmountString(numberToPlain(utAmt)) : "0",
-			"Ut-Valuta": utAmt > 0 ? currencyCode(utSym) : "",
+			"Ut-Valuta": utAmt > 0 ? finalUtSym : "",
 			Gebyr: feeSOL > 0 ? toAmountString(numberToPlain(feeSOL)) : "0",
 			"Gebyr-Valuta": feeSOL > 0 ? "SOL" : "",
-			Marked: market || "SOLANA",
+			Marked: normalizeMarketLabel(market || "SOLANA"),
 			Notat: `${prefix}sig:${sig}`
 		});
+
+		if (
+			type === "Handel" &&
+			(finalUtSym || "").toUpperCase() === "SOL" &&
+			(finalInnSym || "").toUpperCase() !== "SOL" &&
+			normalizeMarketLabel(market || "SOLANA") === "JUPITER" &&
+			nativeDelta != null &&
+			nativeDelta > 1e-9 &&
+			nativeDelta <= 0.05
+		) {
+			out.push({
+				Tidspunkt: time,
+				Type: "Erverv",
+				Inn: toAmountString(numberToPlain(nativeDelta)),
+				"Inn-Valuta": "SOL",
+				Ut: "0",
+				"Ut-Valuta": "",
+				Gebyr: "0",
+				"Gebyr-Valuta": "",
+				Marked: normalizeMarketLabel(market || "SOLANA"),
+				Notat: `${prefix}SWAP_TRADE_CHANGE sig:${sig}`
+			});
+		}
 	}
 
 	// keep stable order
 	out.sort((a, b) =>
 		a.Tidspunkt < b.Tidspunkt ? -1 : a.Tidspunkt > b.Tidspunkt ? 1 : 0
 	);
-	return out;
+	return out.map((r) => ({ ...r, Marked: normalizeMarketLabel(r.Marked) }));
 }
 
 /* ================= Wallet tag for Notat ================= */
@@ -1884,6 +2779,117 @@ function looksCLMM(source: string): boolean {
 function extractSigFromNotat(notat: string): string | undefined {
 	const m = /sig:([A-Za-z0-9]+)/.exec(notat);
 	return m ? m[1] : undefined;
+}
+
+function normalizeMarketLabel(value?: string): string {
+	const upper = String(value || "")
+		.trim()
+		.toUpperCase();
+	if (!upper) return "SOLANA";
+
+	if (
+		upper === "SYSTEM_PROGRAM" ||
+		upper === "SOLANA_PROGRAM_LIBRARY" ||
+		upper === "SOLANA LIBRARY" ||
+		upper === "SPL" ||
+		upper === "UNKNOWN" ||
+		upper === "SOLANA SYSTEM"
+	) {
+		return "SOLANA";
+	}
+
+	if (
+		upper.includes("STAKE") ||
+		upper.includes("STAKING") ||
+		upper.includes("VALIDATOR")
+	) {
+		return "STAKE";
+	}
+
+	if (upper.includes("JUPITER") || upper.includes("AGGREGATOR")) {
+		return "JUPITER";
+	}
+
+	if (
+		upper.includes("RAYDIUM") ||
+		upper.includes("ORCA") ||
+		upper.includes("METEORA") ||
+		upper.includes("DEX") ||
+		upper.includes("PUMP") ||
+		upper.includes("GMGN") ||
+		upper.includes("BUBBLEGUM")
+	) {
+		return "SOLANA DEX";
+	}
+
+	if (upper === "SOLANA-NFT") return "SOLANA";
+
+	return upper;
+}
+
+function txEventTextUpper(tx?: HeliusTx): string {
+	if (!tx) return "";
+	const typeText = String(tx.type || "").trim();
+	const descText = String(tx.description || "").trim();
+	return `${typeText} ${descText}`.toUpperCase();
+}
+
+function txEventFlags(tx?: HeliusTx) {
+	const text = txEventTextUpper(tx);
+	const hasAtaCreateInstruction = Array.isArray((tx as any)?.instructions)
+		? (tx as any).instructions.some(
+				(i: any) =>
+					String(i?.programId || "").trim() ===
+					"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+			)
+		: false;
+	const hasJupiterLimitProgram = Array.isArray((tx as any)?.instructions)
+		? (tx as any).instructions.some(
+				(i: any) =>
+					String(i?.programId || "").trim() ===
+					"j1o2qRpjcyUwEvwtcfhEQefh773ZgjxcVRry7LDqg5X"
+			)
+		: false;
+	const hasOrderbook =
+		text.includes("DEFI_ORDERBOOK") ||
+		text.includes("ORDERBOOK") ||
+		text.includes("OPENBOOK") ||
+		text.includes("LIMIT ORDER") ||
+		hasJupiterLimitProgram;
+	const orderTradeHint =
+		text.includes("ORDERBOOK_TRADE") ||
+		text.includes("DEFI_ORDERBOOK_TRADE") ||
+		(hasOrderbook &&
+			(text.includes("TRADE") ||
+				text.includes("FILL") ||
+				text.includes("MATCH") ||
+				text.includes("FLASHFILL") ||
+				text.includes("SWAP")));
+	const explicitSplCreateAccount =
+		text.includes("ACTIVITY_SPL_CREATE_ACCOUNT") ||
+		text.includes("SPL_CREATE_ACCOUNT");
+	const orderPlaceHint =
+		text.includes("ORDER_PLACE") ||
+		text.includes("ORDER PLACE") ||
+		text.includes("PLACE_ORDER") ||
+		text.includes("CREATE_ORDER") ||
+		text.includes("ORDERBOOK_ORDER_PLACE") ||
+		text.includes("DEFI_ORDERBOOK_ORDER_PLACE") ||
+		(hasOrderbook &&
+			(text.includes("PLACE") ||
+				text.includes("CREATE") ||
+				text.includes("OPEN") ||
+				text.includes("RESERVE") ||
+				!orderTradeHint));
+	return {
+		isSplCreateAccount:
+			explicitSplCreateAccount || (hasAtaCreateInstruction && !orderTradeHint),
+		isSplCloseAccount:
+			text.includes("ACTIVITY_SPL_CLOSE_ACCOUNT") ||
+			text.includes("SPL_CLOSE_ACCOUNT"),
+		isOrderPlace: orderPlaceHint,
+		isOrderTrade: orderTradeHint
+	};
 }
 
 function detectLiquidityEvent(
@@ -2287,6 +3293,152 @@ function classifyTxToRows(opts: {
 	const source: string =
 		(tx as any).source || (tx as any).programId || "solana";
 	const srcU = String(source || "").toUpperCase();
+	const flags = txEventFlags(tx);
+	const txTypeU = String(tx.type || "").toUpperCase();
+	const { inSOL: nativeInSOL } = nativeSolInOut(nativeTransfers, address);
+	const maybePushTradeChangeRow = (
+		inSym: string,
+		outSym: string,
+		market: string,
+		tradeOutSOL?: number
+	) => {
+		if (
+			(srcU.includes("JUPITER") ||
+				String(market || "")
+					.toUpperCase()
+					.includes("JUPITER")) &&
+			inSym !== "SOL" &&
+			outSym === "SOL"
+		) {
+			const feeSol = userPaidFee && tx.fee ? lamportsToSol(tx.fee) : 0;
+			const lamDeltaRaw = getUserLamportsDeltaSOL(tx, address);
+			const lamDelta = lamDeltaRaw ?? 0;
+			const walletLamportInSOL =
+				lamDeltaRaw != null && lamDeltaRaw > 0 ? lamDeltaRaw : 0;
+			const grossOutSOL = lamDelta < 0 ? Math.max(0, -lamDelta - feeSol) : 0;
+			const ownsFrom = (t: TokenTransferPlus) =>
+				t.fromUserAccount === address ||
+				(t.fromTokenAccount ? txATAs.has(t.fromTokenAccount) : false);
+			const ownsTo = (t: TokenTransferPlus) =>
+				t.toUserAccount === address ||
+				(t.toTokenAccount ? txATAs.has(t.toTokenAccount) : false);
+			const tokenSolOut = tokenTransfers.reduce((acc, t) => {
+				if (!ownsFrom(t)) return acc;
+				const { amountNum, symbol } = amountFromTransfer(t, resolveSymDec);
+				return (
+					acc +
+					(symbol === "SOL" && Number.isFinite(amountNum) && amountNum > 0
+						? amountNum
+						: 0)
+				);
+			}, 0);
+			const tokenSolIn = tokenTransfers.reduce((acc, t) => {
+				if (!ownsTo(t)) return acc;
+				const { amountNum, symbol } = amountFromTransfer(t, resolveSymDec);
+				return (
+					acc +
+					(symbol === "SOL" && Number.isFinite(amountNum) && amountNum > 0
+						? amountNum
+						: 0)
+				);
+			}, 0);
+			const ataLamportInSOL = Array.isArray((tx as any)?.accountData)
+				? (tx as any).accountData.reduce((acc: number, rec: any) => {
+						const acct = String(rec?.account || rec?.pubkey || "");
+						if (!acct || !txATAs.has(acct)) return acc;
+
+						let deltaLamports = 0;
+						if (
+							rec?.pre?.lamports != null &&
+							rec?.post?.lamports != null &&
+							Number.isFinite(rec.pre.lamports) &&
+							Number.isFinite(rec.post.lamports)
+						) {
+							deltaLamports =
+								Number(rec.post.lamports) - Number(rec.pre.lamports);
+						} else if (
+							rec?.nativeBalanceChange != null &&
+							Number.isFinite(rec.nativeBalanceChange)
+						) {
+							deltaLamports = Number(rec.nativeBalanceChange);
+						} else if (
+							rec?.lamportsChange != null &&
+							Number.isFinite(rec.lamportsChange)
+						) {
+							deltaLamports = Number(rec.lamportsChange);
+						}
+
+						if (!(deltaLamports > 0)) return acc;
+						return acc + lamportsToSol(deltaLamports);
+					}, 0)
+				: 0;
+
+			const deltaDerivedChange =
+				grossOutSOL > 0 && tokenSolOut > grossOutSOL
+					? tokenSolOut - grossOutSOL
+					: 0;
+			const residualFromTradeOut =
+				lamDeltaRaw !== null &&
+				grossOutSOL > 0 &&
+				typeof tradeOutSOL === "number" &&
+				Number.isFinite(tradeOutSOL) &&
+				tradeOutSOL > grossOutSOL
+					? tradeOutSOL - grossOutSOL
+					: 0;
+			const changeSOL =
+				tokenSolIn > 0
+					? tokenSolIn
+					: ataLamportInSOL > 0
+						? ataLamportInSOL
+						: nativeInSOL > 0
+							? nativeInSOL
+							: Math.max(
+									0,
+									deltaDerivedChange,
+									residualFromTradeOut,
+									walletLamportInSOL
+								);
+
+			if (!(changeSOL > 1e-9 && changeSOL <= 0.05)) return;
+
+			pushRow(
+				{
+					Type: "Erverv",
+					Inn: changeSOL,
+					"Inn-Valuta": "SOL",
+					Ut: 0,
+					"Ut-Valuta": "",
+					Marked: market
+				},
+				"SWAP_TRADE_CHANGE"
+			);
+		}
+	};
+	const swapDescMatch =
+		/swapped\s+[0-9.]+\s+([A-Za-z0-9._-]+)\s+for\s+[0-9.]+\s+([A-Za-z0-9._-]+)/i.exec(
+			String((tx as any)?.description || "")
+		);
+	const descOutSym = swapDescMatch ? currencyCode(swapDescMatch[1]) : "";
+	const descInSym = swapDescMatch ? currencyCode(swapDescMatch[2]) : "";
+	const normalizeHandelSymbols = (inSymRaw: string, outSymRaw: string) => {
+		let inSymNorm = currencyCode(String(inSymRaw || ""));
+		let outSymNorm = currencyCode(String(outSymRaw || ""));
+
+		if ((!outSymNorm || outSymNorm === "UNKNOWN") && descOutSym)
+			outSymNorm = descOutSym;
+		if ((!inSymNorm || inSymNorm === "UNKNOWN") && descInSym)
+			inSymNorm = descInSym;
+		if ((inSymNorm === "SOL" || !inSymNorm) && descInSym && descInSym !== "SOL")
+			inSymNorm = descInSym;
+		if (
+			(outSymNorm === "SOL" || !outSymNorm) &&
+			descOutSym &&
+			descOutSym !== "SOL"
+		)
+			outSymNorm = descOutSym;
+
+		return { inSymNorm, outSymNorm };
+	};
 
 	const rows: KSRow[] = [];
 
@@ -2296,21 +3448,272 @@ function classifyTxToRows(opts: {
 		const gebyrVal = feeLeftSOL > 0 ? "SOL" : "";
 		if (feeLeftSOL > 0) feeLeftSOL = 0;
 
+		let innVal = r["Inn-Valuta"] ? currencyCode(String(r["Inn-Valuta"])) : "";
+		let utVal = r["Ut-Valuta"] ? currencyCode(String(r["Ut-Valuta"])) : "";
+		if (r.Type === "Handel") {
+			if ((!utVal || utVal === "UNKNOWN") && descOutSym) utVal = descOutSym;
+			if ((!innVal || innVal === "UNKNOWN") && descInSym) innVal = descInSym;
+			if ((innVal === "SOL" || !innVal) && descInSym && descInSym !== "SOL")
+				innVal = descInSym;
+			if ((utVal === "SOL" || !utVal) && descOutSym && descOutSym !== "SOL")
+				utVal = descOutSym;
+		}
+
 		rows.push({
 			Tidspunkt: time,
 			Type: r.Type as KSRow["Type"],
 			Inn: ensureStringAmount(r.Inn),
-			"Inn-Valuta": r["Inn-Valuta"]
-				? currencyCode(String(r["Inn-Valuta"]))
-				: "",
+			"Inn-Valuta": innVal,
 			Ut: ensureStringAmount(r.Ut),
-			"Ut-Valuta": r["Ut-Valuta"] ? currencyCode(String(r["Ut-Valuta"])) : "",
+			"Ut-Valuta": utVal,
 			Gebyr: gebyr || "0",
 			"Gebyr-Valuta": gebyrVal,
-			Marked: String(r.Marked ?? source ?? "solana"),
+			Marked: normalizeMarketLabel(String(r.Marked ?? source ?? "solana")),
 			Notat: `${noteSuffix ? `${noteSuffix} ` : ""}sig:${sig}`
 		});
 	};
+
+	const operationalNativeOutSOL = (maxLegSOL = 0.02): number => {
+		const smallOut = nativeTransfers
+			.filter(
+				(n) => n.fromUserAccount === address && n.toUserAccount !== address
+			)
+			.map((n) => lamportsToSol(n.amount ?? 0))
+			.filter((amt) => Number.isFinite(amt) && amt > 0 && amt <= maxLegSOL)
+			.reduce((sum, amt) => sum + amt, 0);
+		const feeSol = userPaidFee && tx.fee ? lamportsToSol(tx.fee) : 0;
+		return smallOut + feeSol;
+	};
+
+	{
+		const ownsFrom = (t: TokenTransferPlus) =>
+			t.fromUserAccount === address ||
+			(t.fromTokenAccount ? txATAs.has(t.fromTokenAccount) : false);
+		const ownsTo = (t: TokenTransferPlus) =>
+			t.toUserAccount === address ||
+			(t.toTokenAccount ? txATAs.has(t.toTokenAccount) : false);
+
+		if (flags.isOrderPlace) {
+			const opOut = operationalNativeOutSOL(0.02);
+			if (opOut > 0) {
+				feeLeftSOL = 0;
+				pushRow(
+					{
+						Type: "Tap",
+						Inn: 0,
+						"Inn-Valuta": "",
+						Ut: opOut,
+						"Ut-Valuta": "SOL",
+						Marked: "SOLANA"
+					},
+					"DEFI_ORDERBOOK_ORDER_PLACE"
+				);
+				return rows;
+			}
+		}
+
+		if (flags.isOrderTrade) {
+			const { inSOL: nativeInSOL } = nativeSolInOut(nativeTransfers, address);
+			const tokenIn = new Map<string, number>();
+			const tokenOut = new Map<string, number>();
+
+			for (const t of tokenTransfers) {
+				const { amountNum, symbol } = amountFromTransfer(t, resolveSymDec);
+				if (!Number.isFinite(amountNum) || amountNum <= 0) continue;
+				if (ownsTo(t))
+					tokenIn.set(symbol, (tokenIn.get(symbol) || 0) + amountNum);
+				if (ownsFrom(t) && !ownsTo(t))
+					tokenOut.set(symbol, (tokenOut.get(symbol) || 0) + amountNum);
+			}
+
+			const pickLargest = (m: Map<string, number>, skipSOL = false) => {
+				let best: [string, number] | null = null;
+				for (const [sym, amt] of m.entries()) {
+					if (skipSOL && sym === "SOL") continue;
+					if (!best || amt > best[1]) best = [sym, amt];
+				}
+				return best;
+			};
+
+			const inBest = pickLargest(tokenIn, true) || pickLargest(tokenIn, false);
+			const outBest =
+				pickLargest(tokenOut, true) || pickLargest(tokenOut, false);
+
+			const lamDelta = getUserLamportsDeltaSOL(tx, address) ?? 0;
+			const feeSol = userPaidFee && tx.fee ? lamportsToSol(tx.fee) : 0;
+			const grossInSOL = lamDelta > 0 ? lamDelta + feeSol : 0;
+			const grossOutSOL = lamDelta < 0 ? Math.max(0, -lamDelta - feeSol) : 0;
+			const tokenInSOL = tokenIn.get("SOL") || 0;
+			const tokenOutSOL = tokenOut.get("SOL") || 0;
+			const deltaDerivedChange =
+				grossOutSOL > 0 && tokenOutSOL > grossOutSOL
+					? tokenOutSOL - grossOutSOL
+					: 0;
+			const tradeChangeSOL =
+				tokenInSOL > 0
+					? tokenInSOL
+					: nativeInSOL > 0
+						? nativeInSOL
+						: Math.max(0, deltaDerivedChange);
+
+			if (inBest && outBest && inBest[0] !== outBest[0]) {
+				pushRow(
+					{
+						Type: "Handel",
+						Inn: inBest[1],
+						"Inn-Valuta": inBest[0],
+						Ut: outBest[1],
+						"Ut-Valuta": outBest[0],
+						Marked: "SOLANA"
+					},
+					"DEFI_ORDERBOOK_TRADE"
+				);
+				if (
+					inBest[0] !== "SOL" &&
+					outBest[0] === "SOL" &&
+					tradeChangeSOL > 1e-9 &&
+					tradeChangeSOL <= 0.05
+				) {
+					pushRow(
+						{
+							Type: "Erverv",
+							Inn: tradeChangeSOL,
+							"Inn-Valuta": "SOL",
+							Ut: 0,
+							"Ut-Valuta": "",
+							Marked: "SOLANA"
+						},
+						"DEFI_ORDERBOOK_TRADE_CHANGE"
+					);
+				}
+				return rows;
+			}
+
+			if (inBest && grossOutSOL > 0 && inBest[0] !== "SOL") {
+				pushRow(
+					{
+						Type: "Handel",
+						Inn: inBest[1],
+						"Inn-Valuta": inBest[0],
+						Ut: grossOutSOL,
+						"Ut-Valuta": "SOL",
+						Marked: "SOLANA"
+					},
+					"DEFI_ORDERBOOK_TRADE"
+				);
+				if (tradeChangeSOL > 1e-9 && tradeChangeSOL <= 0.05) {
+					pushRow(
+						{
+							Type: "Erverv",
+							Inn: tradeChangeSOL,
+							"Inn-Valuta": "SOL",
+							Ut: 0,
+							"Ut-Valuta": "",
+							Marked: "SOLANA"
+						},
+						"DEFI_ORDERBOOK_TRADE_CHANGE"
+					);
+				}
+				return rows;
+			}
+
+			if (outBest && grossInSOL > 0 && outBest[0] !== "SOL") {
+				pushRow(
+					{
+						Type: "Handel",
+						Inn: grossInSOL,
+						"Inn-Valuta": "SOL",
+						Ut: outBest[1],
+						"Ut-Valuta": outBest[0],
+						Marked: "SOLANA"
+					},
+					"DEFI_ORDERBOOK_TRADE"
+				);
+				return rows;
+			}
+		}
+	}
+
+	if (flags.isSplCreateAccount) {
+		const feeSol = userPaidFee && tx.fee ? lamportsToSol(tx.fee) : 0;
+		const operationalOut = operationalNativeOutSOL(0.02);
+		const tapOut = Math.max(feeSol, operationalOut);
+		const { inSOL: nativeInSOL } = nativeSolInOut(nativeTransfers, address);
+		const hasTradeLikeTokenFlow = tokenTransfers.some((t) => {
+			const ownsFrom =
+				t.fromUserAccount === address ||
+				(t.fromTokenAccount ? txATAs.has(t.fromTokenAccount) : false);
+			const ownsTo =
+				t.toUserAccount === address ||
+				(t.toTokenAccount ? txATAs.has(t.toTokenAccount) : false);
+			if (!ownsFrom && !ownsTo) return false;
+			const { amountNum, symbol } = amountFromTransfer(t, resolveSymDec);
+			if (!Number.isFinite(amountNum) || amountNum <= 0) return false;
+			if (symbol === "SOL" || symbol === "UNKNOWN") return false;
+			return true;
+		});
+		if (
+			tapOut > 0 &&
+			!flags.isOrderTrade &&
+			nativeInSOL <= 1e-9 &&
+			!hasTradeLikeTokenFlow
+		) {
+			feeLeftSOL = 0;
+			pushRow(
+				{
+					Type: "Tap",
+					Inn: 0,
+					"Inn-Valuta": "",
+					Ut: tapOut,
+					"Ut-Valuta": "SOL",
+					Marked: "SOLANA"
+				},
+				"ACTIVITY_SPL_CREATE_ACCOUNT"
+			);
+			return rows;
+		}
+	}
+
+	if (flags.isSplCloseAccount) {
+		const lamDelta = getUserLamportsDeltaSOL(tx, address) ?? 0;
+		if (lamDelta > 0) {
+			feeLeftSOL = 0;
+			pushRow(
+				{
+					Type: "Erverv",
+					Inn: lamDelta,
+					"Inn-Valuta": "SOL",
+					Ut: 0,
+					"Ut-Valuta": "",
+					Marked: "SOLANA"
+				},
+				"ACTIVITY_SPL_CLOSE_ACCOUNT"
+			);
+			return rows;
+		}
+	}
+
+	if (
+		txTypeU === "STAKE_SOL" ||
+		(srcU.includes("STAKE") && txTypeU.includes("STAKE"))
+	) {
+		const feeSol = userPaidFee && tx.fee ? lamportsToSol(tx.fee) : 0;
+		if (feeSol > 0) {
+			feeLeftSOL = 0;
+			pushRow(
+				{
+					Type: "Tap",
+					Inn: 0,
+					"Inn-Valuta": "",
+					Ut: feeSol,
+					"Ut-Valuta": "SOL",
+					Marked: "SOLANA"
+				},
+				"ACTIVITY_STAKE_SOL"
+			);
+			return rows;
+		}
+	}
 
 	// === 1) Liquidity detection (ignore aggregators) ===
 	const liq = detectLiquidityEvent(
@@ -2463,6 +3866,22 @@ function classifyTxToRows(opts: {
 		return rows;
 	}
 
+	if (flags.isOrderPlace) {
+		const opOut = operationalNativeOutSOL(0.02);
+		if (opOut > 0) {
+			feeLeftSOL = 0;
+			pushRow({
+				Type: "Tap",
+				Inn: 0,
+				"Inn-Valuta": "",
+				Ut: opOut,
+				"Ut-Valuta": "SOL",
+				Marked: "SOLANA"
+			});
+			return rows;
+		}
+	}
+
 	// === 2) Primary collapse: token ↔ token (already works for routed swaps)
 	{
 		const collapsed = collapseTokenNetToSingleHandel(
@@ -2499,6 +3918,14 @@ function classifyTxToRows(opts: {
 				"Ut-Valuta": outSym,
 				Marked: market
 			});
+			const { inSymNorm: changeInSym, outSymNorm: changeOutSym } =
+				normalizeHandelSymbols(inSym, outSym);
+			maybePushTradeChangeRow(
+				changeInSym,
+				changeOutSym,
+				market,
+				changeOutSym === "SOL" ? outAmt : undefined
+			);
 			return rows;
 		}
 	}
@@ -2620,6 +4047,14 @@ function classifyTxToRows(opts: {
 				"Ut-Valuta": outSym,
 				Marked: market
 			});
+			const { inSymNorm: changeInSym, outSymNorm: changeOutSym } =
+				normalizeHandelSymbols(inSym, outSym);
+			maybePushTradeChangeRow(
+				changeInSym,
+				changeOutSym,
+				market,
+				changeOutSym === "SOL" ? outAmt : undefined
+			);
 			return rows;
 		}
 	}
@@ -2673,6 +4108,14 @@ function classifyTxToRows(opts: {
 				"Ut-Valuta": first.outSym,
 				Marked: market
 			});
+			const { inSymNorm: changeInSym, outSymNorm: changeOutSym } =
+				normalizeHandelSymbols(last.inSym, first.outSym);
+			maybePushTradeChangeRow(
+				changeInSym,
+				changeOutSym,
+				market,
+				changeOutSym === "SOL" ? first.outAmt : undefined
+			);
 			return rows;
 		}
 	}
@@ -2683,7 +4126,11 @@ function classifyTxToRows(opts: {
 
 	if (solSent.length) {
 		const amt = sum(solSent, (n) => lamportsToSol(n.amount ?? 0));
-		if (amt) {
+		const tinyOperationalOut =
+			amt > 0 &&
+			amt <= 0.00000011 &&
+			(srcU.includes("SYSTEM") || srcU.includes("SPL"));
+		if (amt && !tinyOperationalOut) {
 			pushRow({
 				Type: "Overføring-Ut",
 				Inn: 0,
@@ -2696,7 +4143,11 @@ function classifyTxToRows(opts: {
 	}
 	if (solRecv.length) {
 		const amt = sum(solRecv, (n) => lamportsToSol(n.amount ?? 0));
-		if (amt) {
+		const tinyOperationalIn =
+			amt > 0 &&
+			amt <= 0.00000011 &&
+			(srcU.includes("SYSTEM") || srcU.includes("SPL"));
+		if (amt && !tinyOperationalIn) {
 			pushRow({
 				Type: "Overføring-Inn",
 				Inn: amt,
@@ -2725,6 +4176,16 @@ function classifyTxToRows(opts: {
 			resolveSymDec
 		);
 		if (amountNum === 0) continue;
+
+		const tinyOperationalSol =
+			symbol === "SOL" &&
+			amountNum > 0 &&
+			amountNum <= 0.00000011 &&
+			(flags.isSplCreateAccount ||
+				flags.isSplCloseAccount ||
+				srcU.includes("SYSTEM") ||
+				srcU.includes("SPL"));
+		if (tinyOperationalSol) continue;
 
 		if (ownsFrom(t)) {
 			pushRow({
@@ -2770,14 +4231,21 @@ function classifyTxToRows(opts: {
 
 	// 7) Staking rewards -> Inntekt
 	const rewardLamports = (tx.events as any)?.stakingReward?.amount ?? 0;
-	if (
-		rewardLamports > 0 ||
-		String(tx.type || "")
-			.toUpperCase()
-			.includes("REWARD")
-	) {
-		const amt = lamportsToSol(rewardLamports);
-		if (amt) {
+	const rewardHint = `${String(tx.type || "")} ${String(tx.description || "")}`
+		.toUpperCase()
+		.includes("REWARD");
+	if (rewardLamports > 0 || rewardHint) {
+		const feeSol = userPaidFee && tx.fee ? lamportsToSol(tx.fee) : 0;
+		const nativeDelta = getUserLamportsDeltaSOL(tx, address) ?? 0;
+		const explicitRewardSOL = lamportsToSol(rewardLamports);
+		const inferredRewardSOL =
+			rewardLamports > 0
+				? 0
+				: nativeDelta > 0
+					? Math.max(0, nativeDelta + feeSol)
+					: 0;
+		const amt = explicitRewardSOL > 0 ? explicitRewardSOL : inferredRewardSOL;
+		if (amt > 0) {
 			pushRow({
 				Type: "Inntekt",
 				Inn: amt,
@@ -2968,7 +4436,10 @@ const attachSigAndSigner = (
 			: new Map(Object.entries(sigToProgramName || {}));
 
 	return rows.map((r) => {
-		const withTag = { ...r, Notat: `${tag} - ${r.Notat}` };
+		const currentNote = String(r.Notat ?? "");
+		const withTag = currentNote.startsWith(`${tag} - `)
+			? { ...r, Notat: currentNote }
+			: { ...r, Notat: `${tag} - ${currentNote}` };
 		const sig = extractSigFromNotat(withTag.Notat || "");
 		const signer = sig ? signerMap.get(sig!) : undefined;
 		const programId = sig ? programMap.get(sig!) : undefined;
@@ -2982,15 +4453,14 @@ const attachSigAndSigner = (
 			.toUpperCase();
 		const isTransfer =
 			r.Type === "Overføring-Inn" || r.Type === "Overføring-Ut";
-		const isStakingProgram =
-			typeof programName === "string" &&
-			programName.toUpperCase().includes("STAKING");
+		const normalizedProgramMarket = normalizeMarketLabel(programName);
+		const isStakingProgram = normalizedProgramMarket === "STAKE";
 		if (programName && isTransfer) {
 			if (genericMarket.has(markedUpper) || markedUpper === "") {
-				withTag.Marked = programName;
+				withTag.Marked = normalizedProgramMarket;
 			} else if (isStakingProgram) {
 				// Prefer staking program label even if source reports a DEX
-				withTag.Marked = programName;
+				withTag.Marked = normalizedProgramMarket;
 			}
 		}
 
@@ -3032,6 +4502,7 @@ const attachSigAndSigner = (
 
 		return {
 			...withTag,
+			Marked: normalizeMarketLabel(withTag.Marked),
 			signature: sig,
 			signer,
 			recipient,
@@ -3522,7 +4993,63 @@ function classifyAll({
 	return out;
 }
 
-function postProcessAndCache(
+function buildFailedTapRows(opts: {
+	failed: FailedSignatureInfo[];
+	existingRows: KSRow[];
+	knownSigs: Set<string>;
+	useOslo: boolean;
+}): KSRow[] {
+	const { failed, existingRows, knownSigs, useOslo } = opts;
+	if (!failed.length) return [];
+
+	const rowSigs = new Set<string>();
+	for (const row of existingRows) {
+		const sig = extractSigFromNotat(String(row.Notat || ""));
+		if (sig) rowSigs.add(sig);
+	}
+
+	const out: KSRow[] = [];
+	for (const fx of failed) {
+		const sig = String(fx.signature || "").trim();
+		if (!sig) continue;
+		if (knownSigs.has(sig) || rowSigs.has(sig)) continue;
+		const failText = `${String(fx.memo || "")} ${JSON.stringify(fx.err ?? "")}`
+			.toUpperCase()
+			.trim();
+		const isCancelOrderFailure =
+			failText.includes("CANCEL") ||
+			failText.includes("ORDER_CANCEL") ||
+			failText.includes("CANCEL_ORDER") ||
+			failText.includes("CANCELORDER");
+		const failLabel = isCancelOrderFailure ? "CANCELORDER" : "FAIL";
+
+		const whenSec =
+			typeof fx.blockTime === "number" && fx.blockTime > 0
+				? fx.blockTime
+				: Math.floor(Date.now() / 1000);
+		const feeSol =
+			typeof fx.fee === "number" && Number.isFinite(fx.fee) && fx.fee > 0
+				? lamportsToSol(fx.fee)
+				: 0;
+
+		out.push({
+			Tidspunkt: toNorwayTimeString(whenSec * 1000, useOslo),
+			Type: "Tap",
+			Inn: "0",
+			"Inn-Valuta": "",
+			Ut: toAmountString(toAmountText(feeSol)),
+			"Ut-Valuta": "SOL",
+			Gebyr: "0",
+			"Gebyr-Valuta": "",
+			Marked: "SOLANA",
+			Notat: `${failLabel} sig:${sig}`
+		});
+	}
+
+	return out;
+}
+
+async function postProcessAndCache(
 	ctx: Ctx,
 	rows: KSRow[],
 	sigMapOrSigner: Map<string, HeliusTx> | Map<string, string>,
@@ -3576,10 +5103,12 @@ function postProcessAndCache(
 		}
 	}
 
+	const enrichedRows = await enrichIncomeRowsWithNok(consolidated);
+
 	const res: ClassifyResult = {
 		rowsRaw: rows,
-		rowsProcessed: consolidated,
-		count: consolidated.length,
+		rowsProcessed: enrichedRows,
+		count: enrichedRows.length,
 		rawCount: Number.isFinite(rawTxCount)
 			? (rawTxCount as number)
 			: rows.length,
@@ -3591,7 +5120,7 @@ function postProcessAndCache(
 			? Object.fromEntries(cacheExtras.sigMap.entries())
 			: undefined;
 	putCache(ctx.cacheKey, {
-		rowsProcessed: consolidated,
+		rowsProcessed: enrichedRows,
 		count: res.count,
 		rawCount: res.rawCount,
 		partial: res.partial,
@@ -3631,6 +5160,7 @@ interface Body {
 	overrides?: OverridesPayload;
 	/** map of rowId -> partial KSRow patches coming from client edits */
 	clientEdits?: Record<string, Partial<KSRow>>;
+	syntheticStakeRewards?: boolean;
 }
 
 export async function POST(req: NextRequest) {
@@ -3660,6 +5190,7 @@ export async function POST(req: NextRequest) {
 
 		const includeNFT = Boolean(body.includeNFT ?? false);
 		const useOslo = Boolean(body.useOslo ?? false);
+		const syntheticStakeRewards = Boolean(body.syntheticStakeRewards ?? true);
 
 		const rawDustMode = (body.dustMode ?? "off") as DustMode;
 		const dustMode: DustMode = (
@@ -3821,10 +5352,6 @@ export async function POST(req: NextRequest) {
 						);
 
 						await send({
-							type: "log",
-							message: "Treff i cache – henter forhåndsvisning."
-						});
-						await send({
 							type: "done",
 							data: {
 								rowsPreview,
@@ -3901,6 +5428,50 @@ export async function POST(req: NextRequest) {
 							fromISO,
 							toISO
 						});
+						const failedSigs = await fetchFailedSignaturesByAddress({
+							address,
+							fromISO,
+							toISO,
+							apiKey: process.env.HELIUS_API_KEY
+						});
+						const failedRows = buildFailedTapRows({
+							failed: failedSigs,
+							existingRows: rows,
+							knownSigs: new Set(scan.sigMap.keys()),
+							useOslo
+						});
+						const syntheticIncomeRows = syntheticStakeRewards
+							? await fetchSyntheticStakeIncomeRows({
+									allTxs,
+									address,
+									fromISO,
+									toISO,
+									useOslo,
+									walletTag: walletTagStr
+								})
+							: [];
+						const rowsMerged = [...rows, ...failedRows, ...syntheticIncomeRows];
+						if (failedRows.length > 0) {
+							await send({
+								type: "log",
+								message: `+${failedRows.length} feilede transaksjoner lagt til.`
+							});
+						}
+						if (syntheticIncomeRows.length > 0) {
+							await send({
+								type: "log",
+								message: `+${syntheticIncomeRows.length} ekstra transaksjoner lagt til (staking rewards).`
+							});
+						}
+						const incomeRowsBeforeNok = rowsMerged.filter(
+							(r) => r.Type === "Inntekt"
+						).length;
+						if (incomeRowsBeforeNok > 0) {
+							await send({
+								type: "log",
+								message: `Henter norsk kurs (NOK) for ${incomeRowsBeforeNok} inntektsrader …`
+							});
+						}
 
 						// compute real recipients (resolve token accounts → owners)
 						const recipients = await computeSigRecipients(
@@ -3909,9 +5480,9 @@ export async function POST(req: NextRequest) {
 							process.env.HELIUS_API_KEY
 						);
 
-						const result = postProcessAndCache(
+						const result = await postProcessAndCache(
 							ctx,
-							rows,
+							rowsMerged,
 							scan.sigMap,
 							scan.sigToSigner,
 							recipients, // ← pass precomputed recipients
@@ -3931,6 +5502,18 @@ export async function POST(req: NextRequest) {
 							scan.sigToProgramName,
 							scan.sigMap
 						);
+						if (incomeRowsBeforeNok > 0) {
+							const nokIncomeRows = result.rowsProcessed.filter(
+								(r) =>
+									r.Type === "Inntekt" &&
+									r["Ut-Valuta"] === "NOK" &&
+									Number(r.Ut || 0) > 0
+							).length;
+							await send({
+								type: "log",
+								message: `NOK-kurs lagt til på ${nokIncomeRows} inntektsrader.`
+							});
+						}
 
 						const prevRaw = shouldResume ? (cached?.rawCount ?? 0) : 0;
 						const totalRaw = result.rawCount;
@@ -4025,10 +5608,6 @@ export async function POST(req: NextRequest) {
 									? err
 									: "Unknown error";
 						await send({ type: "error", error: msg });
-						await send({
-							type: "log",
-							message: `❌ Feil: ${msg}`
-						});
 					} finally {
 						controller.close();
 					}
@@ -4169,6 +5748,29 @@ export async function POST(req: NextRequest) {
 				fromISO,
 				toISO
 			});
+			const failedSigs = await fetchFailedSignaturesByAddress({
+				address,
+				fromISO,
+				toISO,
+				apiKey: process.env.HELIUS_API_KEY
+			});
+			const failedRows = buildFailedTapRows({
+				failed: failedSigs,
+				existingRows: rows,
+				knownSigs: new Set(scan.sigMap.keys()),
+				useOslo
+			});
+			const syntheticIncomeRows = syntheticStakeRewards
+				? await fetchSyntheticStakeIncomeRows({
+						allTxs,
+						address,
+						fromISO,
+						toISO,
+						useOslo,
+						walletTag: walletTagStr
+					})
+				: [];
+			const rowsMerged = [...rows, ...failedRows, ...syntheticIncomeRows];
 
 			// compute recipients and pass into cache/post-processing
 			const recipients = await computeSigRecipients(
@@ -4177,9 +5779,9 @@ export async function POST(req: NextRequest) {
 				process.env.HELIUS_API_KEY
 			);
 
-			const result = postProcessAndCache(
+			const result = await postProcessAndCache(
 				ctx,
-				rows,
+				rowsMerged,
 				scan.sigMap,
 				scan.sigToSigner,
 				recipients, // ← pass precomputed recipients

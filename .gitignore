@@ -90,3 +90,10 @@ typings/
 .dynamodb/
 
 yarn.lock
+
+# Local parity/debug CSV exports
+sol2ks_*.csv
+kryptosekken_*.csv
+
+# Local parity helper script
+scripts/parity-diff.mjs

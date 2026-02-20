@@ -57,6 +57,15 @@ export interface HeliusTx {
 	events?: HeliusEvents;
 }
 
+export interface FailedSignatureInfo {
+	signature: string;
+	blockTime?: number;
+	fee?: number;
+	err?: unknown;
+	memo?: string;
+	userLamportsDelta?: number;
+}
+
 export type FetchOptions = {
 	address: string;
 	fromISO?: string;
@@ -460,6 +469,136 @@ export async function* fetchEnhancedTxs(
 		// be gentle between pages
 		if (perPageDelay > 0) await sleep(perPageDelay);
 	}
+}
+
+export async function fetchFailedSignaturesByAddress(opts: {
+	address: string;
+	fromISO?: string;
+	toISO?: string;
+	apiKey?: string;
+	limit?: number;
+	maxPages?: number;
+	before?: string;
+}): Promise<FailedSignatureInfo[]> {
+	const startTime = toUnix(opts.fromISO);
+	const endTime = toUnix(opts.toISO);
+	const pageSize = Math.min(Math.max(opts.limit ?? 1000, 1), 1000);
+	const maxPages = Math.max(1, opts.maxPages ?? 25);
+
+	let before = opts.before;
+	let pages = 0;
+	const out: FailedSignatureInfo[] = [];
+	const seenSigs = new Set<string>();
+
+	while (pages < maxPages) {
+		const cfg: Record<string, unknown> = { limit: pageSize };
+		if (before) cfg.before = before;
+
+		const list = (await rpcCallWithFallback(
+			"getSignaturesForAddress",
+			[opts.address, cfg],
+			opts.apiKey,
+			"helius-first"
+		)) as any[];
+
+		if (!Array.isArray(list) || list.length === 0) break;
+
+		let hitOlderThanStart = false;
+		for (const item of list) {
+			const sig =
+				typeof item?.signature === "string" ? item.signature.trim() : "";
+			if (!sig || seenSigs.has(sig)) continue;
+			seenSigs.add(sig);
+
+			const btRaw = Number(item?.blockTime ?? NaN);
+			const bt = Number.isFinite(btRaw) && btRaw > 0 ? btRaw : undefined;
+			if (typeof bt === "number") {
+				if (typeof startTime === "number" && bt < startTime) {
+					hitOlderThanStart = true;
+					continue;
+				}
+				if (typeof endTime === "number" && bt > endTime) continue;
+			}
+
+			if (item?.err == null) continue;
+
+			const feeRaw = Number(item?.fee ?? NaN);
+			out.push({
+				signature: sig,
+				blockTime: bt,
+				fee: Number.isFinite(feeRaw) && feeRaw >= 0 ? feeRaw : undefined,
+				err: item?.err,
+				memo: typeof item?.memo === "string" ? item.memo : undefined
+			});
+		}
+
+		const lastSig =
+			typeof list[list.length - 1]?.signature === "string"
+				? list[list.length - 1].signature
+				: "";
+		if (!lastSig) break;
+		before = lastSig;
+		pages++;
+		if (hitOlderThanStart) break;
+	}
+
+	if (out.length) {
+		for (const row of out) {
+			try {
+				const tx = await rpcCallWithFallback(
+					"getTransaction",
+					[
+						row.signature,
+						{
+							encoding: "json",
+							commitment: "confirmed",
+							maxSupportedTransactionVersion: 0
+						}
+					],
+					opts.apiKey,
+					"helius-first"
+				);
+				const feeRaw = Number(tx?.meta?.fee ?? NaN);
+				if (Number.isFinite(feeRaw) && feeRaw > 0) {
+					row.fee = feeRaw;
+				}
+
+				const keyEntries: any[] = Array.isArray(
+					tx?.transaction?.message?.accountKeys
+				)
+					? tx.transaction.message.accountKeys
+					: [];
+				const accountKeys = keyEntries
+					.map((k) => {
+						if (typeof k === "string") return k;
+						if (k && typeof k.pubkey === "string") return k.pubkey;
+						return "";
+					})
+					.filter((k) => !!k);
+				const idx = accountKeys.findIndex(
+					(k) => k.toLowerCase() === opts.address.toLowerCase()
+				);
+				if (idx >= 0) {
+					const pre = Number(tx?.meta?.preBalances?.[idx] ?? NaN);
+					const post = Number(tx?.meta?.postBalances?.[idx] ?? NaN);
+					if (Number.isFinite(pre) && Number.isFinite(post)) {
+						row.userLamportsDelta = post - pre;
+					}
+				}
+			} catch {
+				// keep fee undefined; caller can still emit a FAIL row with zero amount
+			}
+		}
+	}
+
+	return out.filter((row) => {
+		if (typeof row.userLamportsDelta === "number") {
+			return row.userLamportsDelta !== 0;
+		}
+		return (
+			typeof row.fee === "number" && Number.isFinite(row.fee) && row.fee > 0
+		);
+	});
 }
 
 /* ================= Token accounts by owner (RPC) ================= */
