@@ -667,7 +667,7 @@ export default function Preview({
 	const [activeTab, setActiveTab] = useState<
 		"preview" | "summary" | "attention"
 	>("preview");
-	const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+	const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
 
 	/** Column width state (persisted to localStorage) */
 	const [colWidths, setColWidths] = useState<Record<ColKey, number>>(() => ({
@@ -2331,7 +2331,7 @@ export default function Preview({
 	const debugModal = debugRow
 		? createPortal(
 				<div
-					className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/50 p-4"
+					className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/70 p-4"
 					role="dialog"
 					aria-modal="true"
 				>

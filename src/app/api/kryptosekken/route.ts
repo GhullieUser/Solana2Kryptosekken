@@ -117,16 +117,19 @@ function extractStakeAccountsFromTxs(
 
 async function fetchSyntheticStakeIncomeRows(opts: {
 	allTxs: HeliusTx[];
+	existingRows?: KSRow[];
 	address: string;
 	fromISO?: string;
 	toISO?: string;
 	useOslo: boolean;
 	walletTag: string;
 }): Promise<KSRow[]> {
-	const { allTxs, address, fromISO, toISO, useOslo, walletTag } = opts;
-	const hasIncomeAlready = allTxs.some((tx) => {
-		const typeU = String(tx.type || "").toUpperCase();
-		return typeU.includes("REWARD") || typeU.includes("INCOME");
+	const { allTxs, existingRows, address, fromISO, toISO, useOslo, walletTag } =
+		opts;
+	const hasIncomeAlready = (existingRows ?? []).some((row) => {
+		if (row.Type !== "Inntekt") return false;
+		const inn = Number.parseFloat(String(row.Inn || "0"));
+		return Number.isFinite(inn) && inn > 0;
 	});
 	if (hasIncomeAlready) return [];
 
@@ -5443,6 +5446,7 @@ export async function POST(req: NextRequest) {
 						const syntheticIncomeRows = syntheticStakeRewards
 							? await fetchSyntheticStakeIncomeRows({
 									allTxs,
+									existingRows: rows,
 									address,
 									fromISO,
 									toISO,
@@ -5763,6 +5767,7 @@ export async function POST(req: NextRequest) {
 			const syntheticIncomeRows = syntheticStakeRewards
 				? await fetchSyntheticStakeIncomeRows({
 						allTxs,
+						existingRows: rows,
 						address,
 						fromISO,
 						toISO,

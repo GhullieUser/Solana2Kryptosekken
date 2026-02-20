@@ -42,7 +42,7 @@ type CsvRow = {
 
 export default function UserPage() {
 	const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-	const { tr } = useLocale();
+	const { tr, locale } = useLocale();
 	const [email, setEmail] = useState<string | null>(null);
 	const [phone, setPhone] = useState<string | null>(null);
 	const [addresses, setAddresses] = useState<AddressRow[]>([]);
@@ -208,6 +208,22 @@ export default function UserPage() {
 		const b = fmt(to);
 		if (a && b) return `${a} – ${b}`;
 		return a || b;
+	}
+
+	function formatCreatedAt(createdAt?: string | null, updatedAt?: string | null) {
+		const value = createdAt || updatedAt;
+		if (!value) return tr({ no: "Ukjent tidspunkt", en: "Unknown time" });
+		const d = new Date(value);
+		if (Number.isNaN(d.getTime())) {
+			return tr({ no: "Ukjent tidspunkt", en: "Unknown time" });
+		}
+		return d.toLocaleString(locale === "en" ? "en-GB" : "no-NO", {
+			year: "numeric",
+			month: "short",
+			day: "2-digit",
+			hour: "2-digit",
+			minute: "2-digit"
+		});
 	}
 
 	function getLatestCsvId(list: CsvRow[]) {
@@ -450,8 +466,8 @@ export default function UserPage() {
 																</li>
 																<li>
 																	{tr({
-																		no: "Rå transaksjoner = transaksjoner som ikke er støvbehandlet.",
-																		en: "Raw transactions are transactions that are not dust-processed."
+																		no: "Rå transaksjoner = antallet transaksjoner i lommeboken før prosessering og støvbehandling.",
+																		en: "Raw transactions = the number of transactions in the wallet before processing and dust handling."
 																	})}
 																</li>
 																<li>
@@ -487,8 +503,8 @@ export default function UserPage() {
 													</li>
 													<li>
 														{tr({
-															no: "Rå transaksjoner = transaksjoner som ikke er støvbehandlet.",
-															en: "Raw transactions are transactions that are not dust-processed."
+															no: "Rå transaksjoner = antallet transaksjoner i lommeboken før prosessering og støvbehandling.",
+															en: "Raw transactions = the number of transactions in the wallet before processing and dust handling."
 														})}
 													</li>
 													<li>
@@ -575,6 +591,10 @@ export default function UserPage() {
 											const baseLabel =
 												formatDateRange(opt.from_iso, opt.to_iso) ||
 												tr({ no: "Uten tidsrom", en: "No range" });
+											const createdLabel = formatCreatedAt(
+												opt.created_at,
+												opt.updated_at
+											);
 											return {
 												value: opt.id,
 												label: opt.partial
@@ -582,9 +602,42 @@ export default function UserPage() {
 															no: "Ufullstendig",
 															en: "Incomplete"
 														})}`
-													: baseLabel
+													: `${baseLabel}`,
+												metaLabel: createdLabel,
+												tagLabel: opt.partial
+													? tr({ no: "Ufullstendig", en: "Incomplete" })
+													: undefined,
+												tagTone: opt.partial ? ("warning" as const) : undefined
 											};
 										});
+										const minWidthLabel =
+											options.length > 0
+												? options.reduce(
+														(longest, opt) =>
+															opt.label.length > longest.length ? opt.label : longest,
+														options[0].label
+												  )
+												: tr({ no: "Uten tidsrom", en: "No range" });
+										const minWidthMetaLabel =
+											options.length > 0
+												? options.reduce(
+														(longest, opt) =>
+															(opt.metaLabel?.length ?? 0) > longest.length
+																? (opt.metaLabel ?? "")
+																: longest,
+														options[0].metaLabel ?? ""
+												  )
+												: "";
+										const minWidthTagLabel =
+											options.length > 0
+												? options.reduce(
+														(longest, opt) =>
+															(opt.tagLabel?.length ?? 0) > longest.length
+																? (opt.tagLabel ?? "")
+																: longest,
+														options[0].tagLabel ?? ""
+												  )
+												: "";
 										return (
 											<li
 												key={group.address}
@@ -658,18 +711,17 @@ export default function UserPage() {
 																}))
 															}
 															options={options}
-															buttonClassName="inline-flex w-full sm:w-auto items-center justify-between gap-2 rounded-lg bg-white/90 ring-1 ring-black/10 px-3 py-1 text-xs text-slate-700 shadow-sm transition hover:bg-white dark:bg-white/5 dark:text-slate-200 dark:ring-white/10 dark:hover:bg-white/10"
-															menuClassName="w-full sm:w-auto rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden"
-															optionClassName="flex items-center gap-2 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 whitespace-nowrap"
-															labelClassName="truncate whitespace-nowrap"
+															buttonClassName="inline-flex w-full sm:w-auto items-start justify-between gap-2 rounded-lg bg-white ring-1 ring-black/10 px-3 py-2 text-xs text-slate-700 shadow-sm transition hover:bg-slate-50 dark:bg-[#1F2937] dark:text-slate-200 dark:ring-white/10 dark:hover:bg-[#243244]"
+															menuClassName="w-full sm:w-auto rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937] shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden"
+															optionClassName="flex items-start gap-2 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 whitespace-normal break-words sm:whitespace-nowrap"
+															labelClassName="min-w-0 whitespace-normal break-words sm:whitespace-nowrap"
 															ariaLabel={tr({
 																no: "Velg tidsrom",
 																en: "Select timeframe"
 															})}
-															minWidthLabel={
-																options[0]?.label ||
-																tr({ no: "Uten tidsrom", en: "No range" })
-															}
+															minWidthLabel={minWidthLabel}
+															minWidthMetaLabel={minWidthMetaLabel}
+															minWidthTagLabel={minWidthTagLabel}
 														/>
 														<div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
 															<button
@@ -766,7 +818,7 @@ export default function UserPage() {
 				<div className="fixed inset-0 z-50 flex items-center justify-center px-4">
 					<button
 						type="button"
-						className="absolute inset-0 bg-slate-900/60"
+						className="absolute inset-0 bg-slate-900/80"
 						onClick={() => !deleting && setDeleteOpen(false)}
 						aria-label={tr({ no: "Lukk", en: "Close" })}
 					/>
@@ -817,7 +869,7 @@ export default function UserPage() {
 				<div className="fixed inset-0 z-50 flex items-center justify-center px-4">
 					<button
 						type="button"
-						className="absolute inset-0 bg-slate-900/60"
+						className="absolute inset-0 bg-slate-900/80"
 						onClick={() => !csvDeleting && setCsvDeleteOpen(false)}
 						aria-label={tr({ no: "Lukk", en: "Close" })}
 					/>
@@ -895,7 +947,7 @@ export default function UserPage() {
 			)}
 
 			{infoModal && (
-				<div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/40 p-4">
+				<div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/70 p-4">
 					<div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-2xl">
 						<div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 px-4 py-3">
 							<p className="text-sm font-semibold text-slate-900 dark:text-slate-100">

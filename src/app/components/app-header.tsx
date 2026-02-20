@@ -54,7 +54,7 @@ function ThemePill() {
 		<button
 			type="button"
 			onClick={toggle}
-			className="inline-flex h-[24px] sm:h-[26px] w-[28px] sm:w-[30px] items-center justify-center rounded-full text-slate-700 dark:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-white/10 transition"
+			className="inline-flex h-[24px] sm:h-[26px] w-[28px] sm:w-[30px] items-center justify-center rounded-full md:rounded-md text-slate-700 dark:text-slate-200 hover:bg-slate-100/80 dark:hover:bg-white/10 transition"
 			title={tr({ no: "Bytt lys/mørk", en: "Toggle light/dark" })}
 			aria-label={tr({ no: "Bytt lys/mørk", en: "Toggle light/dark" })}
 		>
@@ -70,7 +70,7 @@ function ThemePill() {
 function LocalePill() {
 	const { locale, setLocale, tr } = useLocale();
 	const baseBtn =
-		"inline-flex h-[22px] sm:h-[24px] w-[26px] sm:w-[28px] items-center justify-center rounded-full leading-none transition";
+		"inline-flex h-[22px] sm:h-[24px] w-[26px] sm:w-[28px] items-center justify-center rounded-full md:rounded-md leading-none transition";
 	const selected = "opacity-100 saturate-150";
 	const unselected =
 		"opacity-60 saturate-0 hover:opacity-100 hover:saturate-100";
@@ -129,6 +129,7 @@ export default function AppHeader() {
 	const settingsMenuRef = useRef<HTMLDivElement | null>(null);
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 	const mobileMenuRef = useRef<HTMLDivElement | null>(null);
+	const [isMobileViewport, setIsMobileViewport] = useState(false);
 	const [scrolled, setScrolled] = useState(false);
 	const [creditsRemaining, setCreditsRemaining] = useState<number | null>(null);
 	const [freeRemaining, setFreeRemaining] = useState<number | null>(null);
@@ -244,6 +245,15 @@ export default function AppHeader() {
 	}, []);
 
 	useEffect(() => {
+		function onResize() {
+			setIsMobileViewport(window.innerWidth < 768);
+		}
+		onResize();
+		window.addEventListener("resize", onResize);
+		return () => window.removeEventListener("resize", onResize);
+	}, []);
+
+	useEffect(() => {
 		function onScroll() {
 			setScrolled(window.scrollY > 4);
 		}
@@ -298,12 +308,16 @@ export default function AppHeader() {
 		window.location.href = "/";
 	}
 
+	const hasHeaderBg =
+		scrolled ||
+		(isMobileViewport && (userMenuOpen || settingsMenuOpen || mobileMenuOpen));
+
 	return (
 		<header
 			data-scrolled={scrolled}
 			className={`s2ks-header fixed top-0 inset-x-0 z-40 text-xs sm:text-sm text-slate-600 dark:text-slate-300 transition-[background-color,box-shadow,backdrop-filter] ${
-				scrolled
-					? "bg-white/90 dark:bg-slate-900/80 backdrop-blur shadow-sm"
+				hasHeaderBg
+					? "bg-white/90 dark:bg-slate-900 backdrop-blur shadow-sm"
 					: "bg-transparent"
 			}`}
 		>
@@ -372,7 +386,7 @@ export default function AppHeader() {
 						<div className="w-[90px] sm:w-[90px] flex justify-end">
 							<Link
 								href="/pricing"
-								className="inline-flex h-[34px] sm:h-[32px] items-center justify-center gap-2 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 sm:px-4 text-[12px] sm:text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-white dark:hover:bg-white/10 transition"
+								className="inline-flex h-[34px] sm:h-[32px] items-center justify-center gap-2 rounded-full md:rounded-lg bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 sm:px-4 text-[12px] sm:text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-white dark:hover:bg-white/10 transition"
 								aria-label={tr({ no: "TX Credits", en: "TX Credits" })}
 								title={tr({ no: "TX Credits", en: "TX Credits" })}
 							>
@@ -388,7 +402,7 @@ export default function AppHeader() {
 							<button
 								type="button"
 								onClick={() => setUserMenuOpen((v) => !v)}
-								className="inline-flex h-[34px] sm:h-[32px] items-center justify-center gap-1 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 sm:px-4 text-[12px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-white dark:hover:bg-white/10 transition"
+								className="inline-flex h-[34px] sm:h-[32px] items-center justify-center gap-1 rounded-full md:rounded-lg bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 sm:px-4 text-[12px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-white dark:hover:bg-white/10 transition"
 							>
 								<FiUser className="h-4 w-4 sm:h-4 sm:w-4" />
 								<span className="hidden lg:inline-block max-w-[160px] truncate">
@@ -397,7 +411,7 @@ export default function AppHeader() {
 								<FiChevronDown className="h-4 w-4 sm:h-4 sm:w-4 opacity-70" />
 							</button>
 							{userMenuOpen && (
-								<div className="absolute right-0 mt-2 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937] shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden z-50 hidden md:block">
+								<div className="absolute right-0 mt-2 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-slate-900 shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden z-50 hidden md:block s2ks-dropdown-slide">
 									<div className="lg:hidden px-3 py-2 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 border-b border-slate-100/70 dark:border-white/10 truncate">
 										{userEmail ?? tr({ no: "Bruker", en: "User" })}
 									</div>
@@ -420,7 +434,7 @@ export default function AppHeader() {
 								</div>
 							)}
 							{userMenuOpen && (
-								<div className="md:hidden fixed inset-x-0 top-[60px] rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden z-50">
+								<div className="md:hidden fixed inset-x-0 top-[56px] sm:top-[64px] rounded-b-2xl rounded-t-none border border-slate-200 dark:border-white/10 bg-white/90 dark:bg-slate-900 shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden z-50 s2ks-dropdown-slide">
 									<div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 border-b border-slate-100/70 dark:border-white/10 truncate">
 										{userEmail ?? tr({ no: "Bruker", en: "User" })}
 									</div>
@@ -446,12 +460,12 @@ export default function AppHeader() {
 					) : (
 						<Link
 							href="/signin"
-							className="inline-flex h-[34px] sm:h-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 sm:px-4 text-[12px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-white dark:hover:bg-white/10 transition"
+							className="inline-flex h-[34px] sm:h-[32px] items-center justify-center rounded-full md:rounded-lg bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 sm:px-4 text-[12px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-white dark:hover:bg-white/10 transition"
 						>
 							{tr({ no: "Logg inn", en: "Sign in" })}
 						</Link>
 					)}
-					<div className="hidden lg:inline-flex items-center h-[34px] sm:h-[32px] gap-2 px-3 rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 shadow-sm dark:shadow-black/50">
+					<div className="hidden lg:inline-flex items-center h-[34px] sm:h-[32px] gap-2 px-3 rounded-full md:rounded-lg bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 shadow-sm dark:shadow-black/50">
 						<LocalePill />
 						<div className="w-px h-4 bg-slate-200 dark:bg-white/10" />
 						<ThemePill />
@@ -460,14 +474,14 @@ export default function AppHeader() {
 						<button
 							type="button"
 							onClick={() => setSettingsMenuOpen((v) => !v)}
-							className="inline-flex h-[34px] sm:h-[32px] items-center justify-center rounded-full bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 text-[12px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-white dark:hover:bg-white/10 transition"
+							className="inline-flex h-[34px] sm:h-[32px] items-center justify-center rounded-full md:rounded-lg bg-white/90 dark:bg-white/5 ring-1 ring-black/10 dark:ring-white/10 px-4 text-[12px] sm:text-xs font-medium text-slate-700 dark:text-slate-200 shadow-sm dark:shadow-black/50 hover:bg-white dark:hover:bg-white/10 transition"
 							aria-label={tr({ no: "Innstillinger", en: "Settings" })}
 							title={tr({ no: "Innstillinger", en: "Settings" })}
 						>
 							<FiSettings className="h-4 w-4 sm:h-4 sm:w-4" />
 						</button>
 						{settingsMenuOpen && (
-							<div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden z-50 p-2 hidden md:block">
+							<div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden z-50 p-2 hidden md:block s2ks-dropdown-slide">
 								<div className="flex items-center justify-between px-2 py-1.5 text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
 									{tr({ no: "Språk", en: "Language" })}
 									<LocalePill />
@@ -479,7 +493,7 @@ export default function AppHeader() {
 							</div>
 						)}
 						{settingsMenuOpen && (
-							<div className="md:hidden fixed inset-x-0 top-[60px] rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden z-50 p-3">
+							<div className="md:hidden fixed inset-x-0 top-[56px] sm:top-[64px] rounded-b-2xl rounded-t-none border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden z-50 p-3 s2ks-dropdown-slide">
 								<div className="flex items-center justify-between px-2 py-2 text-sm text-slate-500 dark:text-slate-400">
 									{tr({ no: "Språk", en: "Language" })}
 									<LocalePill />
@@ -502,7 +516,7 @@ export default function AppHeader() {
 							<FiMenu className="h-4 w-4 sm:h-4 sm:w-4" />
 						</button>
 						{mobileMenuOpen && (
-							<div className="md:hidden fixed inset-x-0 top-[60px] rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937] shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden z-50">
+							<div className="md:hidden fixed inset-x-0 top-[56px] sm:top-[64px] rounded-b-2xl rounded-t-none border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 shadow-xl shadow-slate-900/10 dark:shadow-black/50 overflow-hidden z-50 s2ks-dropdown-slide">
 								<Link
 									href="/"
 									className="block px-4 py-3 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:text-slate-900 dark:hover:text-white"

@@ -515,6 +515,7 @@ type CsvVersion = {
 	id: string;
 	address: string;
 	label?: string | null;
+	created_at?: string | null;
 	partial?: boolean | null;
 	scan_session_id?: string | null;
 	include_nft?: boolean | null;
@@ -737,6 +738,25 @@ function CSVGeneratorPageInner() {
 			return a || b;
 		},
 		[locale]
+	);
+
+	const formatCreatedAt = useCallback(
+		(createdAt?: string | null, updatedAt?: string | null) => {
+			const value = createdAt || updatedAt;
+			if (!value) return tr({ no: "Ukjent tidspunkt", en: "Unknown time" });
+			const d = new Date(value);
+			if (Number.isNaN(d.getTime())) {
+				return tr({ no: "Ukjent tidspunkt", en: "Unknown time" });
+			}
+			return d.toLocaleString(locale === "en" ? "en-GB" : "no-NO", {
+				year: "numeric",
+				month: "short",
+				day: "2-digit",
+				hour: "2-digit",
+				minute: "2-digit"
+			});
+		},
+		[locale, tr]
 	);
 
 	const extractSigFromNotat = useCallback((notat?: string) => {
@@ -1029,7 +1049,7 @@ function CSVGeneratorPageInner() {
 	}
 
 	const fetchCsvVersionsForAddress = useCallback(
-		async (addr: string) => {
+		async (addr: string, opts?: { preferLatest?: boolean }) => {
 			if (!isAuthed || !isProbablySolanaAddress(addr)) {
 				setCsvVersions([]);
 				setCsvVersionId(null);
@@ -1044,7 +1064,9 @@ function CSVGeneratorPageInner() {
 			const list: CsvVersion[] = Array.isArray(j?.data) ? j.data : [];
 			setCsvVersions(list);
 			setCsvVersionId((prev) => {
-				if (prev && list.some((v) => v.id === prev)) return prev;
+				if (!opts?.preferLatest && prev && list.some((v) => v.id === prev)) {
+					return prev;
+				}
 				return list[0]?.id ?? null;
 			});
 			return list;
@@ -1190,7 +1212,9 @@ function CSVGeneratorPageInner() {
 					})
 				}).catch(() => undefined);
 			}
-			await fetchCsvVersionsForAddress(payload.address);
+			await fetchCsvVersionsForAddress(payload.address, {
+				preferLatest: true
+			});
 		},
 		[
 			isAuthed,
@@ -2114,10 +2138,12 @@ function CSVGeneratorPageInner() {
 				isComplete: false
 			});
 		} else if (completeMatches.length > 0) {
-			// There's already a complete scan with these parameters
-			// Ask user if they want to start a new scan (which will replace the old one)
+			// Same parameters as an existing completed scan: ask before overwrite.
 			if (process.env.NODE_ENV === "development") {
-				console.log("Opening modal for complete scan:", completeMatches[0]);
+				console.log(
+					"Opening modal for complete scan overwrite confirmation:",
+					completeMatches[0]
+				);
 			}
 			setPartialScanModal({
 				payload,
@@ -2394,16 +2420,45 @@ function CSVGeneratorPageInner() {
 				const baseLabel =
 					formatDateRange(v.from_iso, v.to_iso) ||
 					tr({ no: "Uten tidsrom", en: "No range" });
-				const suffix = v.partial
-					? tr({ no: " (Ufullstendig)", en: " (Incomplete)" })
-					: "";
+				const createdLabel = formatCreatedAt(v.created_at, v.updated_at);
+				const incompleteLabel = tr({ no: "Ufullstendig", en: "Incomplete" });
 				return {
 					value: v.id,
-					label: `${baseLabel}${suffix}`
+					label: `${baseLabel}`,
+					metaLabel: createdLabel,
+					tagLabel: v.partial ? incompleteLabel : undefined,
+					tagTone: v.partial ? ("warning" as const) : undefined
 				};
 			}),
-		[csvVersions, formatDateRange, tr]
+		[csvVersions, formatDateRange, formatCreatedAt, tr]
 	);
+	const csvMinWidthLabel = useMemo(() => {
+		if (!csvOptions.length) return tr({ no: "Uten tidsrom", en: "No range" });
+		return csvOptions.reduce(
+			(longest, opt) => (opt.label.length > longest.length ? opt.label : longest),
+			csvOptions[0].label
+		);
+	}, [csvOptions, tr]);
+	const csvMinWidthMetaLabel = useMemo(() => {
+		if (!csvOptions.length) return "";
+		return csvOptions.reduce(
+			(longest, opt) =>
+				(opt.metaLabel?.length ?? 0) > longest.length
+					? (opt.metaLabel ?? "")
+					: longest,
+			csvOptions[0].metaLabel ?? ""
+		);
+	}, [csvOptions]);
+	const csvMinWidthTagLabel = useMemo(() => {
+		if (!csvOptions.length) return "";
+		return csvOptions.reduce(
+			(longest, opt) =>
+				(opt.tagLabel?.length ?? 0) > longest.length
+					? (opt.tagLabel ?? "")
+					: longest,
+			csvOptions[0].tagLabel ?? ""
+		);
+	}, [csvOptions]);
 	const selectedCsv = useMemo(
 		() => csvVersions.find((v) => v.id === csvVersionId) ?? null,
 		[csvVersions, csvVersionId]
@@ -2550,46 +2605,50 @@ function CSVGeneratorPageInner() {
 									</div>
 
 									{isAuthed && csvVersions.length > 0 && csvVersionId && (
-										<div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200/70 bg-indigo-50/70 px-3 py-2 text-xs text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
-											<span className="font-medium">
+										<div className="mt-2 rounded-xl border border-indigo-200/70 bg-indigo-50/70 px-3 py-2 text-xs text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
+											<div className="font-medium">
 												{tr({
 													no: "Genererte CSV-er for denne lommeboken funnet.",
 													en: "Generated CSVs found for this wallet."
 												})}
-											</span>
-											<div className="ml-auto flex items-center gap-2">
-												<StyledSelect
-													value={csvVersionId}
-													onChange={(next) => {
-														shouldApplyVersionSettingsRef.current = true;
-														setCsvVersionId(next);
-													}}
-													options={csvOptions}
-													buttonClassName="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-xs text-indigo-700 transition hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-[#2B3345] dark:text-indigo-200 dark:hover:bg-indigo-600/30"
-													menuClassName="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1F2937] overflow-hidden"
-													optionClassName="flex items-center gap-2 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 whitespace-nowrap"
-													labelClassName="truncate whitespace-nowrap"
-													ariaLabel={tr({ no: "Velg CSV", en: "Select CSV" })}
-													minWidthLabel={
-														csvOptions[0]?.label ||
-														tr({ no: "Uten tidsrom", en: "No range" })
-													}
-												/>
-												{selectedCsv?.partial ? (
-													<>
-														<button
-															type="button"
-															onClick={openSelectedCsv}
-															className="inline-flex items-center justify-center rounded-lg border border-indigo-200 bg-white px-2 py-1 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-[#2B3345] dark:text-indigo-200 dark:hover:bg-indigo-600/30"
-															title={tr({ no: "Vis CSV", en: "View CSV" })}
-															aria-label={tr({ no: "Vis CSV", en: "View CSV" })}
-														>
-															<FiEye className="h-4 w-4" />
-														</button>
+											</div>
+											<div className="mt-2 space-y-2 sm:space-y-0 sm:flex sm:items-start sm:gap-2">
+												<div className="min-w-0 max-w-full sm:flex-1">
+													<StyledSelect
+														value={csvVersionId}
+														onChange={(next) => {
+															shouldApplyVersionSettingsRef.current = true;
+															setCsvVersionId(next);
+														}}
+														options={csvOptions}
+														buttonClassName="inline-flex w-full min-w-0 items-start justify-between gap-2 rounded-lg border border-indigo-200 bg-white px-2 py-2 text-xs text-indigo-700 transition hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-[#2B3345] dark:text-indigo-200 dark:hover:bg-indigo-600/30"
+														menuClassName="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#1F2937] overflow-hidden"
+														optionClassName="flex items-start gap-2 px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 whitespace-normal break-words sm:whitespace-nowrap"
+														labelClassName="min-w-0 whitespace-normal break-words sm:whitespace-nowrap"
+														ariaLabel={tr({ no: "Velg CSV", en: "Select CSV" })}
+														minWidthLabel={csvMinWidthLabel}
+														minWidthMetaLabel={csvMinWidthMetaLabel}
+														minWidthTagLabel={csvMinWidthTagLabel}
+													/>
+												</div>
+												<div className="flex items-stretch gap-2 sm:shrink-0">
+													<button
+														type="button"
+														onClick={openSelectedCsv}
+														className="inline-flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-[#2B3345] dark:text-indigo-200 dark:hover:bg-indigo-600/30"
+														title={tr({ no: "Åpne", en: "Open" })}
+														aria-label={tr({ no: "Åpne", en: "Open" })}
+													>
+														<FiEye className="h-4 w-4" />
+														<span className="sm:hidden">
+															{tr({ no: "Åpne", en: "Open" })}
+														</span>
+													</button>
+													{selectedCsv?.partial && (
 														<button
 															type="button"
 															onClick={continueSelectedCsv}
-															className="inline-flex items-center gap-2 rounded-lg px-2 py-1 text-xs font-semibold transition bg-indigo-600 text-white hover:bg-indigo-500"
+															className="inline-flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition bg-indigo-600 text-white hover:bg-indigo-500"
 															title={tr({
 																no: "Fortsett skann",
 																en: "Continue scan"
@@ -2605,18 +2664,8 @@ function CSVGeneratorPageInner() {
 																en: "Continue scan"
 															})}
 														</button>
-													</>
-												) : (
-													<button
-														type="button"
-														onClick={openSelectedCsv}
-														className="inline-flex items-center justify-center rounded-lg border border-indigo-200 bg-white px-2 py-1 text-indigo-700 hover:bg-indigo-50 dark:border-indigo-500/40 dark:bg-[#2B3345] dark:text-indigo-200 dark:hover:bg-indigo-600/30"
-														title={tr({ no: "Åpne", en: "Open" })}
-														aria-label={tr({ no: "Åpne", en: "Open" })}
-													>
-														<FiEye className="h-4 w-4" />
-													</button>
-												)}
+													)}
+												</div>
 											</div>
 										</div>
 									)}
@@ -2635,16 +2684,17 @@ function CSVGeneratorPageInner() {
 																type="button"
 																onMouseDown={(e) => e.preventDefault()}
 																onClick={() => pickAddress(item.address)}
-																className="truncate text-left text-slate-700 dark:text-slate-200"
+																className="w-full min-w-0 text-left text-slate-700 dark:text-slate-200"
 																title={item.address}
 															>
-																{item.address}
-																{/* tiny name hint */}
-																{item.label ? (
-																	<span className="ml-2 rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-600 dark:text-slate-200">
-																		{item.label}
-																	</span>
-																) : null}
+																<span className="flex w-full min-w-0 items-center gap-2">
+																	{item.label ? (
+																		<span className="shrink-0 rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-600 dark:text-slate-200">
+																			{item.label}
+																		</span>
+																	) : null}
+																	<span className="flex-1 min-w-0 truncate">{item.address}</span>
+																</span>
 															</button>
 															<button
 																type="button"
@@ -3717,7 +3767,7 @@ function CSVGeneratorPageInner() {
 				</footer>
 
 				{infoModal && (
-					<div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/40 p-4">
+					<div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/70 p-4">
 						<div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0e1729] shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 px-4 py-3">
 								<p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -3740,7 +3790,7 @@ function CSVGeneratorPageInner() {
 				)}
 
 				{partialScanModal && (
-					<div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/40 p-4">
+					<div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/70 p-4">
 						<div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#1F2937] shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 px-4 py-3">
 								<p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -3778,6 +3828,15 @@ function CSVGeneratorPageInner() {
 									</p>
 									{partialScanModal && (
 										<div className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-white/5 rounded-lg px-3 py-2 space-y-1 border border-slate-200 dark:border-white/10">
+											<div className="flex items-center gap-2">
+												<strong>{tr({ no: "Laget:", en: "Created:" })}</strong>
+												<span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-medium leading-none text-slate-700 dark:border-white/15 dark:bg-white/10 dark:text-slate-200">
+													{formatCreatedAt(
+														partialScanModal.partialVersion.created_at,
+														partialScanModal.partialVersion.updated_at
+													)}
+												</span>
+											</div>
 											<div>
 												<strong>{tr({ no: "Tidsrom:", en: "Period:" })}</strong>{" "}
 												{formatDateRange(

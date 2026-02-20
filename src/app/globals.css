@@ -245,6 +245,29 @@ html.dark .s2ks-header::after {
 	opacity: 1;
 }
 
+.s2ks-dropdown-slide {
+	animation: s2ks-dropdown-slide 180ms ease-out;
+	transform-origin: top center;
+	will-change: transform, opacity;
+}
+
+@keyframes s2ks-dropdown-slide {
+	from {
+		opacity: 0;
+		transform: translateY(-8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.s2ks-dropdown-slide {
+		animation: none;
+	}
+}
+
 .s2ks-footer {
 	position: relative;
 }

@@ -7,6 +7,9 @@ import { FiChevronDown } from "react-icons/fi";
 export type StyledSelectOption<T extends string> = {
 	value: T;
 	label: string;
+	metaLabel?: string;
+	tagLabel?: string;
+	tagTone?: "default" | "warning";
 	disabled?: boolean;
 };
 
@@ -24,6 +27,8 @@ export default function StyledSelect<T extends string>({
 	portalZIndex = 100000,
 	placement = "auto",
 	minWidthLabel,
+	minWidthMetaLabel,
+	minWidthTagLabel,
 	labelClassName
 }: {
 	value: T;
@@ -40,6 +45,10 @@ export default function StyledSelect<T extends string>({
 	placement?: "auto" | "bottom" | "top";
 	/** If provided, forces the button to be at least wide enough to display this label. */
 	minWidthLabel?: string;
+	/** Optional meta/badge text to include in min-width calculation. */
+	minWidthMetaLabel?: string;
+	/** Optional tag/badge text to include in min-width calculation. */
+	minWidthTagLabel?: string;
 	/** Customize label span styling (defaults to truncate). */
 	labelClassName?: string;
 }) {
@@ -131,25 +140,71 @@ export default function StyledSelect<T extends string>({
 				onClick={() => setOpen((v) => !v)}
 			>
 				{minWidthLabel ? (
-					<span className="relative min-w-0 flex-1">
-						<span aria-hidden className="invisible whitespace-nowrap">
-							{minWidthLabel}
-						</span>
+					<span className="min-w-0 flex-1 grid">
 						<span
-							className={[
-								"absolute inset-0",
-								labelClassName ?? "truncate"
-							].join(" ")}
+							aria-hidden
+							className="invisible inline-flex items-center gap-2 whitespace-normal break-words sm:whitespace-nowrap [grid-area:1/1]"
 						>
-							{selected?.label ?? value}
+							<span>{minWidthLabel}</span>
+							{minWidthMetaLabel ? (
+								<span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-medium leading-none text-slate-700 dark:border-white/15 dark:bg-white/10 dark:text-slate-200">
+									{minWidthMetaLabel}
+								</span>
+							) : null}
+							{minWidthTagLabel ? (
+								<span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-100 px-2 py-0.5 text-[10px] font-medium leading-none text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/20 dark:text-amber-200">
+									{minWidthTagLabel}
+								</span>
+							) : null}
+						</span>
+						<span className="[grid-area:1/1] flex flex-wrap items-start gap-2 min-w-0">
+							{selected?.metaLabel ? (
+								<span className="shrink-0 inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-medium leading-none text-slate-700 dark:border-white/15 dark:bg-white/10 dark:text-slate-200">
+									{selected.metaLabel}
+								</span>
+							) : null}
+							{selected?.tagLabel ? (
+								<span
+									className={[
+										"shrink-0 inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium leading-none",
+										selected.tagTone === "warning"
+											? "border border-amber-200 bg-amber-100 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/20 dark:text-amber-200"
+											: "border border-slate-200 bg-slate-100 text-slate-700 dark:border-white/15 dark:bg-white/10 dark:text-slate-200"
+									].join(" ")}
+								>
+									{selected.tagLabel}
+								</span>
+							) : null}
+							<span className={labelClassName ?? "min-w-0 truncate"}>
+								{selected?.label ?? value}
+							</span>
 						</span>
 					</span>
 				) : (
-					<span className={labelClassName ?? "truncate"}>
-						{selected?.label ?? value}
+					<span className="min-w-0 flex flex-wrap items-start gap-2">
+						{selected?.metaLabel ? (
+							<span className="shrink-0 inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-medium leading-none text-slate-700 dark:border-white/15 dark:bg-white/10 dark:text-slate-200">
+								{selected.metaLabel}
+							</span>
+						) : null}
+						{selected?.tagLabel ? (
+							<span
+								className={[
+									"shrink-0 inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium leading-none",
+									selected.tagTone === "warning"
+										? "border border-amber-200 bg-amber-100 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/20 dark:text-amber-200"
+										: "border border-slate-200 bg-slate-100 text-slate-700 dark:border-white/15 dark:bg-white/10 dark:text-slate-200"
+								].join(" ")}
+							>
+								{selected.tagLabel}
+							</span>
+						) : null}
+						<span className={labelClassName ?? "min-w-0 truncate"}>
+							{selected?.label ?? value}
+						</span>
 					</span>
 				)}
-				<FiChevronDown className="h-4 w-4 shrink-0 opacity-70" />
+				<FiChevronDown className="h-4 w-4 shrink-0 self-center opacity-70" />
 			</button>
 
 			{open
@@ -210,7 +265,28 @@ export default function StyledSelect<T extends string>({
 												optionClassName ?? ""
 											].join(" ")}
 										>
-											{o.label}
+											<span className="flex flex-wrap items-start gap-2 min-w-0">
+												{o.metaLabel ? (
+													<span className="shrink-0 inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-medium leading-none text-slate-700 dark:border-white/15 dark:bg-white/10 dark:text-slate-200">
+														{o.metaLabel}
+													</span>
+												) : null}
+												{o.tagLabel ? (
+													<span
+														className={[
+															"shrink-0 inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium leading-none",
+															o.tagTone === "warning"
+																? "border border-amber-200 bg-amber-100 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/20 dark:text-amber-200"
+																: "border border-slate-200 bg-slate-100 text-slate-700 dark:border-white/15 dark:bg-white/10 dark:text-slate-200"
+														].join(" ")}
+													>
+														{o.tagLabel}
+													</span>
+												) : null}
+												<span className="min-w-0 whitespace-normal break-words sm:whitespace-nowrap sm:truncate">
+													{o.label}
+												</span>
+											</span>
 										</button>
 									);
 								})}

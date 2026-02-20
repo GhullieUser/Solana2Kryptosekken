@@ -516,7 +516,7 @@ export default function ModalEditor({
 
 	return createPortal(
 		<div
-			className="fixed inset-0 z-50 bg-black/30 dark:bg-black/40 flex items-center justify-center p-3 sm:p-4"
+			className="fixed inset-0 z-50 bg-black/70 dark:bg-black/75 flex items-center justify-center p-3 sm:p-4"
 			onMouseDown={(e) => {
 				backdropMouseDownRef.current = e.target === e.currentTarget;
 			}}
