@@ -23,7 +23,7 @@ const tiers: Tier[] = [
 	{
 		key: "500",
 		title: { no: "500 TX", en: "500 TX" },
-		price: { no: "250 kr", en: "250 NOK" },
+		price: { no: "149 kr", en: "149 NOK" },
 		credits: 500,
 		audience: {
 			no: "For mindre lommebøker og raske sjekker.",
@@ -33,24 +33,25 @@ const tiers: Tier[] = [
 	{
 		key: "1000",
 		title: { no: "1000 TX", en: "1000 TX" },
-		price: { no: "500 kr", en: "500 NOK" },
+		price: { no: "249 kr", en: "249 NOK" },
 		credits: 1000,
 		audience: {
 			no: "For aktive brukere med flere transaksjoner.",
 			en: "For active users with more transactions."
 		},
+		tag: { no: "16% rabatt", en: "16% off" },
 		accent: true
 	},
 	{
 		key: "10000",
 		title: { no: "10000 TX", en: "10000 TX" },
-		price: { no: "4500 kr", en: "4500 NOK" },
+		price: { no: "1990 kr", en: "1990 NOK" },
 		credits: 10000,
 		audience: {
 			no: "For avanserte brukere og store porteføljer.",
 			en: "For advanced users and large portfolios."
 		},
-		tag: { no: "10% rabatt", en: "10% off" }
+		tag: { no: "33% rabatt", en: "33% off" }
 	}
 ];
 
