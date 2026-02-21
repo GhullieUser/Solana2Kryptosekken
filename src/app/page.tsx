@@ -49,11 +49,11 @@ export default function LandingPage() {
 	const marqueeLogos = [
 		{ src: "/logos/solana/solana-sol-logo.svg", alt: "Solana" },
 		{ src: "/logos/phantom-logo.svg", alt: "Phantom" },
+		{ src: "/logos/jup-logo.svg", alt: "Jupiter" },
 		{ src: "/logos/solana/raydium-ray-logo.svg", alt: "Raydium" },
 		{ src: "/logos/solana/meteora-logo.svg", alt: "Meteora" },
 		{ src: "/logos/solana/bonk1-bonk-logo.svg", alt: "Bonk" },
 		{ src: "/logos/solana/Pump_Fun-logo.svg", alt: "Pump.fun" },
-		{ src: "/logos/solana/gmgn-logo.svg", alt: "GMGN" },
 		{ src: "/logos/orca-logo.svg", alt: "Orca" }
 	];
 
