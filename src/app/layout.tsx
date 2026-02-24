@@ -4,6 +4,7 @@ import "./globals.css";
 import AppProviders from "@/app/components/app-providers";
 import AppHeader from "@/app/components/app-header";
 import AppFooter from "@/app/components/app-footer";
+import { Analytics } from "@vercel/analytics/next";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -86,6 +87,7 @@ export default function RootLayout({
 						<AppFooter />
 					</div>
 				</AppProviders>
+				<Analytics />
 			</body>
 		</html>
 	);
