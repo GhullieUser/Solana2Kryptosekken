@@ -339,7 +339,7 @@ export default function UserPage() {
 								</div>
 								<div>
 									<h1 className="text-2xl font-semibold text-slate-900 dark:text-white">
-										{tr({ no: "Bruker", en: "User" })}
+										{tr({ no: "Brukerprofil", en: "User Profile" })}
 									</h1>
 									<p className="text-sm text-slate-600 dark:text-slate-300">
 										{email ?? ""}

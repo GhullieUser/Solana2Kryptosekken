@@ -314,12 +314,11 @@ export default function AppHeader() {
 
 	useEffect(() => {
 		const routeTitles: Record<string, { no: string; en: string }> = {
-			"/": { no: "Hjem", en: "Home" },
 			"/pricing": { no: "Priser", en: "Pricing" },
 			"/signin": { no: "Logg inn", en: "Sign in" },
 			"/signup": { no: "Registrer", en: "Sign up" },
 			"/auth": { no: "Autentisering", en: "Authentication" },
-			"/csvgenerator": { no: "CSV Generator", en: "CSV Generator" },
+			"/csvgenerator": { no: "Lommebok Skanner", en: "Wallet Scanner" },
 			"/account": { no: "Konto", en: "Account" },
 			"/account-created": { no: "Konto opprettet", en: "Account created" },
 			"/user": { no: "Bruker", en: "User" },
@@ -332,13 +331,15 @@ export default function AppHeader() {
 			},
 			"/update-password": { no: "Oppdater passord", en: "Update password" },
 			"/email-confirmed": { no: "E-post bekreftet", en: "Email confirmed" },
-			"/site-password": { no: "Passordbeskyttet", en: "Password protected" },
-			"/landing": { no: "Hjem", en: "Home" }
+			"/site-password": { no: "Passordbeskyttet", en: "Password protected" }
 		};
 
 		const siteName = "Sol2Kryptosekken";
-		const routeTitle = routeTitles[pathname] ?? { no: siteName, en: siteName };
-		document.title = `${siteName} | ${locale === "en" ? routeTitle.en : routeTitle.no}`;
+		const normalizedPath = pathname !== "/" ? pathname.replace(/\/$/, "") : "/";
+		const routeTitle = routeTitles[normalizedPath];
+		document.title = routeTitle
+			? `${siteName} | ${locale === "en" ? routeTitle.en : routeTitle.no}`
+			: siteName;
 	}, [locale, pathname]);
 
 	return (
