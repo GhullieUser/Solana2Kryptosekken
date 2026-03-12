@@ -11,12 +11,13 @@ type CookieToSet = {
 
 export async function middleware(request: NextRequest) {
 	const { pathname } = request.nextUrl;
+	const isSeoFile = pathname === "/robots.txt" || pathname === "/sitemap.xml";
 
 	const isStaticAsset =
 		/\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|map|txt|woff2?|ttf|otf)$/i.test(
 			pathname
 		) || pathname.startsWith("/logos/");
-	if (isStaticAsset) {
+	if (isStaticAsset || isSeoFile) {
 		return NextResponse.next();
 	}
 

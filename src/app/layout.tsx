@@ -41,8 +41,8 @@ export const metadata: Metadata = {
 		images: ["/sol2ks_thumbnail.jpg"]
 	},
 	robots: {
-		index: false,
-		follow: false
+		index: true,
+		follow: true
 	},
 	icons: {
 		icon: [

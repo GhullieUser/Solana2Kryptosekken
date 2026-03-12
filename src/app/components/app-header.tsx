@@ -118,7 +118,7 @@ function LocalePill() {
 
 export default function AppHeader() {
 	const pathname = usePathname();
-	const { tr } = useLocale();
+	const { locale, tr } = useLocale();
 	const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 	const [isAuthed, setIsAuthed] = useState(false);
 	const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -311,6 +311,35 @@ export default function AppHeader() {
 	const hasHeaderBg =
 		scrolled ||
 		(isMobileViewport && (userMenuOpen || settingsMenuOpen || mobileMenuOpen));
+
+	useEffect(() => {
+		const routeTitles: Record<string, { no: string; en: string }> = {
+			"/": { no: "Hjem", en: "Home" },
+			"/pricing": { no: "Priser", en: "Pricing" },
+			"/signin": { no: "Logg inn", en: "Sign in" },
+			"/signup": { no: "Registrer", en: "Sign up" },
+			"/auth": { no: "Autentisering", en: "Authentication" },
+			"/csvgenerator": { no: "CSV Generator", en: "CSV Generator" },
+			"/account": { no: "Konto", en: "Account" },
+			"/account-created": { no: "Konto opprettet", en: "Account created" },
+			"/user": { no: "Bruker", en: "User" },
+			"/personvern": { no: "Personvern", en: "Privacy" },
+			"/vilkar": { no: "Vilkår", en: "Terms" },
+			"/reset-password": { no: "Tilbakestill passord", en: "Reset password" },
+			"/reset-new-password": {
+				no: "Sett nytt passord",
+				en: "Set new password"
+			},
+			"/update-password": { no: "Oppdater passord", en: "Update password" },
+			"/email-confirmed": { no: "E-post bekreftet", en: "Email confirmed" },
+			"/site-password": { no: "Passordbeskyttet", en: "Password protected" },
+			"/landing": { no: "Hjem", en: "Home" }
+		};
+
+		const siteName = "Sol2Kryptosekken";
+		const routeTitle = routeTitles[pathname] ?? { no: siteName, en: siteName };
+		document.title = `${siteName} | ${locale === "en" ? routeTitle.en : routeTitle.no}`;
+	}, [locale, pathname]);
 
 	return (
 		<header
